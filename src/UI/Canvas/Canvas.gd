@@ -78,17 +78,6 @@ func _notification(what: int) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	# Space+left-drag navigation is implemented directly by CanvasCamera.
-	# Do not send that drag to the drawing tools as an ordinary brush stroke.
-	if Tools.has_space_alt_quick_navigation():
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed and Input.is_key_pressed(KEY_SPACE):
-				_quick_navigation_captured_left_mouse = true
-			elif not event.pressed and _quick_navigation_captured_left_mouse:
-				_quick_navigation_captured_left_mouse = false
-				return
-		if _quick_navigation_captured_left_mouse or Input.is_key_pressed(KEY_SPACE):
-			return
 	# Capture brush resizing at the initial left press. Keep consuming the
 	# drag until mouse-up even if the shortcut is released halfway through,
 	# otherwise the remaining drag could paint on the canvas.
@@ -103,13 +92,30 @@ func _input(event: InputEvent) -> void:
 		elif _brush_size_drag_captured_left_mouse:
 			_brush_size_drag_captured_left_mouse = false
 			return
+	if (
+		_brush_size_drag_captured_left_mouse
+		and event is InputEventMouseMotion
+		and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	):
+		_brush_size_drag_captured_left_mouse = false
 	if _brush_size_drag_captured_left_mouse:
 		if event is InputEventMouseMotion:
 			# If the shortcut is no longer held, the tool itself will not resize.
-			var draw_tool := Tools.get_tool(MOUSE_BUTTON_LEFT).tool_node
-			if draw_tool is BaseDrawTool:
+			var draw_tool := Tools.get_tool(MOUSE_BUTTON_LEFT).tool_node as BaseDrawTool
+			if is_instance_valid(draw_tool):
 				draw_tool.change_brush_size_by_mouse_drag(event)
 		return
+	# Space+left-drag navigation is implemented directly by CanvasCamera.
+	# Do not send that drag to the drawing tools as an ordinary brush stroke.
+	if Tools.has_space_alt_quick_navigation():
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed and Input.is_key_pressed(KEY_SPACE):
+				_quick_navigation_captured_left_mouse = true
+			elif not event.pressed and _quick_navigation_captured_left_mouse:
+				_quick_navigation_captured_left_mouse = false
+				return
+		if _quick_navigation_captured_left_mouse or Input.is_key_pressed(KEY_SPACE):
+			return
 	# Move the cursor with the keyboard (numpad keys by default)
 	var mouse_movement := Input.get_vector(
 		&"move_mouse_left", &"move_mouse_right", &"move_mouse_up", &"move_mouse_down"
