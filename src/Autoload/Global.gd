@@ -611,6 +611,12 @@ var show_right_tool_icon := true
 var left_square_indicator_visible := true
 ## Found in Preferences. If [code]true[/code], the right tool's brush indicator is visible.
 var right_square_indicator_visible := true
+## Found in Preferences. Tint the brush cursor footprint with its current drawing color.
+var brush_color_preview_enabled := false:
+	set(value):
+		brush_color_preview_enabled = value
+		if is_instance_valid(canvas) and is_instance_valid(canvas.indicators):
+			canvas.indicators.queue_redraw()
 ## Found in Preferences. If [code]true[/code], native cursors are used instead of default cursors.
 var native_cursors := false:
 	set(value):

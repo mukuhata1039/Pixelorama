@@ -46,6 +46,7 @@ func _input(event: InputEvent) -> void:
 
 func _on_Color_changed(_color_info: Dictionary, _button: int) -> void:
 	update_pattern()
+	Global.canvas.indicators.queue_redraw()
 
 
 func _on_FillAreaOptions_item_selected(index: int) -> void:
@@ -70,6 +71,7 @@ func _on_FillWithOptions_item_selected(index: int) -> void:
 	_fill_with = index
 	update_config()
 	save_config()
+	Global.canvas.indicators.queue_redraw()
 
 
 func _on_tolerance_slider_value_changed(value: float) -> void:
@@ -179,6 +181,24 @@ func _blend_image(image: Image, color: Color, factor: float) -> Image:
 				color_new.a = color_old.a
 				interpolated_image.set_pixel(x, y, color_new)
 	return interpolated_image
+
+
+## A color fill should preview its selected color and alpha under the cursor.
+## Pattern and tile fills retain the standard one-pixel outline.
+func draw_indicator(left: bool) -> void:
+	if (
+		not Global.brush_color_preview_enabled
+		or _fill_with != FillWith.COLOR
+		or Tools.is_placing_tiles()
+	):
+		super.draw_indicator(left)
+		return
+	var canvas := Global.canvas.indicators
+	var rect := Rect2(Vector2(_cursor), Vector2.ONE)
+	var outline_color := Global.left_tool_color if left else Global.right_tool_color
+	canvas.draw_rect(rect, tool_slot.color, true)
+	# Keep the outline visible, including with a fully transparent fill color.
+	canvas.draw_rect(rect, outline_color, false, 1.0 / Global.camera.zoom.x)
 
 
 func draw_start(pos: Vector2i) -> void:
