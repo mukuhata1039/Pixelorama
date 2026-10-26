@@ -722,8 +722,8 @@ func draw_indicator_at(pos: Vector2i, offset: Vector2i, color: Color) -> void:
 	if Global.brush_color_preview_enabled and not _draw_line and not Tools.is_placing_tiles():
 		pos -= _indicator.get_size() / 2
 		pos -= offset
+		# Preserve the actual selected color alpha, including fully transparent brushes.
 		var preview_color := tool_slot.color
-		preview_color.a = 1.0
 		if _brush.type == Brushes.PIXEL:
 			canvas.draw_rect(Rect2(pos, _indicator.get_size()), preview_color, true)
 		else:
