@@ -109,10 +109,44 @@ func _ready() -> void:
 	picker_vbox_container.add_child(expand_button)
 	picker_vbox_container.move_child(expand_button, 2)
 
+	# Keep the built-in alpha slider visible directly below the color square,
+	# even while the other color component sliders are collapsed.
+	_move_alpha_slider_below_color_square(picker_vbox_container)
+
 	expand_button.button_pressed = Global.config_cache.get_value(
 		"color_picker", "is_expanded", false
 	)
 	_on_shape_popup_menu_id_pressed(color_picker.picker_shape)
+
+
+## Reuse the native alpha controls instead of duplicating them.
+## Their existing ColorPicker signals and shared range continue to work.
+func _move_alpha_slider_below_color_square(picker_vbox_container: VBoxContainer) -> void:
+	var alpha_label: Label
+	var alpha_slider: HSlider
+	var alpha_spinbox: SpinBox
+	for index in color_sliders_grid.get_child_count() - 2:
+		var child := color_sliders_grid.get_child(index)
+		if child is Label and child.text == "A":
+			alpha_label = child
+			alpha_slider = color_sliders_grid.get_child(index + 1) as HSlider
+			alpha_spinbox = color_sliders_grid.get_child(index + 2) as SpinBox
+			break
+	if not is_instance_valid(alpha_label):
+		push_warning("Could not locate the ColorPicker alpha controls.")
+		return
+	if not is_instance_valid(alpha_slider) or not is_instance_valid(alpha_spinbox):
+		push_warning("Could not locate the ColorPicker alpha slider or value.")
+		return
+
+	var alpha_row := HBoxContainer.new()
+	alpha_row.name = "AlphaSliderRow"
+	alpha_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	picker_vbox_container.add_child(alpha_row)
+	picker_vbox_container.move_child(alpha_row, shapes_container.get_index() + 1)
+	for control in [alpha_label, alpha_slider, alpha_spinbox]:
+		color_sliders_grid.remove_child(control)
+		alpha_row.add_child(control)
 
 
 func _notification(what: int) -> void:
