@@ -413,8 +413,12 @@ func _prepare_tool() -> void:
 		_brush_size_dynamics = roundi(lerpf(_brush_size, max_increment, Tools.mouse_velocity))
 	_drawer.pixel_perfect = Tools.pixel_perfect if _brush_size == 1 else false
 	_drawer.color_op.strength = strength
+	var previous_preview_size := _indicator.get_size()
 	_indicator = _create_brush_indicator()
-	_color_preview_texture = null
+	# Dynamics can rebuild the indicator every movement; only regenerate the
+	# preview texture when the brush footprint dimensions actually change.
+	if previous_preview_size != _indicator.get_size():
+		_color_preview_texture = null
 	_polylines = _create_polylines(_indicator)
 	# Memorize current project
 	_stroke_project = Global.current_project
