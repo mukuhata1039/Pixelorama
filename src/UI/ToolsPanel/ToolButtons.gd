@@ -97,7 +97,7 @@ func _handle_space_alt_quick_navigation(event: InputEvent) -> bool:
 	else:
 		# Avoid interrupting a paint stroke when no quick tool is active.
 		if _navigation_tool.is_empty() and Tools.active_button != -1:
-			return false
+			return true
 		Tools.quick_assign_tool(wanted_tool, MOUSE_BUTTON_LEFT)
 		Tools.quick_assign_tool(wanted_tool, MOUSE_BUTTON_RIGHT)
 	_navigation_tool = wanted_tool
