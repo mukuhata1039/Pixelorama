@@ -116,6 +116,8 @@ func _notification(what: int) -> void:
 		if _navigation_tool == "Pan":
 			for camera: CanvasCamera in get_tree().get_nodes_in_group("CanvasCameras"):
 				camera.drag = false
+		if _navigation_tool == "Pan" or _navigation_tool == "Zoom":
+			Tools.active_button = -1
 		_navigation_tool = ""
 
 
