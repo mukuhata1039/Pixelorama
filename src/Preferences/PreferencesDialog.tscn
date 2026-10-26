@@ -1625,7 +1625,7 @@ text = "Show brush color preview"
 [node name="BrushColorPreviewCheckbox" type="CheckBox" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Cursors/CursorsContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
-tooltip_text = "Fill the brush cursor shape with the selected drawing color at partial opacity"
+tooltip_text = "Fill the brush cursor shape with the selected drawing color at full opacity"
 mouse_default_cursor_shape = 2
 text = "On"
 
