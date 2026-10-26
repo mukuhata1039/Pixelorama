@@ -144,6 +144,12 @@ var preferences: Array[Preference] = [
 		true
 	),
 	Preference.new(
+		"brush_color_preview_enabled",
+		"Cursors/CursorsContainer/BrushColorPreviewCheckbox",
+		"button_pressed",
+		false
+	),
+	Preference.new(
 		"native_cursors", "Cursors/CursorsContainer/NativeCursorsCheckbox", "button_pressed", false
 	),
 	Preference.new(
