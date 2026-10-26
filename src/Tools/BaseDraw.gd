@@ -723,7 +723,7 @@ func draw_indicator_at(pos: Vector2i, offset: Vector2i, color: Color) -> void:
 		pos -= _indicator.get_size() / 2
 		pos -= offset
 		var preview_color := tool_slot.color
-		preview_color.a *= 0.55
+		preview_color.a = 1.0
 		if _brush.type == Brushes.PIXEL:
 			canvas.draw_rect(Rect2(pos, _indicator.get_size()), preview_color, true)
 		else:
