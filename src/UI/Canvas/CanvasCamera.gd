@@ -38,6 +38,7 @@ var viewport_container: SubViewportContainer
 var transparent_checker: ColorRect
 var mouse_pos := Vector2.ZERO
 var drag := false
+var _quick_navigation_drag := false
 var rotation_slider: ValueSlider
 var zoom_slider: ValueSlider
 var should_tween := true
@@ -68,10 +69,48 @@ func _input(event: InputEvent) -> void:
 		get_window().gui_release_focus()
 	if !Global.can_draw:
 		drag = false
+		_quick_navigation_drag = false
 		return
 	mouse_pos = viewport_container.get_local_mouse_position()
+
+	# Quick Pan/Zoom must respond to the *held* Space and Alt keys, even when
+	# they are pressed in the opposite order. Handle the physical drag here,
+	# independently of the currently displayed tool icon.
+	if Tools.has_space_alt_quick_navigation():
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				_quick_navigation_drag = (
+					Input.is_key_pressed(KEY_SPACE)
+					and viewport_container.get_global_rect().has_point(
+						viewport_container.get_global_mouse_position()
+					)
+				)
+			else:
+				_quick_navigation_drag = false
+			if _quick_navigation_drag:
+				return
+		elif event is InputEventMouseMotion and _quick_navigation_drag:
+			if Input.is_key_pressed(KEY_SPACE):
+				if Input.is_key_pressed(KEY_ALT):
+					zoom_camera(-event.relative.x / 3.0)
+				else:
+					offset = offset - event.relative.rotated(camera_angle) / zoom
+					update_transparent_checker_offset()
+			else:
+				_quick_navigation_drag = false
+			return
+		elif event is InputEventKey and not Input.is_key_pressed(KEY_SPACE):
+			_quick_navigation_drag = false
+
 	if event.is_action_pressed(&"pan"):
-		drag = true
+		# When Space is configured as Quick Pan, do not let its legacy
+		# camera-pan binding move the canvas without a mouse drag.
+		if event is InputEventKey and Tools.has_space_alt_quick_navigation():
+			var key_event := event as InputEventKey
+			if key_event.keycode != KEY_SPACE and key_event.physical_keycode != KEY_SPACE:
+				drag = true
+		else:
+			drag = true
 	elif event.is_action_released(&"pan"):
 		drag = false
 	elif event.is_action_pressed(&"zoom_in", false, true):  # Wheel Up Event

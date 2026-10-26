@@ -4,6 +4,7 @@ extends Node2D
 const CURSOR_SPEED_RATE := 6.0
 
 var current_pixel := Vector2.ZERO
+var _quick_navigation_captured_left_mouse := false
 var sprite_changed_this_frame := false  ## For optimization purposes
 var update_all_layers := false
 ## For optimization purposes. A kind of override to force include a layer during canvas update.
@@ -71,6 +72,17 @@ func _draw() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	# Space+left-drag navigation is implemented directly by CanvasCamera.
+	# Do not send that drag to the drawing tools as an ordinary brush stroke.
+	if Tools.has_space_alt_quick_navigation():
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed and Input.is_key_pressed(KEY_SPACE):
+				_quick_navigation_captured_left_mouse = true
+			elif not event.pressed and _quick_navigation_captured_left_mouse:
+				_quick_navigation_captured_left_mouse = false
+				return
+		if _quick_navigation_captured_left_mouse or Input.is_key_pressed(KEY_SPACE):
+			return
 	# Move the cursor with the keyboard (numpad keys by default)
 	var mouse_movement := Input.get_vector(
 		&"move_mouse_left", &"move_mouse_right", &"move_mouse_up", &"move_mouse_down"

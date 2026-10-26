@@ -569,6 +569,33 @@ func assign_tool(tool_name: String, button: int, allow_refresh := false) -> void
 	Global.config_cache.set_value(slot.kname, "tool", tool_name)
 
 
+## Detect the configured Space = quick Pan / Alt+Space = quick Zoom chord.
+## Keep this opt-in: other shortcut profiles preserve their existing behavior.
+func has_space_alt_quick_navigation() -> bool:
+	return (
+		has_keyboard_quick_shortcut(&"quick_pan_tool", KEY_SPACE, false)
+		and has_keyboard_quick_shortcut(&"quick_zoom_tool", KEY_SPACE, true)
+	)
+
+
+func has_keyboard_quick_shortcut(action: StringName, key: int, alt: bool) -> bool:
+	if not InputMap.has_action(action):
+		return false
+	for bound_event in InputMap.action_get_events(action):
+		if not bound_event is InputEventKey:
+			continue
+		var key_event := bound_event as InputEventKey
+		if (
+			(key_event.keycode == key or key_event.physical_keycode == key)
+			and key_event.alt_pressed == alt
+			and not key_event.shift_pressed
+			and not key_event.ctrl_pressed
+			and not key_event.meta_pressed
+		):
+			return true
+	return false
+
+
 func quick_assign_tool(tool_name: String, button: int, allow_refresh := false) -> void:
 	if prev_tool_names[button].is_empty():
 		prev_tool_names[button] = get_tool(button).tool_node.name
