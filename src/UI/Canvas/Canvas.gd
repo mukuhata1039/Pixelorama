@@ -5,6 +5,7 @@ const CURSOR_SPEED_RATE := 6.0
 
 var current_pixel := Vector2.ZERO
 var _quick_navigation_captured_left_mouse := false
+var _brush_size_drag_captured_left_mouse := false
 var sprite_changed_this_frame := false  ## For optimization purposes
 var update_all_layers := false
 ## For optimization purposes. A kind of override to force include a layer during canvas update.
@@ -71,6 +72,11 @@ func _draw() -> void:
 	color_index.queue_redraw()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_brush_size_drag_captured_left_mouse = false
+
+
 func _input(event: InputEvent) -> void:
 	# Space+left-drag navigation is implemented directly by CanvasCamera.
 	# Do not send that drag to the drawing tools as an ordinary brush stroke.
@@ -83,6 +89,27 @@ func _input(event: InputEvent) -> void:
 				return
 		if _quick_navigation_captured_left_mouse or Input.is_key_pressed(KEY_SPACE):
 			return
+	# Capture brush resizing at the initial left press. Keep consuming the
+	# drag until mouse-up even if the shortcut is released halfway through,
+	# otherwise the remaining drag could paint on the canvas.
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			_brush_size_drag_captured_left_mouse = (
+				Global.can_draw
+				and not Input.is_key_pressed(KEY_SPACE)
+				and Input.is_action_pressed(&"mm_change_brush_size", true)
+				and Tools.get_tool(MOUSE_BUTTON_LEFT).tool_node is BaseDrawTool
+			)
+		elif _brush_size_drag_captured_left_mouse:
+			_brush_size_drag_captured_left_mouse = false
+			return
+	if _brush_size_drag_captured_left_mouse:
+		if event is InputEventMouseMotion:
+			# If the shortcut is no longer held, the tool itself will not resize.
+			var draw_tool := Tools.get_tool(MOUSE_BUTTON_LEFT).tool_node
+			if draw_tool is BaseDrawTool:
+				draw_tool.change_brush_size_by_mouse_drag(event)
+		return
 	# Move the cursor with the keyboard (numpad keys by default)
 	var mouse_movement := Input.get_vector(
 		&"move_mouse_left", &"move_mouse_right", &"move_mouse_up", &"move_mouse_down"
