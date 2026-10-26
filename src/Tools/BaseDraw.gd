@@ -28,6 +28,7 @@ var _line_start := Vector2i.ZERO
 var _line_end := Vector2i.ZERO
 
 var _indicator := BitMap.new()
+var _color_preview_texture: ImageTexture
 var _polylines := []
 var _line_polylines := []
 
@@ -210,6 +211,7 @@ func update_brush() -> void:
 				_stroke_dimensions = _brush_image.get_size()
 	_circle_tool_shortcut = []
 	_indicator = _create_brush_indicator()
+	_color_preview_texture = null
 	_polylines = _create_polylines(_indicator)
 	$Brush/Type/Texture.texture = _brush_texture
 	$DensityValueSlider.visible = _brush.type not in IMAGE_BRUSHES
@@ -227,6 +229,7 @@ func update_random_image() -> void:
 	update_brush_image_flip_and_rotate()
 	_brush_texture = ImageTexture.create_from_image(_brush_image)
 	_indicator = _create_brush_indicator()
+	_color_preview_texture = null
 	update_mirror_brush()
 
 
@@ -357,6 +360,7 @@ func draw_end(pos: Vector2i) -> void:
 			update_mirror_brush()
 			_stroke_dimensions = _brush_image.get_size()
 	_indicator = _create_brush_indicator()
+	_color_preview_texture = null
 	_polylines = _create_polylines(_indicator)
 	SteamManager.set_achievement("ACH_FIRST_PIXEL")
 
@@ -410,6 +414,7 @@ func _prepare_tool() -> void:
 	_drawer.pixel_perfect = Tools.pixel_perfect if _brush_size == 1 else false
 	_drawer.color_op.strength = strength
 	_indicator = _create_brush_indicator()
+	_color_preview_texture = null
 	_polylines = _create_polylines(_indicator)
 	# Memorize current project
 	_stroke_project = Global.current_project
@@ -708,6 +713,24 @@ func draw_indicator(left: bool) -> void:
 
 func draw_indicator_at(pos: Vector2i, offset: Vector2i, color: Color) -> void:
 	var canvas := Global.canvas.indicators
+	# Match the actual brush footprint without touching the image.
+	# Keep the existing outline so the preview is still visible over similar colors.
+	if Global.brush_color_preview_enabled and not _draw_line and not Tools.is_placing_tiles():
+		pos -= _indicator.get_size() / 2
+		pos -= offset
+		var preview_color := tool_slot.color
+		preview_color.a *= 0.55
+		if _brush.type == Brushes.PIXEL:
+			canvas.draw_rect(Rect2(pos, _indicator.get_size()), preview_color, true)
+		else:
+			var preview_texture := _get_color_preview_texture()
+			if preview_texture != null:
+				canvas.draw_texture(preview_texture, pos, preview_color)
+		canvas.draw_set_transform(pos, canvas.rotation, canvas.scale)
+		for line in _polylines:
+			canvas.draw_polyline(PackedVector2Array(line), color)
+		canvas.draw_set_transform(canvas.position, canvas.rotation, canvas.scale)
+		return
 	if _brush.type in IMAGE_BRUSHES and not _draw_line or Tools.is_placing_tiles():
 		pos -= _brush_image.get_size() / 2
 		pos -= offset
@@ -726,6 +749,24 @@ func draw_indicator_at(pos: Vector2i, offset: Vector2i, color: Color) -> void:
 			canvas.draw_polyline(pool, color)
 		canvas.draw_set_transform(canvas.position, canvas.rotation, canvas.scale)
 
+
+
+## Cache the footprint mask instead of creating a texture on every mouse move.
+## Only the tint changes on color selection, so it never needs a texture rebuild.
+func _get_color_preview_texture() -> ImageTexture:
+	if is_instance_valid(_color_preview_texture):
+		return _color_preview_texture
+	var size := _indicator.get_size()
+	if size.x <= 0 or size.y <= 0:
+		return null
+	var preview_image := Image.create_empty(size.x, size.y, false, Image.FORMAT_RGBA8)
+	preview_image.fill(Color.TRANSPARENT)
+	for y in size.y:
+		for x in size.x:
+			if _indicator.get_bitv(Vector2i(x, y)):
+				preview_image.set_pixel(x, y, Color.WHITE)
+	_color_preview_texture = ImageTexture.create_from_image(preview_image)
+	return _color_preview_texture
 
 func _set_pixel(pos: Vector2i, ignore_mirroring := false) -> void:
 	if _stroke_project == null:
