@@ -71,7 +71,14 @@ func _input(event: InputEvent) -> void:
 		return
 	mouse_pos = viewport_container.get_local_mouse_position()
 	if event.is_action_pressed(&"pan"):
-		drag = true
+		# When Space is configured as Quick Pan, do not let its legacy
+		# camera-pan binding move the canvas without a mouse drag.
+		if event is InputEventKey and Tools.has_space_alt_quick_navigation():
+			var key_event := event as InputEventKey
+			if key_event.keycode != KEY_SPACE and key_event.physical_keycode != KEY_SPACE:
+				drag = true
+		else:
+			drag = true
 	elif event.is_action_released(&"pan"):
 		drag = false
 	elif event.is_action_pressed(&"zoom_in", false, true):  # Wheel Up Event
