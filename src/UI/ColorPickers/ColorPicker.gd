@@ -126,9 +126,9 @@ func _move_alpha_slider_below_color_square(picker_vbox_container: VBoxContainer)
 	var alpha_slider: HSlider
 	var alpha_spinbox: SpinBox
 	for index in color_sliders_grid.get_child_count() - 2:
-		var child := color_sliders_grid.get_child(index)
-		if child is Label and child.text == "A":
-			alpha_label = child
+		var label := color_sliders_grid.get_child(index) as Label
+		if is_instance_valid(label) and label.text == "A":
+			alpha_label = label
 			alpha_slider = color_sliders_grid.get_child(index + 1) as HSlider
 			alpha_spinbox = color_sliders_grid.get_child(index + 2) as SpinBox
 			break
