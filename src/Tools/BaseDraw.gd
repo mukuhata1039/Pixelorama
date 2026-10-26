@@ -723,13 +723,16 @@ func draw_indicator_at(pos: Vector2i, offset: Vector2i, color: Color) -> void:
 		pos -= _indicator.get_size() / 2
 		pos -= offset
 		# Preserve the actual selected color alpha, including fully transparent brushes.
-		var preview_color := tool_slot.color
-		if _brush.type == Brushes.PIXEL:
-			canvas.draw_rect(Rect2(pos, _indicator.get_size()), preview_color, true)
-		else:
-			var preview_texture := _get_color_preview_texture()
-			if preview_texture != null:
-				canvas.draw_texture(preview_texture, pos, preview_color)
+		# Erasers only show the footprint outline: an opaque color swatch
+		# would obscure the pixels the user is trying to remove.
+		if not _is_eraser:
+			var preview_color := tool_slot.color
+			if _brush.type == Brushes.PIXEL:
+				canvas.draw_rect(Rect2(pos, _indicator.get_size()), preview_color, true)
+			else:
+				var preview_texture := _get_color_preview_texture()
+				if preview_texture != null:
+					canvas.draw_texture(preview_texture, pos, preview_color)
 		canvas.draw_set_transform(pos, canvas.rotation, canvas.scale)
 		for line in _polylines:
 			canvas.draw_polyline(PackedVector2Array(line), color)
