@@ -100,6 +100,11 @@ func _handle_space_alt_quick_navigation(event: InputEvent) -> bool:
 			return true
 		Tools.quick_assign_tool(wanted_tool, MOUSE_BUTTON_LEFT)
 		Tools.quick_assign_tool(wanted_tool, MOUSE_BUTTON_RIGHT)
+		# Switching back to a non-navigation tool must not turn an
+		# unfinished Pan/Zoom drag into a painting or color-picking stroke.
+		if wanted_tool != "Pan" and wanted_tool != "Zoom":
+			if _navigation_tool == "Pan" or _navigation_tool == "Zoom":
+				Tools.active_button = -1
 	_navigation_tool = wanted_tool
 	return true
 
