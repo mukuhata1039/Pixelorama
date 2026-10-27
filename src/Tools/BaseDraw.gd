@@ -36,6 +36,10 @@ var _line_polylines := []
 var _stroke_project: Project
 var _stroke_images: Dictionary[Image, Variant]
 var _is_mask_size_zero := true
+var _profile_steps := 0
+var _profile_prepare_us := 0
+var _profile_coords_us := 0
+var _profile_paint_us := 0
 var _circle_tool_shortcut: Array[Vector2i]
 var _mm_action: Keychain.MouseMovementInputAction
 
@@ -328,6 +332,16 @@ func commit_undo(action := "Draw") -> void:
 	_undo_data.clear()
 
 
+## The profiler is intentionally kept separate from the paint algorithms.
+func draw_start(pos: Vector2i) -> void:
+	super.draw_start(pos)
+	_profile_steps = 0
+	_profile_prepare_us = 0
+	_profile_coords_us = 0
+	_profile_paint_us = 0
+	Global.canvas.begin_brush_profile()
+
+
 func draw_tool(pos: Vector2i) -> void:
 	var project := Global.current_project
 	if project.has_selection:
@@ -336,15 +350,39 @@ func draw_tool(pos: Vector2i) -> void:
 		# Even brushes are not perfectly centered and are offsetted by 1 px, so we add it.
 		if int(_stroke_dimensions.x) % 2 == 0:
 			pos.x += 1
+	var started_us := Time.get_ticks_usec()
 	_prepare_tool()
+	var prepared_us := Time.get_ticks_usec()
 	var coords_to_draw := _draw_tool(pos)
+	var coords_done_us := Time.get_ticks_usec()
 	for coord in coords_to_draw:
 		_set_pixel_no_cache(coord)
+	var painted_us := Time.get_ticks_usec()
+	_profile_steps += 1
+	_profile_prepare_us += prepared_us - started_us
+	_profile_coords_us += coords_done_us - prepared_us
+	_profile_paint_us += painted_us - coords_done_us
 	if project.has_selection:
 		project.selection_map.lock_selection_rect(project, false)
 
 
 func draw_end(pos: Vector2i) -> void:
+	var profile := Global.canvas.finish_brush_profile()
+	if _profile_steps > 0:
+		var steps := float(_profile_steps)
+		print(
+			"[Pixelorama描画計測] ", _profile_steps, "回 | ",
+			"ペン準備=", "%.2f" % (_profile_prepare_us / steps / 1000.0),
+			"ms/回, 座標計算=", "%.2f" % (_profile_coords_us / steps / 1000.0),
+			"ms/回, ピクセル処理=", "%.2f" % (_profile_paint_us / steps / 1000.0),
+			"ms/回, 画像更新=", "%.2f" % (
+				float(profile.texture_us) / maxf(1.0, float(profile.texture_calls)) / 1000.0
+			),
+			"ms/回 (", profile.texture_calls, "回), 合成準備=", "%.2f" % (
+				float(profile.layers_us) / maxf(1.0, float(profile.layers_calls)) / 1000.0
+			),
+			"ms/回 (", profile.layers_calls, "回)"
+		)
 	super.draw_end(pos)
 	_stroke_project = null
 	_stroke_images = {}
@@ -467,7 +505,9 @@ func draw_fill_gap(start: Vector2i, end: Vector2i) -> void:
 		if int(_stroke_dimensions.x) % 2 == 0:
 			start.x += 1
 			end.x += 1
+	var started_us := Time.get_ticks_usec()
 	_prepare_tool()
+	var prepared_us := Time.get_ticks_usec()
 	var pixel_coords := Geometry2D.bresenham_line(start, end)
 	pixel_coords.pop_front()
 	if project.get_current_cel() is Cel3D:
@@ -479,8 +519,14 @@ func draw_fill_gap(start: Vector2i, end: Vector2i) -> void:
 				return
 			pixel_coords[i] = Vector2i(draw_pos)
 	var coords_to_draw := get_coords_to_draw(pixel_coords)
+	var coords_done_us := Time.get_ticks_usec()
 	for c in coords_to_draw:
 		_set_pixel_no_cache(c)
+	var painted_us := Time.get_ticks_usec()
+	_profile_steps += 1
+	_profile_prepare_us += prepared_us - started_us
+	_profile_coords_us += coords_done_us - prepared_us
+	_profile_paint_us += painted_us - coords_done_us
 	if project.has_selection:
 		project.selection_map.lock_selection_rect(project, false)
 
