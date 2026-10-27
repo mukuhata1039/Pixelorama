@@ -78,38 +78,62 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		_brush_size_drag_captured_left_mouse = false
 		# A release event may be lost when the window loses focus.
-		if _quick_right_color_picker_active:
-			if Tools.active_button == MOUSE_BUTTON_RIGHT:
-				var picker := Tools.get_tool(MOUSE_BUTTON_RIGHT).tool_node
-				if is_instance_valid(picker):
-					picker.draw_end(Vector2i(current_pixel.floor()))
-				Tools.active_button = -1
-			Tools.quick_assign_tool_revert(MOUSE_BUTTON_RIGHT)
-			_quick_right_color_picker_active = false
+		_quick_right_color_picker_active = false
 
 
-## Quick shortcuts normally switch tools in ToolButtons._unhandled_input,
-## after the canvas receives a mouse press. When the shortcut IS the right
-## mouse button, the original right tool would act before the eyedropper
-## becomes active. Handle that explicit binding at the canvas press instead.
+## Mouse actions are routed to the original drawing tool before quick tool
+## swaps happen in ToolButtons._unhandled_input. Query the actual user binding,
+## rather than assuming an InputEvent action resolves in that exact order.
+func _quick_picker_matches_right_mouse(event: InputEventMouseButton) -> bool:
+	for shortcut_event in InputMap.action_get_events(&"quick_colorpicker_tool"):
+		if not shortcut_event is InputEventMouseButton:
+			continue
+		if (
+			shortcut_event.button_index == MOUSE_BUTTON_RIGHT
+			and shortcut_event.alt_pressed == event.alt_pressed
+			and shortcut_event.shift_pressed == event.shift_pressed
+			and shortcut_event.ctrl_pressed == event.ctrl_pressed
+			and shortcut_event.meta_pressed == event.meta_pressed
+		):
+			return true
+	return false
+
+
+## Read the actual cel pixels, never the color shown by the cursor preview.
+## This avoids swapping tools in the middle of an InputEvent.
+func _sample_quick_right_color(pixel: Vector2i) -> void:
+	if Global.mirror_view:
+		pixel.x = Global.current_project.size.x - pixel.x - 1
+	var color_picker_script := preload("res://src/Tools/UtilityTools/ColorPicker.gd")
+	var sampled: Dictionary = color_picker_script.sample_top_color(pixel)
+	Tools.assign_color(sampled["color"], MOUSE_BUTTON_LEFT, false, sampled["index"])
+
+
 func _handle_quick_right_color_picker(event: InputEvent) -> bool:
+	if event is InputEventMouseMotion and _quick_right_color_picker_active:
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+			_quick_right_color_picker_active = false
+			return false
+		if Global.can_draw:
+			var pixel := Vector2i(get_local_mouse_position().floor())
+			if Rect2i(Vector2i.ZERO, Global.current_project.size).has_point(pixel):
+				_sample_quick_right_color(pixel)
+		return true
+
 	if not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_RIGHT:
 		return false
 
 	if _quick_right_color_picker_active and not event.pressed:
-		# Finish the sampling gesture before restoring the original right tool.
-		if Tools.active_button == MOUSE_BUTTON_RIGHT:
-			Tools.handle_draw(Vector2i(get_local_mouse_position().floor()), event)
-		Tools.quick_assign_tool_revert(MOUSE_BUTTON_RIGHT)
 		_quick_right_color_picker_active = false
 		get_viewport().set_input_as_handled()
 		return true
 
 	if (
 		not event.pressed
-		or not event.is_action_pressed(&"quick_colorpicker_tool", false, true)
+		or not _quick_picker_matches_right_mouse(event)
 		or not Global.can_draw
 		or Tools.active_button != -1
+		or Tools.is_placing_tiles()
 	):
 		return false
 
@@ -117,19 +141,10 @@ func _handle_quick_right_color_picker(event: InputEvent) -> bool:
 	if not Rect2i(Vector2i.ZERO, Global.current_project.size).has_point(pixel):
 		return false
 
-	# Switch only the right-hand tool, not the left brush. Use the existing
-	# ColorPicker tool so sampling obeys its modes and the drawing-color lock.
-	Tools.quick_assign_tool("ColorPicker", MOUSE_BUTTON_RIGHT)
-	var picker := Tools.get_tool(MOUSE_BUTTON_RIGHT).tool_node
-	var config: Dictionary = picker.get_config()
-	config["color_slot"] = 0  # Always pick into the left (drawing) color.
-	picker.set_config(config)
-	picker.update_config()
 	_quick_right_color_picker_active = true
-	Tools.handle_draw(pixel, event)
+	_sample_quick_right_color(pixel)
 	get_viewport().set_input_as_handled()
 	return true
-
 
 func _input(event: InputEvent) -> void:
 	if _handle_quick_right_color_picker(event):
