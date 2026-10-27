@@ -41,6 +41,7 @@ var _profile_prepare_us := 0
 var _profile_coords_us := 0
 var _profile_paint_us := 0
 var _profile_native_steps := 0
+var _profile_native_skip_reason := ""
 var _native_brush_rows: Dictionary[int, Vector2i] = {}
 var _native_brush_size := -1
 var _native_brush_type := -1
@@ -344,6 +345,7 @@ func draw_start(pos: Vector2i) -> void:
 	_profile_coords_us = 0
 	_profile_paint_us = 0
 	_profile_native_steps = 0
+	_profile_native_skip_reason = ""
 	Global.canvas.begin_brush_profile()
 
 
@@ -385,7 +387,8 @@ func draw_end(pos: Vector2i) -> void:
 		var steps := float(_profile_steps)
 		print(
 			"[Pixelorama描画計測] ", _profile_steps, "回 (高速=", _profile_native_steps,
-			", ブラシ=", _brush.type, ", サイズ=", _brush_size_dynamics, ") | ",
+			", ブラシ=", _brush.type, ", サイズ=", _brush_size_dynamics,
+			", 高速対象外=", _profile_native_skip_reason, ") | ",
 			"ペン準備=", "%.2f" % (_profile_prepare_us / steps / 1000.0),
 			"ms/回, 座標計算=", "%.2f" % (_profile_coords_us / steps / 1000.0),
 			"ms/回, ピクセル処理=", "%.2f" % (_profile_paint_us / steps / 1000.0),
@@ -555,35 +558,62 @@ func draw_fill_gap(start: Vector2i, end: Vector2i) -> void:
 ## Only the unmasked, fully opaque pencil can paint many pixels as solid rectangles.
 ## Special blending, selections, indexed colors, symmetry etc. use the original path.
 func _can_use_native_brush() -> bool:
+	var reason := _native_brush_skip_reason()
+	if reason != "":
+		if _profile_native_skip_reason == "":
+			_profile_native_skip_reason = reason
+		return false
+	return true
+
+
+## Keep the reasons visible in the diagnostics so disabled fast paths are debuggable.
+func _native_brush_skip_reason() -> String:
+	if _brush.type not in [Brushes.PIXEL, Brushes.FILLED_CIRCLE]:
+		return "ペン種類"
+	if _brush_size_dynamics < 12:
+		return "サイズ"
+	if _spacing_mode:
+		return "間隔モード"
+	if _brush_density != 100:
+		return "密度"
+	if _is_eraser:
+		return "消しゴム"
+	if not _is_mask_size_zero:
+		return "透明度マスク"
+	if _drawer.color_op.get("overwrite") == null:
+		return "ペン以外のツール"
+	if not is_equal_approx(_drawer.color_op.strength, 1.0):
+		return "不透明度設定"
+	if not is_equal_approx(tool_slot.color.a, 1.0):
+		return "色の透明度"
+	if Tools.alpha_locked:
+		return "アルファロック"
+	# Pixel Perfect affects drawing only for 1px pencils; large pencils
+	# already have it disabled in _prepare_tool().
+	if _drawer.pixel_perfect:
+		return "ピクセルパーフェクト"
 	if (
-		_brush.type not in [Brushes.PIXEL, Brushes.FILLED_CIRCLE]
-		or _brush_size_dynamics < 12
-		or _spacing_mode
-		or _brush_density != 100
-		or _is_eraser
-		or not _is_mask_size_zero
-		or _drawer.color_op.get("overwrite") == null
-		or not is_equal_approx(_drawer.color_op.strength, 1.0)
-		or not is_equal_approx(tool_slot.color.a, 1.0)
-		or Tools.alpha_locked
-		or Tools.pixel_perfect
-		or Tools.horizontal_mirror
+		Tools.horizontal_mirror
 		or Tools.vertical_mirror
 		or Tools.diagonal_xy_mirror
 		or Tools.diagonal_x_minus_y_mirror
 		or Global.mirror_view
-		or _stroke_project.has_selection
-		or _stroke_project.tiles.mode != Tiles.MODE.NONE
-		or _stroke_images.is_empty()
 	):
-		return false
+		return "反転・対称"
+	if _stroke_project.has_selection:
+		return "選択範囲"
+	if _stroke_project.tiles.mode != Tiles.MODE.NONE:
+		return "タイルモード"
+	if _stroke_images.is_empty():
+		return "描画先なし"
 	for image in _stroke_images:
-		if image is not ImageExtended or (image as ImageExtended).is_indexed:
-			return false
+		if image is not ImageExtended:
+			return "画像形式"
+		if (image as ImageExtended).is_indexed:
+			return "インデックスカラー"
 		if _stroke_images[image] is not PixelCel:
-			return false
-	return true
-
+			return "レイヤー種類"
+	return ""
 
 ## Convert the brush footprint to horizontal runs only when the brush changes.
 func _get_native_brush_rows() -> Dictionary[int, Vector2i]:
