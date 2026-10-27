@@ -14,6 +14,9 @@ var color_op := ColorOp.new()
 var simple_drawer := SimpleDrawer.new()
 var pixel_perfect_drawers: Array[PixelPerfectDrawer] = []
 var drawers := []
+var _last_input_color := Color.TRANSPARENT
+var _normalized_color := Color.TRANSPARENT
+var _has_normalized_color := false
 
 
 class ColorOp:
@@ -32,8 +35,7 @@ class ColorOp:
 class SimpleDrawer:
 	func set_pixel(image: ImageExtended, position: Vector2i, color: Color, op: ColorOp) -> void:
 		var color_old := image.get_pixelv(position)
-		var color_str := color.to_html()
-		var color_new := op.process(Color(color_str), color_old)
+		var color_new := op.process(color, color_old)
 		if not color_new.is_equal_approx(color_old):
 			image.set_pixelv_custom(position, color_new)
 		else:
@@ -50,9 +52,8 @@ class PixelPerfectDrawer:
 
 	func set_pixel(image: ImageExtended, position: Vector2i, color: Color, op: ColorOp) -> void:
 		var color_old := image.get_pixelv(position)
-		var color_str := color.to_html()
 		last_pixels.push_back([position, color_old])
-		image.set_pixelv_custom(position, op.process(Color(color_str), color_old))
+		image.set_pixelv_custom(position, op.process(color, color_old))
 
 		var corner = last_pixels.pop_front()
 		var neighbour = last_pixels[0]
@@ -87,4 +88,10 @@ func reset() -> void:
 
 func set_pixel(image: Image, position: Vector2i, color: Color) -> void:
 	if not Tools.check_alpha_lock(image, position):
-		drawers[0].set_pixel(image, position, color, color_op)
+		# Preserve the previous 8-bit color conversion, but do it once per
+		# input color instead of thousands of times for a large brush.
+		if not _has_normalized_color or color != _last_input_color:
+			_last_input_color = color
+			_normalized_color = Color(color.to_html())
+			_has_normalized_color = true
+		drawers[0].set_pixel(image, position, _normalized_color, color_op)
