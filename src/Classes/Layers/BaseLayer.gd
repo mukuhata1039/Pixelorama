@@ -375,7 +375,7 @@ func serialize() -> Dictionary:
 		"clipping_mask": clipping_mask,
 		"opacity": opacity,
 		"drawing_color_locked": drawing_color_locked,
-		"drawing_color": drawing_color,
+		"drawing_color": "#" + drawing_color.to_html(true),
 		"ui_color": ui_color,
 		"parent": parent.index if is_instance_valid(parent) else -1,
 		"effects": effect_data,
@@ -407,7 +407,11 @@ func deserialize(dict: Dictionary) -> void:
 	if stored_drawing_color is Color:
 		drawing_color = stored_drawing_color
 	elif stored_drawing_color is String:
-		drawing_color = Color(stored_drawing_color)
+		var encoded := stored_drawing_color as String
+		if encoded.begins_with("("):  # Legacy variant-string encoding
+			drawing_color = str_to_var("Color" + encoded)
+		else:
+			drawing_color = Color(encoded)
 	drawing_color_locked = dict.get("drawing_color_locked", false)
 	user_data = dict.get("user_data", user_data)
 	if dict.has("ui_color"):
