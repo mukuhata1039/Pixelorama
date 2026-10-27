@@ -337,11 +337,62 @@ func draw_tool(pos: Vector2i) -> void:
 		if int(_stroke_dimensions.x) % 2 == 0:
 			pos.x += 1
 	_prepare_tool()
-	var coords_to_draw := _draw_tool(pos)
-	for coord in coords_to_draw:
-		_set_pixel_no_cache(coord)
+	if _can_use_fast_square_brush():
+		_fill_fast_square_brush(pos)
+	else:
+		var coords_to_draw := _draw_tool(pos)
+		for coord in coords_to_draw:
+			_set_pixel_no_cache(coord)
 	if project.has_selection:
 		project.selection_map.lock_selection_rect(project, false)
+
+
+## The basic, fully opaque square pencil doesn't need 3,600 GDScript
+## pixel operations at size 60. Keep all special modes on the original path.
+func _can_use_fast_square_brush() -> bool:
+	if (
+		_brush.type != Brushes.PIXEL
+		or _spacing_mode
+		or _brush_density != 100
+		or _is_mask_size_zero == false
+		or _is_eraser
+		or not is_equal_approx(_drawer.color_op.strength, 1.0)
+		or not is_equal_approx(tool_slot.color.a, 1.0)
+		or Tools.alpha_locked
+		or Tools.pixel_perfect
+		or Tools.horizontal_mirror
+		or Tools.vertical_mirror
+		or Tools.diagonal_xy_mirror
+		or Tools.diagonal_x_minus_y_mirror
+		or Global.mirror_view
+		or _stroke_project.has_selection
+		or _stroke_project.tiles.mode != Tiles.MODE.NONE
+		or not _stroke_project.layers[_stroke_project.current_layer].can_layer_get_drawn()
+		or _stroke_images.is_empty()
+	):
+		return false
+	for image in _stroke_images:
+		if image is not ImageExtended or (image as ImageExtended).is_indexed:
+			return false
+		if _stroke_images[image] is not PixelCel:
+			return false
+	return true
+
+
+func _fill_fast_square_brush(pos: Vector2i) -> void:
+	var size := Vector2i(_brush_size_dynamics, _brush_size_dynamics)
+	var start := pos - Vector2i.ONE * (_brush_size_dynamics >> 1)
+	var area := Rect2i(start, size).intersection(
+		Rect2i(Vector2i.ZERO, _stroke_project.size)
+	)
+	if not area.has_area():
+		return
+	# The regular Drawer normalizes brush colors to 8-bit RGBA.
+	var brush_color := Color(tool_slot.color.to_html())
+	for image in _stroke_images:
+		var cel := _stroke_images[image] as PixelCel
+		cel.ensure_canvas_rect_in_bounds(area.position, area.size)
+		image.fill_rect(Rect2i(area.position - cel.offset, area.size), brush_color)
 
 
 func draw_end(pos: Vector2i) -> void:
@@ -478,9 +529,13 @@ func draw_fill_gap(start: Vector2i, end: Vector2i) -> void:
 			if draw_pos == Vector2.INF:
 				return
 			pixel_coords[i] = Vector2i(draw_pos)
-	var coords_to_draw := get_coords_to_draw(pixel_coords)
-	for c in coords_to_draw:
-		_set_pixel_no_cache(c)
+	if _can_use_fast_square_brush():
+		for point in pixel_coords:
+			_fill_fast_square_brush(point)
+	else:
+		var coords_to_draw := get_coords_to_draw(pixel_coords)
+		for c in coords_to_draw:
+			_set_pixel_no_cache(c)
 	if project.has_selection:
 		project.selection_map.lock_selection_rect(project, false)
 
