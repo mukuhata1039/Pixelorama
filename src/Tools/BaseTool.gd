@@ -420,10 +420,18 @@ func _get_selected_draw_cels(include_all_layers := true) -> Array[BaseCel]:
 	var cels: Array[BaseCel]
 	var project := Global.current_project
 	for cel_index in project.selected_cels:
-		if not include_all_layers:
-			var layer := project.layers[cel_index[1]]
-			if not layer.can_layer_get_drawn():
-				continue
+		var layer := project.layers[cel_index[1]]
+		if not include_all_layers and not layer.can_layer_get_drawn():
+			continue
+		# With multiple selected layers, never paint a different opaque RGBA
+		# into a layer whose drawing color is fixed. Transparent erasing is OK.
+		if (
+			not include_all_layers
+			and layer.drawing_color_locked
+			and tool_slot.color.a > 0.0
+			and tool_slot.color != layer.drawing_color
+		):
+			continue
 		var cel: BaseCel = project.frames[cel_index[0]].cels[cel_index[1]]
 		if not cel is PixelCel:
 			continue

@@ -19,8 +19,14 @@ var drawers := []
 class ColorOp:
 	var strength := 1.0
 
-	func process(src: Color, _dst: Color) -> Color:
-		return src
+	## Fully transparent paint clears pixels. Partial opacity is composited
+	## over existing pixels instead of replacing their RGBA outright.
+	func process(src: Color, dst: Color) -> Color:
+		if is_zero_approx(src.a):
+			# Global alpha lock must still prevent deleting pixels.
+			return dst if Tools.alpha_locked else Color.TRANSPARENT
+		src.a *= strength
+		return dst.blend(src)
 
 
 class SimpleDrawer:

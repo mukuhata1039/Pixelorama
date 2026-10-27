@@ -9,6 +9,7 @@ signal locked_changed  ## Emits when [member locked] is changed.
 signal effect_added(effect: LayerEffect)  ## Emits when an effect is added to [member effects].
 signal effect_removed(effect: LayerEffect)  ## Emits when an effect is removed from [member effects]
 signal ui_color_changed  ## Emits when [member ui_color] is changed.
+signal drawing_color_lock_changed  ## A layer's allowed drawing color or lock has changed.
 
 ## All currently supported layer blend modes between two layers. The upper layer
 ## is the blend layer, and the bottom layer is the base layer.
@@ -63,6 +64,15 @@ var ignore_onion := false  ## Determines if the layer is visible in onion skinni
 var blend_mode := BlendModes.NORMAL  ## Blend mode of the current layer.
 var clipping_mask := false  ## If [code]true[/code], the layer acts as a clipping mask.
 var opacity := 1.0  ## The opacity of the layer, affects all frames that belong to that layer.
+## Aseprite-inspired restriction: this includes the exact alpha of the paint color.
+var drawing_color_locked := false:
+	set(value):
+		drawing_color_locked = value
+		drawing_color_lock_changed.emit()
+var drawing_color := Color.BLACK:
+	set(value):
+		drawing_color = value
+		drawing_color_lock_changed.emit()
 var cel_link_sets: Array[Dictionary] = []  ## Each Dictionary represents a cel's "link set"
 var effects: Array[LayerEffect]  ## An array for non-destructive effects of the layer.
 var effects_enabled := true  ## If [code]true[/code], the effects are being applied.
@@ -364,6 +374,8 @@ func serialize() -> Dictionary:
 		"blend_mode": blend_mode,
 		"clipping_mask": clipping_mask,
 		"opacity": opacity,
+		"drawing_color_locked": drawing_color_locked,
+		"drawing_color": "#" + drawing_color.to_html(true),
 		"ui_color": ui_color,
 		"parent": parent.index if is_instance_valid(parent) else -1,
 		"effects": effect_data,
@@ -391,6 +403,16 @@ func deserialize(dict: Dictionary) -> void:
 	blend_mode = dict.get("blend_mode", BlendModes.NORMAL)
 	clipping_mask = dict.get("clipping_mask", false)
 	opacity = dict.get("opacity", 1.0)
+	var stored_drawing_color = dict.get("drawing_color", Color.BLACK)
+	if stored_drawing_color is Color:
+		drawing_color = stored_drawing_color
+	elif stored_drawing_color is String:
+		var encoded := stored_drawing_color as String
+		if encoded.begins_with("("):  # Legacy variant-string encoding
+			drawing_color = str_to_var("Color" + encoded)
+		else:
+			drawing_color = Color(encoded)
+	drawing_color_locked = dict.get("drawing_color_locked", false)
 	user_data = dict.get("user_data", user_data)
 	if dict.has("ui_color"):
 		var tmp_ui_color = dict.ui_color

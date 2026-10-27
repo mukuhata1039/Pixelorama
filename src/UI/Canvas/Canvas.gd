@@ -6,6 +6,8 @@ const CURSOR_SPEED_RATE := 6.0
 var current_pixel := Vector2.ZERO
 var _quick_navigation_captured_left_mouse := false
 var _brush_size_drag_captured_left_mouse := false
+## One-click sampling when Quick Color Picker is explicitly bound to right mouse.
+var _quick_right_color_picker_active := false
 var sprite_changed_this_frame := false  ## For optimization purposes
 var update_all_layers := false
 ## For optimization purposes. A kind of override to force include a layer during canvas update.
@@ -75,9 +77,96 @@ func _draw() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		_brush_size_drag_captured_left_mouse = false
+		# A release event may be lost when the window loses focus.
+		_quick_right_color_picker_active = false
 
+
+## Mouse actions are routed to the original drawing tool before quick tool
+## swaps happen in ToolButtons._unhandled_input. Query the actual user binding,
+## rather than assuming an InputEvent action resolves in that exact order.
+func _quick_picker_matches_right_mouse(event: InputEventMouseButton) -> bool:
+	for shortcut_event in InputMap.action_get_events(&"quick_colorpicker_tool"):
+		if not shortcut_event is InputEventMouseButton:
+			continue
+		var binding := shortcut_event as InputEventMouseButton
+		if (
+			binding.button_index == MOUSE_BUTTON_RIGHT
+			and binding.alt_pressed == event.alt_pressed
+			and binding.shift_pressed == event.shift_pressed
+			and binding.ctrl_pressed == event.ctrl_pressed
+			and binding.meta_pressed == event.meta_pressed
+		):
+			return true
+	return false
+
+
+## Read the actual cel pixels, never the color shown by the cursor preview.
+## This avoids swapping tools in the middle of an InputEvent.
+func _sample_quick_right_color(pixel: Vector2i) -> void:
+	if Global.mirror_view:
+		pixel.x = Global.current_project.size.x - pixel.x - 1
+	var color_picker_script := preload("res://src/Tools/UtilityTools/ColorPicker.gd")
+	var sampled: Dictionary = color_picker_script.sample_top_color(pixel)
+	Tools.assign_color(sampled["color"], MOUSE_BUTTON_LEFT, false, sampled["index"])
+
+
+func _handle_quick_right_color_picker(event: InputEvent) -> bool:
+	if event is InputEventMouseMotion and _quick_right_color_picker_active:
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+			_quick_right_color_picker_active = false
+			return false
+		if Global.can_draw:
+			var pixel := Vector2i(get_local_mouse_position().floor())
+			if Rect2i(Vector2i.ZERO, Global.current_project.size).has_point(pixel):
+				_sample_quick_right_color(pixel)
+		return true
+
+	if not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_RIGHT:
+		return false
+
+	if _quick_right_color_picker_active and not event.pressed:
+		_quick_right_color_picker_active = false
+		get_viewport().set_input_as_handled()
+		return true
+
+	if (
+		not event.pressed
+		or not _quick_picker_matches_right_mouse(event)
+		or not Global.can_draw
+		or Tools.active_button != -1
+		or Tools.is_placing_tiles()
+	):
+		return false
+
+	var pixel := Vector2i(get_local_mouse_position().floor())
+	if not Rect2i(Vector2i.ZERO, Global.current_project.size).has_point(pixel):
+		return false
+
+	_quick_right_color_picker_active = true
+	_sample_quick_right_color(pixel)
+	get_viewport().set_input_as_handled()
+	return true
 
 func _input(event: InputEvent) -> void:
+	# Do not paint while the user holds the configured rotation key
+	# chord or starts a rotation with a bound mouse button. Captured
+	# rotation drags remain blocked even if their modifier is released.
+	if (
+		(is_instance_valid(Global.camera) and Global.camera._clipstudio_rotate_drag)
+		or (
+			Tools.active_button == -1
+			and (
+				Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+				or (
+					event is InputEventMouseButton
+					and event.is_action_pressed(&"canvas_rotate_drag", false, true)
+				)
+			)
+		)
+	):
+		return
+	if _handle_quick_right_color_picker(event):
+		return
 	# Capture brush resizing at the initial left press. Keep consuming the
 	# drag until mouse-up even if the shortcut is released halfway through,
 	# otherwise the remaining drag could paint on the canvas.

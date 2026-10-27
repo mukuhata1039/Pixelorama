@@ -1032,6 +1032,18 @@ func _initialize_keychain() -> void:
 		&"zoom_out": Keychain.InputAction.new("", "Canvas"),
 		&"rotate_left": Keychain.InputAction.new("", "Canvas"),
 		&"rotate_right": Keychain.InputAction.new("", "Canvas"),
+		&"canvas_rotate_drag": Keychain.InputAction.new(
+			"Rotate canvas (hold + drag)", "Canvas", false
+		),
+		&"canvas_rotate_step_left": Keychain.InputAction.new(
+			"Rotate canvas left 5 degrees", "Canvas", false
+		),
+		&"canvas_rotate_step_right": Keychain.InputAction.new(
+			"Rotate canvas right 5 degrees", "Canvas", false
+		),
+		&"canvas_rotate_reset": Keychain.InputAction.new(
+			"Reset canvas rotation and mirror", "Canvas", false
+		),
 		&"camera_left": Keychain.InputAction.new("", "Canvas"),
 		&"camera_right": Keychain.InputAction.new("", "Canvas"),
 		&"camera_up": Keychain.InputAction.new("", "Canvas"),

@@ -65,6 +65,33 @@ func draw_end(pos: Vector2i) -> void:
 	super.draw_end(pos)
 
 
+## Get the topmost visible pixel color without using the brush preview or
+## activating a temporary tool. Used by the color-picker tool and right-click
+## quick sampling alike.
+static func sample_top_color(pos: Vector2i) -> Dictionary:
+	var project := Global.current_project
+	pos = project.tiles.get_canon_position(pos)
+	if pos.x < 0 or pos.y < 0 or pos.x >= project.size.x or pos.y >= project.size.y:
+		return {"color": Color.TRANSPARENT, "index": -1}
+	var frame := project.frames[project.current_frame]
+	for layer_index in range(project.layers.size() - 1, -1, -1):
+		if not project.layers[layer_index].is_visible_in_hierarchy():
+			continue
+		var cel := frame.cels[layer_index]
+		var image := cel.get_image()
+		var sample_pos := pos - cel.offset
+		if not Rect2i(Vector2i.ZERO, image.get_size()).has_point(sample_pos):
+			continue
+		var sampled_color := image.get_pixelv(sample_pos)
+		if is_zero_approx(sampled_color.a):
+			continue
+		var palette_index := -1
+		if cel is PixelCel and image is ImageExtended and image.is_indexed:
+			palette_index = image.indices_image.get_pixelv(sample_pos).r8 - 1
+		return {"color": sampled_color, "index": palette_index}
+	return {"color": Color.TRANSPARENT, "index": -1}
+
+
 func _pick_color(pos: Vector2i) -> void:
 	var project := Global.current_project
 	pos = project.tiles.get_canon_position(pos)
@@ -80,30 +107,9 @@ func _pick_color(pos: Vector2i) -> void:
 	var palette_index := -1
 	match _mode:
 		TOP_COLOR:
-			var curr_frame := project.frames[project.current_frame]
-			for layer in project.layers.size():
-				var idx := (project.layers.size() - 1) - layer
-				if project.layers[idx].is_visible_in_hierarchy():
-					var cel := curr_frame.cels[idx]
-					if cel.get_image() is ImageExtended:
-						image = cel.get_image()
-					else:
-						image = ImageExtended.create_from_image(
-							cel.get_image(), project.is_indexed()
-						)
-					var final_pos := pos
-					final_pos -= cel.offset
-					if not image.pos_inside_image(final_pos):
-						continue
-					color = image.get_pixelv(final_pos)
-					# If image is indexed then get index as well
-					if cel is PixelCel:
-						if image.is_indexed:
-							palette_index = (
-								image.indices_image.get_pixel(final_pos.x, final_pos.y).r8 - 1
-							)
-					if not is_zero_approx(color.a):
-						break
+			var sampled := sample_top_color(pos)
+			color = sampled["color"]
+			palette_index = sampled["index"]
 		CURRENT_LAYER:
 			var current_cel := project.get_current_cel()
 			pos -= current_cel.offset

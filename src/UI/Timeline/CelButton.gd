@@ -24,6 +24,7 @@ func _ready() -> void:
 	Themes.theme_switched.connect(cel_switched.bind(true))
 	cel = Global.current_project.frames[frame].cels[layer]
 	button_setup()
+	apply_compact_layout(Global.animation_timeline.compact_timeline)
 	_dim_checker()
 	cel.texture_changed.connect(_dim_checker)
 	z_index_indicator.visible = cel.z_index != 0
@@ -52,6 +53,23 @@ func _ready() -> void:
 		_set_menu_shortcut(&"clone_cel", popup_menu, "Clone Cel", MenuOptions.CLONE_CEL, true)
 	elif cel is GroupCel:
 		transparent_checker.visible = false
+
+
+## Shrink only the timeline thumbnail and badges; keep the cel's contents intact.
+func apply_compact_layout(enabled: bool) -> void:
+	var padding := 2.0 if enabled else 6.0
+	cel_texture.offset_left = padding
+	cel_texture.offset_top = padding
+	cel_texture.offset_right = -padding
+	cel_texture.offset_bottom = -padding
+	var linked_half_height := 6.0 if enabled else 8.0
+	linked_rect.custom_minimum_size.y = linked_half_height * 2
+	linked_rect.offset_top = -linked_half_height
+	linked_rect.offset_bottom = linked_half_height
+	z_index_indicator.offset_left = -12.0 if enabled else -18.0
+	z_index_indicator.offset_top = -12.0 if enabled else -18.0
+	z_index_indicator.offset_right = -2.0 if enabled else -3.0
+	z_index_indicator.offset_bottom = -2.0 if enabled else -3.0
 
 
 func _unhandled_input(event: InputEvent) -> void:

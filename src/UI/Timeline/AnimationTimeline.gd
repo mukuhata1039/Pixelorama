@@ -17,6 +17,7 @@ const ANIMATION_TAG_TSCN := preload("res://src/UI/Timeline/AnimationTagUI.tscn")
 ## Do not let [member min_cel_size] go below 22, as this is the size of the layer icons.
 const CEL_MIN_SIZE_HARD_LIMIT := 22
 const CEL_MIN_SIZE_OFFSET := 15
+const COMPACT_CEL_SIZE := 20
 
 var is_animation_running := false
 var animation_loop := LoopType.CYCLE
@@ -28,9 +29,13 @@ var last_frame := 0
 var is_mouse_hover := false
 var cel_size := 36:
 	set = _cel_size_changed
+var compact_timeline := false
+var normal_cel_size := 36
+var _changing_compact_mode := false
 var min_cel_size := 36:
 	set(value):
-		min_cel_size = clampi(value, CEL_MIN_SIZE_HARD_LIMIT, max_cel_size)
+		var lower_limit := COMPACT_CEL_SIZE if compact_timeline else CEL_MIN_SIZE_HARD_LIMIT
+		min_cel_size = clampi(value, lower_limit, max_cel_size)
 		if is_instance_valid(cel_size_slider):
 			cel_size_slider.min_value = min_cel_size
 var max_cel_size := 144
@@ -89,6 +94,11 @@ func _ready() -> void:
 	min_cel_size = get_tree().current_scene.theme.default_font_size + CEL_MIN_SIZE_OFFSET
 	cel_size_slider.max_value = max_cel_size
 	cel_size = loaded_cel_size
+	normal_cel_size = cel_size
+	var compact_enabled: bool = Global.config_cache.get_value("timeline", "compact", false)
+	%CompactTimeline.set_pressed_no_signal(compact_enabled)
+	if compact_enabled:
+		_on_compact_timeline_toggled(true)
 	add_layer_list.get_popup().id_pressed.connect(on_add_layer_list_id_pressed)
 	frame_scroll_bar.value_changed.connect(_frame_scroll_changed)
 	animation_timer.wait_time = 1 / Global.current_project.fps
@@ -141,7 +151,11 @@ func _notification(what: int) -> void:
 		drag_highlight.hide()
 	elif what == NOTIFICATION_THEME_CHANGED or what == NOTIFICATION_TRANSLATION_CHANGED:
 		await get_tree().process_frame
-		min_cel_size = get_tree().current_scene.theme.default_font_size + CEL_MIN_SIZE_OFFSET
+		min_cel_size = (
+			COMPACT_CEL_SIZE
+			if compact_timeline
+			else get_tree().current_scene.theme.default_font_size + CEL_MIN_SIZE_OFFSET
+		)
 		if is_instance_valid(layer_settings_container):
 			layer_container.custom_minimum_size.x = layer_settings_container.size.x + 12
 			layer_header_container.custom_minimum_size.x = layer_container.custom_minimum_size.x
@@ -247,7 +261,7 @@ func _input(event: InputEvent) -> void:
 	var mouse_pos := get_global_mouse_position()
 	var timeline_rect := Rect2(global_position, size)
 	if timeline_rect.has_point(mouse_pos):
-		if Input.is_key_pressed(KEY_CTRL):
+		if Input.is_key_pressed(KEY_CTRL) and not compact_timeline:
 			var zoom := 2 * int(event.is_action("zoom_in")) - 2 * int(event.is_action("zoom_out"))
 			cel_size += zoom
 			if zoom != 0:
@@ -255,6 +269,8 @@ func _input(event: InputEvent) -> void:
 
 
 func reset_settings() -> void:
+	%CompactTimeline.set_pressed_no_signal(false)
+	_on_compact_timeline_toggled(false)
 	cel_size = 36
 	%OnionSkinningOpacity.value = 60.0
 	%PastOnionSkinning.value = 1
@@ -310,12 +326,17 @@ func _on_LayerFrameSplitContainer_gui_input(event: InputEvent) -> void:
 
 
 func _cel_size_changed(value: int) -> void:
-	if cel_size == value:
+	if compact_timeline and value != COMPACT_CEL_SIZE:
 		return
-	cel_size = clampi(value, min_cel_size, max_cel_size)
+	var next_size := clampi(value, min_cel_size, max_cel_size)
+	if cel_size == next_size:
+		return
+	cel_size = next_size
 	cel_size_slider.value = cel_size
 	update_minimum_size()
-	Global.config_cache.set_value("timeline", "cel_size", cel_size)
+	if not compact_timeline:
+		normal_cel_size = cel_size
+		Global.config_cache.set_value("timeline", "cel_size", cel_size)
 	for layer_button: Control in layer_vbox.get_children():
 		layer_button.custom_minimum_size.y = cel_size
 		layer_button.size.y = cel_size
@@ -332,6 +353,35 @@ func _cel_size_changed(value: int) -> void:
 
 	for tag_c: Control in tag_container.get_children():
 		tag_c.update_position_and_size()
+
+
+
+func _on_compact_timeline_toggled(enabled: bool) -> void:
+	if compact_timeline == enabled:
+		return
+	_changing_compact_mode = true
+	if enabled:
+		normal_cel_size = cel_size
+	compact_timeline = enabled
+	min_cel_size = (
+		COMPACT_CEL_SIZE
+		if enabled
+		else get_tree().current_scene.theme.default_font_size + CEL_MIN_SIZE_OFFSET
+	)
+	# Remember the regular cell size separately so turning compact mode off
+	# restores the user's previous size instead of locking them at 20px.
+	cel_size = COMPACT_CEL_SIZE if enabled else normal_cel_size
+	cel_size_slider.editable = not enabled
+	cel_size_slider.modulate.a = 0.5 if enabled else 1.0
+	for layer_button in layer_vbox.get_children():
+		if layer_button is LayerButton:
+			layer_button.apply_compact_layout(enabled)
+	for cel_hbox in cel_vbox.get_children():
+		for cel_button in cel_hbox.get_children():
+			if cel_button is Button and cel_button.has_method("apply_compact_layout"):
+				cel_button.apply_compact_layout(enabled)
+	_changing_compact_mode = false
+	Global.config_cache.set_value("timeline", "compact", enabled)
 
 
 ## Fill the blend modes OptionButton with items
@@ -763,8 +813,9 @@ func _on_OnionSkinning_pressed() -> void:
 
 
 func _on_timeline_settings_button_pressed() -> void:
-	var pos := Vector2i(onion_skinning_button.global_position) - timeline_settings.size
-	timeline_settings.popup_on_parent(Rect2i(pos.x - 16, pos.y + 32, 136, 126))
+	var popup_size := timeline_settings.size
+	var pos := Vector2i(onion_skinning_button.global_position) - popup_size
+	timeline_settings.popup_on_parent(Rect2i(pos.x - 16, pos.y + 32, popup_size.x, popup_size.y))
 
 
 func _on_LoopAnim_pressed() -> void:
@@ -1726,7 +1777,8 @@ func project_cel_removed(frame: int, layer: int) -> void:
 
 
 func _on_cel_size_slider_value_changed(value: float) -> void:
-	cel_size = value
+	if not compact_timeline and not _changing_compact_mode:
+		cel_size = int(value)
 
 
 func _on_onion_skinning_opacity_value_changed(value: float) -> void:

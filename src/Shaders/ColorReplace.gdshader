@@ -40,7 +40,22 @@ void blit() {
 			}
 		}
 		else {
-			col = new_color;
+			if (new_color.a <= 0.0 || new_color.a >= 1.0) {
+				// Alpha 0 clears the color; alpha 1 replaces it.
+				col = new_color;
+			} else {
+				// Partial-alpha bucket fills build up over previous strokes,
+				// using the same source-over rule as the pencil.
+				float result_alpha = new_color.a + original_color.a * (1.0 - new_color.a);
+				vec3 result_rgb = vec3(0.0);
+				if (result_alpha > 0.0) {
+					result_rgb = (
+						new_color.rgb * new_color.a
+						+ original_color.rgb * original_color.a * (1.0 - new_color.a)
+					) / result_alpha;
+				}
+				col = vec4(result_rgb, result_alpha);
+			}
 		}
 
 	COLOR0 = mix(original_color, col, selection_color.a);

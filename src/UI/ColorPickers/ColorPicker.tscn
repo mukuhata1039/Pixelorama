@@ -16,7 +16,7 @@ shader_parameter/color1 = Color(0.7, 0.7, 0.7, 1)
 shader_parameter/color2 = Color(1, 1, 1, 1)
 shader_parameter/offset = Vector2(0, 0)
 shader_parameter/scale = Vector2(0, 0)
-shader_parameter/rect_size = Vector2(38, 28)
+shader_parameter/rect_size = Vector2(28, 22)
 shader_parameter/follow_movement = false
 shader_parameter/follow_scale = false
 
@@ -34,7 +34,7 @@ shader_parameter/color1 = Color(0.7, 0.7, 0.7, 1)
 shader_parameter/color2 = Color(1, 1, 1, 1)
 shader_parameter/offset = Vector2(0, 0)
 shader_parameter/scale = Vector2(0, 0)
-shader_parameter/rect_size = Vector2(38, 28)
+shader_parameter/rect_size = Vector2(28, 22)
 shader_parameter/follow_movement = false
 shader_parameter/follow_scale = false
 
@@ -57,26 +57,29 @@ action = &"reset_colors_default"
 events = [SubResource("InputEventAction_nptxe")]
 
 [node name="ColorPicker" type="PanelContainer" unique_id=1282553206]
-custom_minimum_size = Vector2(32, 80)
-offset_right = 312.0
-offset_bottom = 358.0
+custom_minimum_size = Vector2(146, 160)
+offset_right = 198.0
+offset_bottom = 350.0
 script = ExtResource("1_r8ot0")
 
 [node name="ScrollContainer" type="ScrollContainer" parent="." unique_id=1272804798]
 layout_mode = 2
+# SHOW_NEVER prevents the intrinsic Godot ColorPicker minimum width
+# from forcing its enclosing dock/split to stay wide.
+horizontal_scroll_mode = 3
 
 [node name="VerticalContainer" type="VBoxContainer" parent="ScrollContainer" unique_id=21774123]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-theme_override_constants/separation = -6
-alignment = 1
+theme_override_constants/separation = 2
+alignment = 0
 
 [node name="ColorPicker" type="ColorPicker" parent="ScrollContainer/VerticalContainer" unique_id=1179466016]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 3
+size_flags_vertical = 0
 theme_override_constants/sv_width = 32
 theme_override_constants/sv_height = 32
 can_add_swatches = false
@@ -89,10 +92,11 @@ presets_visible = false
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 0
+theme_override_constants/separation = 3
 alignment = 1
 
 [node name="LeftColorButton" type="Button" parent="ScrollContainer/VerticalContainer/ColorButtons" unique_id=1839496259]
-custom_minimum_size = Vector2(42, 32)
+custom_minimum_size = Vector2(32, 26)
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Choose a color for the left tool"
@@ -106,8 +110,8 @@ unique_name_in_owner = true
 layout_mode = 0
 offset_left = 2.0
 offset_top = 2.0
-offset_right = 40.0
-offset_bottom = 30.0
+offset_right = 30.0
+offset_bottom = 24.0
 mouse_filter = 2
 color = Color(0, 0, 0, 1)
 metadata/_edit_lock_ = true
@@ -132,7 +136,7 @@ shortcut = SubResource("19")
 texture_normal = ExtResource("2_ojj3i")
 
 [node name="RightColorButton" type="Button" parent="ScrollContainer/VerticalContainer/ColorButtons" unique_id=241127658]
-custom_minimum_size = Vector2(42, 32)
+custom_minimum_size = Vector2(32, 26)
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Choose a color for the right tool"
@@ -145,8 +149,8 @@ unique_name_in_owner = true
 layout_mode = 0
 offset_left = 2.0
 offset_top = 2.0
-offset_right = 40.0
-offset_bottom = 30.0
+offset_right = 30.0
+offset_bottom = 24.0
 mouse_filter = 2
 metadata/_edit_lock_ = true
 

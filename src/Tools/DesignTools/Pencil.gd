@@ -17,6 +17,11 @@ class PencilOp:
 
 	func process(src: Color, dst: Color) -> Color:
 		changed = true
+		# Match Aseprite's transparent drawing color: clear even without
+		# enabling the optional Overwrite setting. Semi-transparent colors
+		# still accumulate across separate pencil strokes.
+		if is_zero_approx(src.a):
+			return dst if Tools.alpha_locked else Color.TRANSPARENT
 		src.a *= strength
 		if overwrite:
 			return src
@@ -101,7 +106,7 @@ func draw_start(pos: Vector2i) -> void:
 	Global.transform_content_confirmed.emit()
 	prepare_undo()
 	var can_skip_mask := true
-	if tool_slot.color.a < 1 and !_overwrite:
+	if tool_slot.color.a < 1 and !_overwrite and not is_zero_approx(tool_slot.color.a):
 		can_skip_mask = false
 	update_mask(can_skip_mask)
 	_changed = false

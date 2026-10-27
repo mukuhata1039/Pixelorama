@@ -40,6 +40,11 @@ var mouse_pos := Vector2.ZERO
 var drag := false
 var _quick_navigation_drag := false
 var _quick_zoom_anchor := Vector2.ZERO
+## Canvas rotation drag driven by the current editable shortcut profile.
+var _clipstudio_rotate_drag := false
+var _clipstudio_rotate_button := MOUSE_BUTTON_LEFT
+var _clipstudio_rotate_mouse_shortcut := false
+var _clipstudio_rotate_previous_mouse := Vector2.ZERO
 var rotation_slider: ValueSlider
 var zoom_slider: ValueSlider
 var should_tween := true
@@ -65,14 +70,24 @@ func _ready() -> void:
 	update_transparent_checker_offset()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_clipstudio_rotate_drag = false
+		_clipstudio_rotate_mouse_shortcut = false
+
+
 func _input(event: InputEvent) -> void:
 	if not DisplayServer.is_touchscreen_available() and auto_release_gui_focus:
 		get_window().gui_release_focus()
 	if !Global.can_draw:
 		drag = false
 		_quick_navigation_drag = false
+		_clipstudio_rotate_drag = false
+		_clipstudio_rotate_mouse_shortcut = false
 		return
 	mouse_pos = viewport_container.get_local_mouse_position()
+	if _handle_clipstudio_rotation(event):
+		return
 
 	# Quick Pan/Zoom must respond to the *held* Space and Alt keys, even when
 	# they are pressed in the opposite order. Handle the physical drag here,
@@ -148,6 +163,90 @@ func _input(event: InputEvent) -> void:
 			and not root.is_writing_text
 		):
 			offset = offset + (dir.rotated(camera_angle) / zoom) * CAMERA_SPEED_RATE
+
+
+## Temporary canvas rotation, without modifying image pixels. All activation
+## shortcuts come from the active Keychain shortcut profile.
+## Hold its configured key chord and left-drag, or drag with a bound
+## mouse button (for example Shift+Middle Mouse). Double-click with the
+## same activation resets to zero as a convenience.
+func _handle_clipstudio_rotation(event: InputEvent) -> bool:
+	var in_canvas := viewport_container.get_global_rect().has_point(
+		viewport_container.get_global_mouse_position()
+	)
+
+	# Reset the complete viewing orientation via a single remappable shortcut.
+	# Use the view menu's normal mirror handler to keep its checkmark,
+	# selection outline and canvas redraw synchronized.
+	if in_canvas and event.is_action_pressed(&"canvas_rotate_reset", false, true):
+		reset_canvas_orientation()
+		get_viewport().set_input_as_handled()
+		return true
+
+	# These can be Shift+wheel by default, or any other input the user chooses.
+	if in_canvas and event.is_action_pressed(&"canvas_rotate_step_left", false, true):
+		rotate_camera(-5.0)
+		get_viewport().set_input_as_handled()
+		return true
+	if in_canvas and event.is_action_pressed(&"canvas_rotate_step_right", false, true):
+		rotate_camera(5.0)
+		get_viewport().set_input_as_handled()
+		return true
+
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if _clipstudio_rotate_drag and mouse_event.button_index == _clipstudio_rotate_button:
+			if not mouse_event.pressed:
+				_clipstudio_rotate_drag = false
+				_clipstudio_rotate_mouse_shortcut = false
+				get_viewport().set_input_as_handled()
+				return true
+		if not mouse_event.pressed or not in_canvas or Tools.active_button != -1:
+			return false
+		var held_key_and_left_button := (
+			mouse_event.button_index == MOUSE_BUTTON_LEFT
+			and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+		)
+		var bound_mouse_button := event.is_action_pressed(&"canvas_rotate_drag", false, true)
+		if not held_key_and_left_button and not bound_mouse_button:
+			return false
+		_clipstudio_rotate_drag = true
+		_clipstudio_rotate_button = mouse_event.button_index
+		_clipstudio_rotate_mouse_shortcut = bound_mouse_button and not held_key_and_left_button
+		_clipstudio_rotate_previous_mouse = mouse_pos
+		drag = false
+		_quick_navigation_drag = false
+		if mouse_event.double_click:
+			reset_canvas_orientation()
+		get_viewport().set_input_as_handled()
+		return true
+
+	if event is InputEventMouseMotion and _clipstudio_rotate_drag:
+		if not Input.is_mouse_button_pressed(_clipstudio_rotate_button):
+			_clipstudio_rotate_drag = false
+			_clipstudio_rotate_mouse_shortcut = false
+			return true
+		if (
+			_clipstudio_rotate_mouse_shortcut
+			or Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+		):
+			var center := viewport_container.size * 0.5
+			var previous := _clipstudio_rotate_previous_mouse - center
+			var current := mouse_pos - center
+			# Avoid angular jumps when a drag passes through the pivot.
+			if previous.length_squared() > 256.0 and current.length_squared() > 256.0:
+				camera_angle -= previous.angle_to(current)
+		_clipstudio_rotate_previous_mouse = mouse_pos
+		get_viewport().set_input_as_handled()
+		return true
+	return false
+
+## Restore the unrotated, unmirrored view without modifying any image data.
+## Deliberately retain the user's current zoom and pan offset.
+func reset_canvas_orientation() -> void:
+	camera_angle = 0.0
+	if Global.mirror_view:
+		Global.top_menu_container.view_menu_id_pressed(Global.ViewMenu.MIRROR_VIEW)
 
 
 func rotate_camera(dir: float) -> void:
