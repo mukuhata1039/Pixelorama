@@ -39,6 +39,7 @@ var transparent_checker: ColorRect
 var mouse_pos := Vector2.ZERO
 var drag := false
 var _quick_navigation_drag := false
+var _quick_zoom_anchor := Vector2.ZERO
 var rotation_slider: ValueSlider
 var zoom_slider: ValueSlider
 var should_tween := true
@@ -88,11 +89,16 @@ func _input(event: InputEvent) -> void:
 			else:
 				_quick_navigation_drag = false
 			if _quick_navigation_drag:
+				# Keep the zoom pivot at the original mouse-down location,
+				# even while the mouse moves during the drag.
+				_quick_zoom_anchor = mouse_pos
 				return
 		elif event is InputEventMouseMotion and _quick_navigation_drag:
 			if Input.is_key_pressed(KEY_SPACE):
 				if Input.is_key_pressed(KEY_ALT):
-					zoom_camera(event.relative.x / 3.0)
+					# Use immediate updates for continuous dragging so separate
+					# smooth-zoom tweens do not compete for camera position.
+					zoom_camera(event.relative.x / 3.0, _quick_zoom_anchor, true)
 				else:
 					offset = offset - event.relative.rotated(camera_angle) / zoom
 					update_transparent_checker_offset()
@@ -148,7 +154,7 @@ func rotate_camera(dir: float) -> void:
 	camera_angle += PI / 180 * dir
 
 
-func zoom_camera(dir: float, event_pos := mouse_pos) -> void:
+func zoom_camera(dir: float, event_pos := mouse_pos, immediate := false) -> void:
 	var viewport_size := viewport_container.size
 	if Global.smooth_zoom:
 		var zoom_margin := zoom * dir / 5
@@ -166,10 +172,14 @@ func zoom_camera(dir: float, event_pos := mouse_pos) -> void:
 					* (Vector2.ONE / zoom - Vector2.ONE / new_zoom)
 				)
 			)
-			var tween := create_tween().set_parallel()
-			tween.set_trans(Tween.TRANS_LINEAR).set_ease(Tween.EASE_IN)
-			tween.tween_property(self, "zoom", new_zoom, 0.05)
-			tween.tween_property(self, "offset", new_offset, 0.05)
+			if immediate:
+				zoom = new_zoom
+				offset = new_offset
+			else:
+				var tween := create_tween().set_parallel()
+				tween.set_trans(Tween.TRANS_LINEAR).set_ease(Tween.EASE_IN)
+				tween.tween_property(self, "zoom", new_zoom, 0.05)
+				tween.tween_property(self, "offset", new_offset, 0.05)
 	else:
 		var prev_zoom := zoom
 		var zoom_margin := zoom * dir / 10
