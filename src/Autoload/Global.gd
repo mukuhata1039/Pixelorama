@@ -1033,7 +1033,7 @@ func _initialize_keychain() -> void:
 		&"rotate_left": Keychain.InputAction.new("", "Canvas"),
 		&"rotate_right": Keychain.InputAction.new("", "Canvas"),
 		&"canvas_rotate_drag": Keychain.InputAction.new(
-			"Rotate canvas (hold + left drag)", "Canvas", false
+			"Rotate canvas (hold + drag)", "Canvas", false
 		),
 		&"canvas_rotate_step_left": Keychain.InputAction.new(
 			"Rotate canvas left 5 degrees", "Canvas", false
