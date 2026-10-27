@@ -175,9 +175,11 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 		viewport_container.get_global_mouse_position()
 	)
 
-	# Reset is an independent, remappable shortcut (default: 0).
+	# Reset the complete viewing orientation via a single remappable shortcut.
+	# Use the view menu's normal mirror handler to keep its checkmark,
+	# selection outline and canvas redraw synchronized.
 	if in_canvas and event.is_action_pressed(&"canvas_rotate_reset", false, true):
-		camera_angle = 0.0
+		reset_canvas_orientation()
 		get_viewport().set_input_as_handled()
 		return true
 
@@ -215,7 +217,7 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 		drag = false
 		_quick_navigation_drag = false
 		if mouse_event.double_click:
-			camera_angle = 0.0
+			reset_canvas_orientation()
 		get_viewport().set_input_as_handled()
 		return true
 
@@ -238,6 +240,14 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 		get_viewport().set_input_as_handled()
 		return true
 	return false
+
+## Restore the unrotated, unmirrored view without modifying any image data.
+## Deliberately retain the user's current zoom and pan offset.
+func reset_canvas_orientation() -> void:
+	camera_angle = 0.0
+	if Global.mirror_view:
+		Global.top_menu_container.view_menu_id_pressed(Global.ViewMenu.MIRROR_VIEW)
+
 
 func rotate_camera(dir: float) -> void:
 	camera_angle += PI / 180 * dir
