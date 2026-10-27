@@ -90,7 +90,7 @@ func _ready() -> void:
 		func(_effect): layer_fx_texture_rect.visible = layer.effects.size() > 0
 	)
 	for child in $HBoxContainer.get_children():
-		if not child is Button:
+		if not child is Button or child.get_child_count() == 0:
 			continue
 		var texture := child.get_child(0)
 		if not texture is TextureRect:
