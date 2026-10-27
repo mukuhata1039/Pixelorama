@@ -414,12 +414,20 @@ func _prepare_tool() -> void:
 	_drawer.pixel_perfect = Tools.pixel_perfect if _brush_size == 1 else false
 	_drawer.color_op.strength = strength
 	var previous_preview_size := _indicator.get_size()
-	_indicator = _create_brush_indicator()
-	# Dynamics can rebuild the indicator every movement; only regenerate the
-	# preview texture when the brush footprint dimensions actually change.
-	if previous_preview_size != _indicator.get_size():
-		_color_preview_texture = null
-	_polylines = _create_polylines(_indicator)
+	# A square brush has the same footprint while its size stays unchanged.
+	# Rebuilding the BitMap and tracing all its pixels on every mouse move
+	# is especially expensive for large pencils.
+	var can_reuse_square_indicator := (
+		_brush.type == Brushes.PIXEL
+		and not Tools.is_placing_tiles()
+		and previous_preview_size == Vector2i.ONE * _brush_size_dynamics
+	)
+	if not can_reuse_square_indicator:
+		_indicator = _create_brush_indicator()
+		# Only regenerate the preview texture when its dimensions change.
+		if previous_preview_size != _indicator.get_size():
+			_color_preview_texture = null
+		_polylines = _create_polylines(_indicator)
 	# Memorize current project
 	_stroke_project = Global.current_project
 	# Memorize the frame/layer we are drawing on rather than fetching it on every pixel
