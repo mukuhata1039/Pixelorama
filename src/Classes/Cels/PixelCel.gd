@@ -166,7 +166,17 @@ func get_image() -> ImageExtended:
 
 
 func update_texture(undo := false) -> void:
-	image_texture.set_image(image)
+	# Reuse the existing GPU texture for ordinary brush strokes.
+	# A resized or reformatted cel still needs a new texture allocation.
+	if (
+		image_texture.get_width() == image.get_width()
+		and image_texture.get_height() == image.get_height()
+		and image_texture.get_format() == image.get_format()
+		and image_texture.has_mipmaps() == image.has_mipmaps()
+	):
+		image_texture.update(image)
+	else:
+		image_texture.set_image(image)
 	super.update_texture(undo)
 
 
