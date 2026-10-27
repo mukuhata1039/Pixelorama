@@ -352,9 +352,10 @@ func draw_tool(pos: Vector2i) -> void:
 func _can_use_fast_square_brush() -> bool:
 	if (
 		_brush.type != Brushes.PIXEL
+		or _brush_size_dynamics < 8
 		or _spacing_mode
 		or _brush_density != 100
-		or _is_mask_size_zero == false
+		or not _is_mask_size_zero
 		or _is_eraser
 		or not is_equal_approx(_drawer.color_op.strength, 1.0)
 		or not is_equal_approx(tool_slot.color.a, 1.0)
