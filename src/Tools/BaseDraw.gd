@@ -853,7 +853,7 @@ func _drawer_set_pixel(
 
 
 func _draw_brush_image(
-	brush_image: Image, src_rect: Rect2i, dst: Vector2i, overwrite := true
+	brush_image: Image, src_rect: Rect2i, dst: Vector2i, overwrite := false
 ) -> void:
 	var images := _get_selected_draw_images()
 	for draw_image in images:
