@@ -57,14 +57,16 @@ action = &"reset_colors_default"
 events = [SubResource("InputEventAction_nptxe")]
 
 [node name="ColorPicker" type="PanelContainer" unique_id=1282553206]
-custom_minimum_size = Vector2(174, 160)
-offset_right = 220.0
+custom_minimum_size = Vector2(146, 160)
+offset_right = 198.0
 offset_bottom = 350.0
 script = ExtResource("1_r8ot0")
 
 [node name="ScrollContainer" type="ScrollContainer" parent="." unique_id=1272804798]
 layout_mode = 2
-horizontal_scroll_mode = 0
+# SHOW_NEVER prevents the intrinsic Godot ColorPicker minimum width
+# from forcing its enclosing dock/split to stay wide.
+horizontal_scroll_mode = 3
 
 [node name="VerticalContainer" type="VBoxContainer" parent="ScrollContainer" unique_id=21774123]
 layout_mode = 2
