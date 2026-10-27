@@ -18,6 +18,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if _handle_space_alt_quick_navigation(event):
 		return
+	# A remapped rotation chord such as R should take priority over
+	# tool-selection shortcuts bound to the same key while held.
+	if Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag"):
+		return
 	# When the quick picker shortcut itself is a right click, the canvas
 	# samples directly from the sprite. Never run the later generic tool
 	# swap for that same physical mouse event.
