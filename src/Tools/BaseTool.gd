@@ -426,7 +426,8 @@ func _get_selected_draw_cels(include_all_layers := true) -> Array[BaseCel]:
 		# With multiple selected layers, never paint a different opaque RGBA
 		# into a layer whose drawing color is fixed. Transparent erasing is OK.
 		if (
-			layer.drawing_color_locked
+			not include_all_layers
+			and layer.drawing_color_locked
 			and tool_slot.color.a > 0.0
 			and tool_slot.color != layer.drawing_color
 		):
