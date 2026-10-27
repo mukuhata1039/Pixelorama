@@ -286,6 +286,21 @@ func _process(_delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	# Unlike mouse-driven camera gestures, resetting the view should work
+	# from anywhere in the editing workspace, not just while the pointer
+	# happens to be over the main canvas SubViewport.
+	var focused_control := get_viewport().gui_get_focus_owner()
+	if (
+		Global.can_draw
+		and not is_writing_text
+		and not focused_control is LineEdit
+		and not focused_control is TextEdit
+		and is_instance_valid(Global.camera)
+		and event.is_action_pressed(&"canvas_rotate_reset", false, true)
+	):
+		Global.camera.reset_canvas_orientation()
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed(&"layer_visibility"):
 		for selected_cel in Global.current_project.selected_cels:
 			var layer := Global.current_project.layers[selected_cel[1]]
