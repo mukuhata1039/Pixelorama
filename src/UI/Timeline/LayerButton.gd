@@ -121,6 +121,10 @@ func apply_compact_layout(enabled: bool) -> void:
 			icon.stretch_mode = (
 				TextureRect.STRETCH_KEEP_ASPECT_CENTERED if enabled else TextureRect.STRETCH_SCALE
 			)
+			# The existing 22px PNGs are pixel art; keep scaling crisp.
+			icon.texture_filter = (
+				CanvasItem.TEXTURE_FILTER_NEAREST if enabled else CanvasItem.TEXTURE_FILTER_INHERIT
+			)
 			icon.offset_left = -half_icon
 			icon.offset_top = -half_icon
 			icon.offset_right = half_icon
