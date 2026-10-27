@@ -109,8 +109,17 @@ func apply_compact_layout(enabled: bool) -> void:
 		if button is not Button:
 			continue
 		button.custom_minimum_size = button_size
+		# Icons have 22px source textures. A smaller TextureRect alone is not
+		# enough: its source texture must be scaled to fit the compact button.
+		button.clip_contents = enabled
 		var icon := button.get_child(0) as TextureRect
 		if is_instance_valid(icon):
+			icon.expand_mode = (
+				TextureRect.EXPAND_IGNORE_SIZE if enabled else TextureRect.EXPAND_KEEP_SIZE
+			)
+			icon.stretch_mode = (
+				TextureRect.STRETCH_KEEP_ASPECT_CENTERED if enabled else TextureRect.STRETCH_SCALE
+			)
 			icon.offset_left = -half_icon
 			icon.offset_top = -half_icon
 			icon.offset_right = half_icon
