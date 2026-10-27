@@ -6,6 +6,8 @@ const CURSOR_SPEED_RATE := 6.0
 var current_pixel := Vector2.ZERO
 var _quick_navigation_captured_left_mouse := false
 var _brush_size_drag_captured_left_mouse := false
+## One-click sampling when Quick Color Picker is explicitly bound to right mouse.
+var _quick_right_color_picker_active := false
 var sprite_changed_this_frame := false  ## For optimization purposes
 var update_all_layers := false
 ## For optimization purposes. A kind of override to force include a layer during canvas update.
@@ -75,9 +77,63 @@ func _draw() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		_brush_size_drag_captured_left_mouse = false
+		# A release event may be lost when the window loses focus.
+		if _quick_right_color_picker_active:
+			if Tools.active_button == MOUSE_BUTTON_RIGHT:
+				var picker := Tools.get_tool(MOUSE_BUTTON_RIGHT).tool_node
+				if is_instance_valid(picker):
+					picker.draw_end(Vector2i(current_pixel.floor()))
+				Tools.active_button = -1
+			Tools.quick_assign_tool_revert(MOUSE_BUTTON_RIGHT)
+			_quick_right_color_picker_active = false
+
+
+## Quick shortcuts normally switch tools in ToolButtons._unhandled_input,
+## after the canvas receives a mouse press. When the shortcut IS the right
+## mouse button, the original right tool would act before the eyedropper
+## becomes active. Handle that explicit binding at the canvas press instead.
+func _handle_quick_right_color_picker(event: InputEvent) -> bool:
+	if not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_RIGHT:
+		return false
+
+	if _quick_right_color_picker_active and not event.pressed:
+		# Finish the sampling gesture before restoring the original right tool.
+		if Tools.active_button == MOUSE_BUTTON_RIGHT:
+			Tools.handle_draw(Vector2i(get_local_mouse_position().floor()), event)
+		Tools.quick_assign_tool_revert(MOUSE_BUTTON_RIGHT)
+		_quick_right_color_picker_active = false
+		get_viewport().set_input_as_handled()
+		return true
+
+	if (
+		not event.pressed
+		or not event.is_action_pressed(&"quick_colorpicker_tool", false, true)
+		or not Global.can_draw
+		or Tools.active_button != -1
+	):
+		return false
+
+	var pixel := Vector2i(get_local_mouse_position().floor())
+	if not Rect2i(Vector2i.ZERO, Global.current_project.size).has_point(pixel):
+		return false
+
+	# Switch only the right-hand tool, not the left brush. Use the existing
+	# ColorPicker tool so sampling obeys its modes and the drawing-color lock.
+	Tools.quick_assign_tool("ColorPicker", MOUSE_BUTTON_RIGHT)
+	var picker := Tools.get_tool(MOUSE_BUTTON_RIGHT).tool_node
+	var config: Dictionary = picker.get_config()
+	config["color_slot"] = 0  # Always pick into the left (drawing) color.
+	picker.set_config(config)
+	picker.update_config()
+	_quick_right_color_picker_active = true
+	Tools.handle_draw(pixel, event)
+	get_viewport().set_input_as_handled()
+	return true
 
 
 func _input(event: InputEvent) -> void:
+	if _handle_quick_right_color_picker(event):
+		return
 	# Capture brush resizing at the initial left press. Keep consuming the
 	# drag until mouse-up even if the shortcut is released halfway through,
 	# otherwise the remaining drag could paint on the canvas.
