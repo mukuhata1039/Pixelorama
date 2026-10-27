@@ -70,23 +70,37 @@ func _ready() -> void:
 	update_transparent_checker_offset()
 
 
+## The SubViewport disables camera input when the pointer leaves its area.
+## Cancel captured gestures there, before a mouse-up can be lost outside.
+func cancel_navigation_drag() -> void:
+	drag = false
+	_quick_navigation_drag = false
+	_clipstudio_rotate_drag = false
+	_clipstudio_rotate_mouse_shortcut = false
+
+
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
-		_clipstudio_rotate_drag = false
-		_clipstudio_rotate_mouse_shortcut = false
+		cancel_navigation_drag()
 
 
 func _input(event: InputEvent) -> void:
 	if not DisplayServer.is_touchscreen_available() and auto_release_gui_focus:
 		get_window().gui_release_focus()
 	if !Global.can_draw:
-		drag = false
-		_quick_navigation_drag = false
-		_clipstudio_rotate_drag = false
-		_clipstudio_rotate_mouse_shortcut = false
+		cancel_navigation_drag()
 		return
 	mouse_pos = viewport_container.get_local_mouse_position()
 	if _handle_clipstudio_rotation(event):
+		return
+
+	# Shift+Space is a rotation chord by default. Space alone is also the
+	# built-in Pan action. Give the configured rotation chord priority so
+	# a keyboard event or pre-click mouse movement cannot start a Pan drag.
+	# This also handles customized chords that overlap another navigation key.
+	if Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag"):
+		drag = false
+		_quick_navigation_drag = false
 		return
 
 	# Quick Pan/Zoom must respond to the *held* Space and Alt keys, even when
@@ -175,14 +189,8 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 		viewport_container.get_global_mouse_position()
 	)
 
-	# Reset the complete viewing orientation via a single remappable shortcut.
-	# Use the view menu's normal mirror handler to keep its checkmark,
-	# selection outline and canvas redraw synchronized.
-	if in_canvas and event.is_action_pressed(&"canvas_rotate_reset", false, true):
-		reset_canvas_orientation()
-		get_viewport().set_input_as_handled()
-		return true
-
+	# View reset is handled at the main-window level, so the shortcut
+	# also works when the pointer is outside this SubViewport.
 	# These can be Shift+wheel by default, or any other input the user chooses.
 	if in_canvas and event.is_action_pressed(&"canvas_rotate_step_left", false, true):
 		rotate_camera(-5.0)
