@@ -96,6 +96,38 @@ func _ready() -> void:
 	# Visualize how deep into the hierarchy the layer is
 	hierarchy_spacer.layer_index = layer_index
 	update_buttons()
+	apply_compact_layout(Global.animation_timeline.compact_timeline)
+
+
+## Keep every layer control usable at 20px, including group and link buttons.
+func apply_compact_layout(enabled: bool) -> void:
+	var buttons := $HBoxContainer as HBoxContainer
+	buttons.custom_minimum_size.x = 60 if enabled else 84
+	var button_size := Vector2(20, 20) if enabled else Vector2(28, 22)
+	var half_icon := 8.0 if enabled else 11.0
+	for button in buttons.get_children():
+		if button is not Button:
+			continue
+		button.custom_minimum_size = button_size
+		var icon := button.get_child(0) as TextureRect
+		if is_instance_valid(icon):
+			icon.offset_left = -half_icon
+			icon.offset_top = -half_icon
+			icon.offset_right = half_icon
+			icon.offset_bottom = half_icon
+	var hierarchy_step := 16 if enabled else HIERARCHY_DEPTH_PIXEL_SHIFT
+	main_button.hierarchy_depth_pixel_shift = hierarchy_step
+	hierarchy_spacer.hierarchy_depth_pixel_shift = hierarchy_step
+	if enabled:
+		label.add_theme_font_size_override("font_size", 12)
+		line_edit.add_theme_font_size_override("font_size", 12)
+	else:
+		label.remove_theme_font_size_override("font_size")
+		line_edit.remove_theme_font_size_override("font_size")
+	for icon in [clipping_mask_icon, layer_fx_texture_rect, layer_type_texture_rect]:
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE if enabled else TextureRect.EXPAND_KEEP_SIZE
+		icon.custom_minimum_size = Vector2(12, 12) if enabled else Vector2.ZERO
+	$LayerMainButton/LayerName/MarginSpacer.custom_minimum_size.x = 2 if enabled else 4
 
 
 func _on_cel_switched() -> void:
