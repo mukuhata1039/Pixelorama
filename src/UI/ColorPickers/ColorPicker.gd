@@ -28,6 +28,7 @@ var _skip_color_picker_update := false
 ## vertical hue control. Other picker shapes retain Godot's native behavior.
 var hue_strip: Control
 var native_hue_control: Control
+var compact_hex_row: HBoxContainer
 var _dragging_hue := false
 
 @onready var color_picker := %ColorPicker as ColorPicker
@@ -70,15 +71,18 @@ func _ready() -> void:
 	shapes_container = picker_vbox_container.get_child(0, true)
 	shapes_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	shapes_container.size_flags_vertical = Control.SIZE_FILL
-	shapes_container.custom_minimum_size.y = 132
+	shapes_container.custom_minimum_size.y = 108
 	hsv_rectangle = shapes_container.get_child(0, true) as Control
 	hsv_rectangle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# The native hue is a second child of Godot's HSV shape HBox. Its
 	# input logic assumes vertical movement, so a separate horizontal
 	# control is needed rather than simply reparenting/rotating it.
-	native_hue_control = shapes_container.get_child(1, true) as Control
+	native_hue_control = hsv_rectangle.get_parent().get_child(hsv_rectangle.get_index() + 1, true) as Control
 	if is_instance_valid(native_hue_control):
-		native_hue_control.hide()
+		# The built-in picker may show this control again when it updates
+		# its shape. Re-hide it whenever that happens, not just at startup.
+		native_hue_control.visibility_changed.connect(_ensure_native_hue_hidden)
+		_ensure_native_hue_hidden()
 	_create_horizontal_hue_strip(picker_vbox_container)
 	# The HBoxContainer of the screen color picker, the color preview rectangle and the
 	# button that lets users change the picker shape. It is visible because
@@ -97,8 +101,10 @@ func _ready() -> void:
 	var hex_cont := picker_vbox_container.get_child(4, true) as Container
 	var hex_edit := hex_cont.get_child(2, true) as LineEdit
 	hex_cont.remove_child(hex_edit)
-	var hex_row := HBoxContainer.new()
+	compact_hex_row = HBoxContainer.new()
+	var hex_row := compact_hex_row
 	hex_row.name = "CompactHexRow"
+	hex_row.visible = false
 	hex_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hex_row.add_theme_constant_override("separation", 4)
 	var hex_label := Label.new()
@@ -113,7 +119,12 @@ func _ready() -> void:
 	color_buttons.get_parent().remove_child(color_buttons)
 	picker_vbox_container.add_child(color_buttons)
 	color_buttons.alignment = BoxContainer.ALIGNMENT_CENTER
-	color_buttons.add_theme_constant_override("separation", 3)
+	color_buttons.add_theme_constant_override("separation", 2)
+	# Keep the eyedropper and picker-shape menu, but place them on the
+	# same row as foreground/background instead of wasting another row.
+	sampler_cont.get_parent().remove_child(sampler_cont)
+	color_buttons.add_child(sampler_cont)
+	sampler_cont.add_theme_constant_override("separation", 1)
 
 	color_slider_types_hbox = picker_vbox_container.get_child(2, true) as HBoxContainer
 	color_slider_types_hbox.visible = false
@@ -137,15 +148,16 @@ func _ready() -> void:
 	var alpha_row := _move_alpha_slider_below_color_square(picker_vbox_container)
 
 	# Explicit visual order, independent of the native ColorPicker internals:
-	# SV square / horizontal hue / alpha / color buttons / HEX / sampler / details.
+	# SV square / horizontal hue / alpha / colors+sampler / options / HEX.
+	# HEX is only revealed when the user opens the advanced options.
 	var ordered_rows: Array[Control] = [
 		shapes_container, hue_strip, alpha_row, color_buttons,
-		hex_row, sampler_cont, expand_button
+		expand_button, hex_row
 	]
 	for index in ordered_rows.size():
 		if is_instance_valid(ordered_rows[index]):
 			picker_vbox_container.move_child(ordered_rows[index], index)
-	picker_vbox_container.add_theme_constant_override("separation", 3)
+	picker_vbox_container.add_theme_constant_override("separation", 1)
 
 	expand_button.button_pressed = Global.config_cache.get_value(
 		"color_picker", "is_expanded", false
@@ -178,7 +190,13 @@ func _move_alpha_slider_below_color_square(picker_vbox_container: VBoxContainer)
 	alpha_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	alpha_row.add_theme_constant_override("separation", 3)
 	alpha_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	alpha_spinbox.custom_minimum_size.x = 48
+	# The number field duplicates the alpha slider: keep the native
+	# SpinBox alive for ColorPicker logic, but do not show it in the UI.
+	alpha_spinbox.hide()
+	alpha_spinbox.visibility_changed.connect(func():
+		if alpha_spinbox.visible:
+			alpha_spinbox.hide()
+	)
 	picker_vbox_container.add_child(alpha_row)
 	picker_vbox_container.move_child(alpha_row, shapes_container.get_index() + 1)
 	for control in [alpha_label, alpha_slider, alpha_spinbox]:
@@ -192,7 +210,7 @@ func _move_alpha_slider_below_color_square(picker_vbox_container: VBoxContainer)
 func _create_horizontal_hue_strip(picker_vbox_container: VBoxContainer) -> void:
 	hue_strip = Control.new()
 	hue_strip.name = "HorizontalHueStrip"
-	hue_strip.custom_minimum_size.y = 14
+	hue_strip.custom_minimum_size.y = 12
 	hue_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hue_strip.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	hue_strip.tooltip_text = "Hue"
@@ -200,6 +218,12 @@ func _create_horizontal_hue_strip(picker_vbox_container: VBoxContainer) -> void:
 	hue_strip.draw.connect(_draw_horizontal_hue_strip)
 	hue_strip.gui_input.connect(_on_horizontal_hue_gui_input)
 	color_picker.color_changed.connect(func(_color: Color): hue_strip.queue_redraw())
+
+
+## Keep the redundant native hue column hidden after Godot's internal updates.
+func _ensure_native_hue_hidden() -> void:
+	if is_instance_valid(native_hue_control) and native_hue_control.visible:
+		native_hue_control.hide()
 
 
 func _draw_horizontal_hue_strip() -> void:
@@ -287,8 +311,7 @@ func _on_color_picker_color_changed(color: Color) -> void:
 func _on_shape_popup_menu_id_pressed(id: ColorPicker.PickerShapeType) -> void:
 	if is_instance_valid(hue_strip):
 		hue_strip.visible = id == ColorPicker.SHAPE_HSV_RECTANGLE
-	if is_instance_valid(native_hue_control):
-		native_hue_control.hide()
+	_ensure_native_hue_hidden()
 	Global.config_cache.set_value("color_picker", "picker_shape", color_picker.picker_shape)
 	# All of this is needed so that the shape controls scale well when resized.
 	# The internal AspectRatioContainer was removed in Godot 4.5 so we have to add our own
@@ -385,6 +408,8 @@ func _on_ColorDefaults_pressed() -> void:
 
 
 func _on_expand_button_toggled(toggled_on: bool) -> void:
+	if is_instance_valid(compact_hex_row):
+		compact_hex_row.visible = toggled_on
 	if toggled_on:
 		expand_button.icon = VALUE_ARROW_EXPANDED
 	else:
