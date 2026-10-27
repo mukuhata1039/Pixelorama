@@ -24,6 +24,11 @@ var swatches_button: HBoxContainer
 var color_slider_types_hbox: HBoxContainer
 var color_sliders_grid: GridContainer
 var _skip_color_picker_update := false
+## A compact horizontal hue strip replaces only the HSV rectangle's native
+## vertical hue control. Other picker shapes retain Godot's native behavior.
+var hue_strip: Control
+var native_hue_control: Control
+var _dragging_hue := false
 
 @onready var color_picker := %ColorPicker as ColorPicker
 @onready var color_buttons := %ColorButtons as HBoxContainer
@@ -64,9 +69,17 @@ func _ready() -> void:
 
 	shapes_container = picker_vbox_container.get_child(0, true)
 	shapes_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	shapes_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	shapes_container.size_flags_vertical = Control.SIZE_FILL
+	shapes_container.custom_minimum_size.y = 132
 	hsv_rectangle = shapes_container.get_child(0, true) as Control
 	hsv_rectangle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# The native hue is a second child of Godot's HSV shape HBox. Its
+	# input logic assumes vertical movement, so a separate horizontal
+	# control is needed rather than simply reparenting/rotating it.
+	native_hue_control = shapes_container.get_child(1, true) as Control
+	if is_instance_valid(native_hue_control):
+		native_hue_control.hide()
+	_create_horizontal_hue_strip(picker_vbox_container)
 	# The HBoxContainer of the screen color picker, the color preview rectangle and the
 	# button that lets users change the picker shape. It is visible because
 	# color_picker.sampler_visible is set to true.
@@ -79,16 +92,28 @@ func _ready() -> void:
 	var shape_menu_button := sampler_cont.get_child(2, true) as MenuButton
 	var shape_popup_menu := shape_menu_button.get_popup()
 	shape_popup_menu.id_pressed.connect(_on_shape_popup_menu_id_pressed)
-	# The HBoxContainer where we get the hex LineEdit node from, and moving it to sampler_cont
+	# Aseprite-style narrow stack: don't put buttons + HEX in the same row
+	# as the sampler; that old arrangement forced the dock to grow wide.
 	var hex_cont := picker_vbox_container.get_child(4, true) as Container
-	var hex_edit := hex_cont.get_child(2, true)
+	var hex_edit := hex_cont.get_child(2, true) as LineEdit
 	hex_cont.remove_child(hex_edit)
-	sampler_cont.add_child(hex_edit)
-	sampler_cont.move_child(hex_edit, 1)
-	# Move the color buttons (left, right, switch, default, average) on the sampler container
+	var hex_row := HBoxContainer.new()
+	hex_row.name = "CompactHexRow"
+	hex_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hex_row.add_theme_constant_override("separation", 4)
+	var hex_label := Label.new()
+	hex_label.text = "HEX"
+	hex_label.add_theme_font_size_override("font_size", 11)
+	hex_row.add_child(hex_label)
+	hex_row.add_child(hex_edit)
+	hex_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hex_edit.custom_minimum_size.x = 90
+	picker_vbox_container.add_child(hex_row)
+	# Reuse the existing color button controls, keeping all their signals.
 	color_buttons.get_parent().remove_child(color_buttons)
-	sampler_cont.add_child(color_buttons)
-	sampler_cont.move_child(color_buttons, 0)
+	picker_vbox_container.add_child(color_buttons)
+	color_buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	color_buttons.add_theme_constant_override("separation", 3)
 
 	color_slider_types_hbox = picker_vbox_container.get_child(2, true) as HBoxContainer
 	color_slider_types_hbox.visible = false
@@ -104,14 +129,22 @@ func _ready() -> void:
 		picker_vbox_container.get_child(5, true).get_child(2, true) as GridContainer
 	)
 	presets_container.add_theme_constant_override("h_separation", 5)
-	# Move the expand button above the RGB, HSV etc buttons
+	# Move the expand button with the rest of the native picker controls.
 	expand_button.get_parent().remove_child(expand_button)
 	picker_vbox_container.add_child(expand_button)
-	picker_vbox_container.move_child(expand_button, 2)
 
-	# Keep the built-in alpha slider visible directly below the color square,
-	# even while the other color component sliders are collapsed.
-	_move_alpha_slider_below_color_square(picker_vbox_container)
+	# Keep Godot's native alpha control and its signals (including values).
+	var alpha_row := _move_alpha_slider_below_color_square(picker_vbox_container)
+
+	# Explicit visual order, independent of the native ColorPicker internals:
+	# SV square / horizontal hue / alpha / color buttons / HEX / sampler / details.
+	var ordered_rows: Array[Control] = [
+		shapes_container, hue_strip, alpha_row, color_buttons,
+		hex_row, sampler_cont, expand_button
+	]
+	for index in ordered_rows.size():
+		picker_vbox_container.move_child(ordered_rows[index], index)
+	picker_vbox_container.add_theme_constant_override("separation", 3)
 
 	expand_button.button_pressed = Global.config_cache.get_value(
 		"color_picker", "is_expanded", false
@@ -121,7 +154,7 @@ func _ready() -> void:
 
 ## Reuse the native alpha controls instead of duplicating them.
 ## Their existing ColorPicker signals and shared range continue to work.
-func _move_alpha_slider_below_color_square(picker_vbox_container: VBoxContainer) -> void:
+func _move_alpha_slider_below_color_square(picker_vbox_container: VBoxContainer) -> HBoxContainer:
 	var alpha_label: Label
 	var alpha_slider: HSlider
 	var alpha_spinbox: SpinBox
@@ -134,19 +167,76 @@ func _move_alpha_slider_below_color_square(picker_vbox_container: VBoxContainer)
 			break
 	if not is_instance_valid(alpha_label):
 		push_warning("Could not locate the ColorPicker alpha controls.")
-		return
+		return null
 	if not is_instance_valid(alpha_slider) or not is_instance_valid(alpha_spinbox):
 		push_warning("Could not locate the ColorPicker alpha slider or value.")
-		return
+		return null
 
 	var alpha_row := HBoxContainer.new()
 	alpha_row.name = "AlphaSliderRow"
 	alpha_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	alpha_row.add_theme_constant_override("separation", 3)
+	alpha_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	alpha_spinbox.custom_minimum_size.x = 48
 	picker_vbox_container.add_child(alpha_row)
 	picker_vbox_container.move_child(alpha_row, shapes_container.get_index() + 1)
 	for control in [alpha_label, alpha_slider, alpha_spinbox]:
 		color_sliders_grid.remove_child(control)
 		alpha_row.add_child(control)
+	return alpha_row
+
+
+## Godot's native HSV hue strip is vertical. Draw our own horizontal strip
+## while keeping the native SV square and alpha controls fully functional.
+func _create_horizontal_hue_strip(picker_vbox_container: VBoxContainer) -> void:
+	hue_strip = Control.new()
+	hue_strip.name = "HorizontalHueStrip"
+	hue_strip.custom_minimum_size.y = 14
+	hue_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hue_strip.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	hue_strip.tooltip_text = "Hue"
+	picker_vbox_container.add_child(hue_strip)
+	hue_strip.draw.connect(_draw_horizontal_hue_strip)
+	hue_strip.gui_input.connect(_on_horizontal_hue_gui_input)
+	color_picker.color_changed.connect(func(_color: Color): hue_strip.queue_redraw())
+
+
+func _draw_horizontal_hue_strip() -> void:
+	if not is_instance_valid(hue_strip) or not hue_strip.visible:
+		return
+	var strip_size := hue_strip.size
+	var segments := maxi(1, ceili(strip_size.x))
+	for i in segments:
+		var x := float(i) / float(segments) * strip_size.x
+		var next_x := float(i + 1) / float(segments) * strip_size.x
+		hue_strip.draw_rect(
+			Rect2(x, 0, next_x - x + 0.5, strip_size.y),
+			Color.from_hsv(float(i) / float(segments), 1.0, 1.0)
+		)
+	var marker_x := roundf(color_picker.color.h * (strip_size.x - 1.0))
+	hue_strip.draw_line(Vector2(marker_x, 0), Vector2(marker_x, strip_size.y), Color.BLACK, 3.0)
+	hue_strip.draw_line(Vector2(marker_x, 0), Vector2(marker_x, strip_size.y), Color.WHITE, 1.0)
+	hue_strip.draw_rect(Rect2(Vector2.ZERO, strip_size), Color(0.2, 0.2, 0.2), false, 1.0)
+
+
+func _on_horizontal_hue_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		_dragging_hue = event.pressed
+		if _dragging_hue:
+			_apply_horizontal_hue(event.position.x)
+	elif event is InputEventMouseMotion and _dragging_hue:
+		_apply_horizontal_hue(event.position.x)
+
+
+func _apply_horizontal_hue(x: float) -> void:
+	var selected := color_picker.color
+	selected.h = clampf(x / maxf(1.0, hue_strip.size.x - 1.0), 0.0, 1.0)
+	color_picker.color = selected
+	# Programmatic ColorPicker.color assignment doesn't emit color_changed.
+	_on_color_picker_color_changed(selected)
+	# A locked layer may reject the chosen hue: keep the preview in sync.
+	color_picker.color = Tools.get_assigned_color(Tools.picking_color_for)
+	hue_strip.queue_redraw()
 
 
 func _notification(what: int) -> void:
@@ -194,6 +284,10 @@ func _on_color_picker_color_changed(color: Color) -> void:
 
 
 func _on_shape_popup_menu_id_pressed(id: ColorPicker.PickerShapeType) -> void:
+	if is_instance_valid(hue_strip):
+		hue_strip.visible = id == ColorPicker.SHAPE_HSV_RECTANGLE
+	if is_instance_valid(native_hue_control):
+		native_hue_control.hide()
 	Global.config_cache.set_value("color_picker", "picker_shape", color_picker.picker_shape)
 	# All of this is needed so that the shape controls scale well when resized.
 	# The internal AspectRatioContainer was removed in Godot 4.5 so we have to add our own
