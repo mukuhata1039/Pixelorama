@@ -110,13 +110,25 @@ func _sample_quick_right_color(pixel: Vector2i) -> void:
 	Tools.assign_color(sampled["color"], MOUSE_BUTTON_LEFT, false, sampled["index"])
 
 
+## Keep the normal brush cursor and previews tracking the mouse during right-click sampling.
+## Do not call Tools.handle_draw() here: that would invoke painting actions.
+func _update_quick_right_picker_cursor() -> Vector2i:
+	current_pixel = get_local_mouse_position()
+	var pixel := Vector2i(current_pixel.floor())
+	Tools.get_tool(MOUSE_BUTTON_LEFT).tool_node.cursor_move(pixel)
+	Tools.get_tool(MOUSE_BUTTON_RIGHT).tool_node.cursor_move(pixel)
+	indicators.queue_redraw()
+	previews.queue_redraw()
+	return pixel
+
+
 func _handle_quick_right_color_picker(event: InputEvent) -> bool:
 	if event is InputEventMouseMotion and _quick_right_color_picker_active:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 			_quick_right_color_picker_active = false
 			return false
 		if Global.can_draw:
-			var pixel := Vector2i(get_local_mouse_position().floor())
+			var pixel := _update_quick_right_picker_cursor()
 			if Rect2i(Vector2i.ZERO, Global.current_project.size).has_point(pixel):
 				_sample_quick_right_color(pixel)
 		return true
@@ -143,6 +155,7 @@ func _handle_quick_right_color_picker(event: InputEvent) -> bool:
 		return false
 
 	_quick_right_color_picker_active = true
+	_update_quick_right_picker_cursor()
 	_sample_quick_right_color(pixel)
 	get_viewport().set_input_as_handled()
 	return true
