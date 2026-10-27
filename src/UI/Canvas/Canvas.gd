@@ -148,11 +148,14 @@ func _handle_quick_right_color_picker(event: InputEvent) -> bool:
 	return true
 
 func _input(event: InputEvent) -> void:
-	# Clip Studio-style Shift+Space rotation is camera navigation, never a
-	# painting stroke. Keep blocking drawing if either modifier is released
-	# before mouse-up while the camera still owns the drag.
+	# Block drawing when the currently configured rotation shortcut is
+	# held or a rotation drag is captured, even if its key is released
+	# before mouse-up. Do not interrupt an already active paint stroke.
 	if (
-		(Input.is_key_pressed(KEY_SPACE) and Input.is_key_pressed(KEY_SHIFT))
+		(
+			Tools.active_button == -1
+			and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+		)
 		or (is_instance_valid(Global.camera) and Global.camera._clipstudio_rotate_drag)
 	):
 		return
