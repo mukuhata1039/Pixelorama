@@ -123,7 +123,7 @@ func apply_compact_layout(enabled: bool) -> void:
 			)
 			# The existing 22px PNGs are pixel art; keep scaling crisp.
 			icon.texture_filter = (
-				CanvasItem.TEXTURE_FILTER_NEAREST if enabled else CanvasItem.TEXTURE_FILTER_INHERIT
+				CanvasItem.TEXTURE_FILTER_NEAREST if enabled else CanvasItem.TEXTURE_FILTER_PARENT_NODE
 			)
 			icon.offset_left = -half_icon
 			icon.offset_top = -half_icon
