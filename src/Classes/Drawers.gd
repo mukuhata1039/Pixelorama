@@ -23,7 +23,8 @@ class ColorOp:
 	## over existing pixels instead of replacing their RGBA outright.
 	func process(src: Color, dst: Color) -> Color:
 		if is_zero_approx(src.a):
-			return Color.TRANSPARENT
+			# Global alpha lock must still prevent deleting pixels.
+			return dst if Tools.alpha_locked else Color.TRANSPARENT
 		src.a *= strength
 		return dst.blend(src)
 
