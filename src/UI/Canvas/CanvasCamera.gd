@@ -40,7 +40,7 @@ var mouse_pos := Vector2.ZERO
 var drag := false
 var _quick_navigation_drag := false
 var _quick_zoom_anchor := Vector2.ZERO
-## Clip Studio-style temporary canvas rotation: Shift+Space+left drag.
+## Canvas rotation drag driven by the current editable shortcut profile.
 var _clipstudio_rotate_drag := false
 var _clipstudio_rotate_previous_mouse := Vector2.ZERO
 var rotation_slider: ValueSlider
@@ -161,11 +161,21 @@ func _input(event: InputEvent) -> void:
 			offset = offset + (dir.rotated(camera_angle) / zoom) * CAMERA_SPEED_RATE
 
 
-## Temporary canvas rotation, without modifying the image pixels.
-## The camera is active only while the pointer is within its viewport.
-## Shift+Space+drag rotates around the center of the viewport; Shift+wheel
-## rotates in 5-degree increments. Shift+Space+double-click resets to zero.
+## Temporary canvas rotation, without modifying image pixels. All activation
+## shortcuts come from the active Keychain shortcut profile.
+## Hold the "Rotate canvas (hold + left drag)" key chord and left-drag.
+## Double-click with that held shortcut resets to zero as a convenience.
 func _handle_clipstudio_rotation(event: InputEvent) -> bool:
+	var in_canvas := viewport_container.get_global_rect().has_point(
+		viewport_container.get_global_mouse_position()
+	)
+
+	# Reset is an independent, remappable shortcut (default: 0).
+	if in_canvas and event.is_action_pressed(&"canvas_rotate_reset", false, true):
+		camera_angle = 0.0
+		get_viewport().set_input_as_handled()
+		return true
+
 	if event is InputEventMouseButton:
 		var mouse_event := event as InputEventMouseButton
 		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
@@ -176,12 +186,9 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 					return true
 				return false
 			if (
-				not Input.is_key_pressed(KEY_SPACE)
-				or not Input.is_key_pressed(KEY_SHIFT)
-				or Input.is_key_pressed(KEY_ALT)
-				or not viewport_container.get_global_rect().has_point(
-					viewport_container.get_global_mouse_position()
-				)
+				not in_canvas
+				or not Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+				or Tools.active_button != -1
 			):
 				return false
 			_clipstudio_rotate_drag = true
@@ -192,42 +199,32 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 				camera_angle = 0.0
 			get_viewport().set_input_as_handled()
 			return true
-		if (
-			mouse_event.pressed
-			and mouse_event.shift_pressed
-			and not mouse_event.alt_pressed
-			and not mouse_event.ctrl_pressed
-			and not mouse_event.meta_pressed
-			and viewport_container.get_global_rect().has_point(
-				viewport_container.get_global_mouse_position()
-			)
-		):
-			if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP:
-				rotate_camera(-5.0)
-				get_viewport().set_input_as_handled()
-				return true
-			if mouse_event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-				rotate_camera(5.0)
-				get_viewport().set_input_as_handled()
-				return true
+
+	# These can be Shift+wheel by default, or any other input the user chooses.
+	if in_canvas and event.is_action_pressed(&"canvas_rotate_step_left", false, true):
+		rotate_camera(-5.0)
+		get_viewport().set_input_as_handled()
+		return true
+	if in_canvas and event.is_action_pressed(&"canvas_rotate_step_right", false, true):
+		rotate_camera(5.0)
+		get_viewport().set_input_as_handled()
+		return true
 
 	if event is InputEventMouseMotion and _clipstudio_rotate_drag:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_clipstudio_rotate_drag = false
 			return true
-		if Input.is_key_pressed(KEY_SPACE) and Input.is_key_pressed(KEY_SHIFT):
+		if Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag"):
 			var center := viewport_container.size * 0.5
 			var previous := _clipstudio_rotate_previous_mouse - center
 			var current := mouse_pos - center
-			# Avoid angular jumps when a drag passes through the rotation pivot.
+			# Avoid angular jumps when a drag passes through the pivot.
 			if previous.length_squared() > 256.0 and current.length_squared() > 256.0:
-				var change := previous.angle_to(current)
-				camera_angle -= change
+				camera_angle -= previous.angle_to(current)
 		_clipstudio_rotate_previous_mouse = mouse_pos
 		get_viewport().set_input_as_handled()
 		return true
 	return false
-
 
 func rotate_camera(dir: float) -> void:
 	camera_angle += PI / 180 * dir
