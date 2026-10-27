@@ -1021,6 +1021,13 @@ mouse_default_cursor_shape = 2
 button_pressed = true
 text = "Animation plays only on frames of the same tag"
 
+[node name="CompactTimeline" type="CheckBox" parent="TimelineSettings/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Use compact 20px layers and cels. Turn off to restore the regular timeline size."
+mouse_default_cursor_shape = 2
+text = "Compact Timeline (20 px)"
+
 [node name="GridContainer" type="GridContainer" parent="TimelineSettings/MarginContainer/VBoxContainer" unique_id=60713334]
 layout_mode = 2
 columns = 2
@@ -1179,6 +1186,7 @@ color = Color(0, 0.741176, 1, 0.501961)
 [connection signal="close_requested" from="TimelineSettings" to="." method="_on_timeline_settings_close_requested"]
 [connection signal="visibility_changed" from="TimelineSettings" to="." method="_on_timeline_settings_visibility_changed"]
 [connection signal="toggled" from="TimelineSettings/MarginContainer/VBoxContainer/PlayOnlyTags" to="." method="_on_play_only_tags_toggled"]
+[connection signal="toggled" from="TimelineSettings/MarginContainer/VBoxContainer/CompactTimeline" to="." method="_on_compact_timeline_toggled"]
 [connection signal="value_changed" from="TimelineSettings/MarginContainer/VBoxContainer/GridContainer/CelSizeSlider" to="." method="_on_cel_size_slider_value_changed"]
 [connection signal="value_changed" from="TimelineSettings/MarginContainer/VBoxContainer/OnionSkinningOptionsContainer/PastOnionSkinning" to="." method="_on_PastOnionSkinning_value_changed"]
 [connection signal="value_changed" from="TimelineSettings/MarginContainer/VBoxContainer/OnionSkinningOptionsContainer/FutureOnionSkinning" to="." method="_on_FutureOnionSkinning_value_changed"]
