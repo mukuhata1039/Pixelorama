@@ -33,7 +33,8 @@ var compact_timeline := false
 var normal_cel_size := 36
 var min_cel_size := 36:
 	set(value):
-		min_cel_size = clampi(value, CEL_MIN_SIZE_HARD_LIMIT, max_cel_size)
+		var lower_limit := COMPACT_CEL_SIZE if compact_timeline else CEL_MIN_SIZE_HARD_LIMIT
+		min_cel_size = clampi(value, lower_limit, max_cel_size)
 		if is_instance_valid(cel_size_slider):
 			cel_size_slider.min_value = min_cel_size
 var max_cel_size := 144
