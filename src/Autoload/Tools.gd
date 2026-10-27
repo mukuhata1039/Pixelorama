@@ -441,6 +441,7 @@ func _ready() -> void:
 		_slots[MOUSE_BUTTON_RIGHT].kname, "color", Color.WHITE
 	)
 	assign_color(color_value, MOUSE_BUTTON_RIGHT, false)
+	apply_layer_drawing_color_lock()
 	update_tool_cursors()
 
 	# Await is necessary to hide tools irrelevant to the current layer (That may have been
@@ -648,7 +649,47 @@ func swap_tools() -> void:
 					Tools.swap_color()
 
 
+## Returns the exact RGBA this layer permits, if the active layer has a lock.
+## Transparent paint is always allowed, like in the Aseprite customization.
+func get_active_layer_drawing_color_lock() -> Color:
+	var project := Global.current_project
+	if not is_instance_valid(project) or project.layers.is_empty():
+		return Color.TRANSPARENT
+	var layer := project.layers[project.current_layer]
+	return layer.drawing_color if layer.drawing_color_locked else Color.TRANSPARENT
+
+
+## Preserve the transparent/fixed pairing when changing active layers.
+func apply_layer_drawing_color_lock() -> void:
+	if not _slots.has(MOUSE_BUTTON_LEFT) or not _slots.has(MOUSE_BUTTON_RIGHT):
+		return
+	var project := Global.current_project
+	if not is_instance_valid(project) or project.layers.is_empty():
+		return
+	var layer := project.layers[project.current_layer]
+	if not layer.drawing_color_locked:
+		return
+	var fixed_color := layer.drawing_color
+	# Keep a transparent foreground if the user swapped drawing and erasing.
+	var use_transparent_left := (
+		_slots[MOUSE_BUTTON_LEFT].color.a <= 0.0
+		and _slots[MOUSE_BUTTON_RIGHT].color.a > 0.0
+	)
+	if use_transparent_left:
+		assign_color(Color.TRANSPARENT, MOUSE_BUTTON_LEFT, false)
+		assign_color(fixed_color, MOUSE_BUTTON_RIGHT, false)
+	else:
+		assign_color(fixed_color, MOUSE_BUTTON_LEFT, false)
+		assign_color(Color.TRANSPARENT, MOUSE_BUTTON_RIGHT, false)
+
+
 func assign_color(color: Color, button: int, change_alpha := true, index: int = -1) -> void:
+	# Do not let the palette, color picker, eyedropper or a shortcut change a
+	# locked layer's drawing RGBA. Explicit transparency remains available.
+	var fixed := get_active_layer_drawing_color_lock()
+	if fixed.a > 0.0:
+		color = Color.TRANSPARENT if color.a <= 0.0 else fixed
+		change_alpha = false
 	var c: Color = _slots[button].color
 	# This was requested by Issue #54 on GitHub
 	if color.a == 0 and change_alpha:
@@ -986,6 +1027,7 @@ func get_alpha_dynamic(strength := 1.0) -> float:
 
 
 func _cel_switched() -> void:
+	apply_layer_drawing_color_lock()
 	var layer: BaseLayer = Global.current_project.layers[Global.current_project.current_layer]
 	var layer_type := layer.get_layer_type()
 	# Do not make any changes when its the same type of layer, or an audio layer
