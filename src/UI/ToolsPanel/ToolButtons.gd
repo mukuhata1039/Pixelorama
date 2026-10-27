@@ -1,8 +1,6 @@
 extends FlowContainer
 
 var pen_inverted := false
-var _navigation_space_down := false
-var _navigation_alt_down := false
 var _navigation_tool := ""
 
 
@@ -71,84 +69,104 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 
 
-## Handle Space (quick Pan) and Alt+Space (quick Zoom) as held keys, not
-## just as a single key-press event. This makes either press order work and
-## restores Pan when Alt is released while Space is still held.
+## Periodically reconcile quick-navigation tools against actual held keys.
+## Godot can consume Alt-up in menu/GUI handling before _unhandled_input,
+## so relying solely on stored key-down/key-up events leaves Zoom stuck.
+func _process(_delta: float) -> void:
+	if not Global.pixelorama_has_loaded:
+		return
+	if not Tools.has_space_alt_quick_navigation():
+		if not _navigation_tool.is_empty():
+			_restore_quick_navigation_tool()
+		return
+	_sync_space_alt_quick_navigation()
+
+
+func _is_quick_navigation_blocked() -> bool:
+	var focused := get_viewport().gui_get_focus_owner()
+	return (
+		not get_window().has_focus()
+		or not Global.can_draw
+		or get_tree().current_scene.is_writing_text
+		or focused is LineEdit
+		or focused is TextEdit
+	)
+
+
+## Update immediately for normal key events; _process also runs this
+## so missed modifier releases and focus changes never leave Zoom selected.
 func _handle_space_alt_quick_navigation(event: InputEvent) -> bool:
 	if not Tools.has_space_alt_quick_navigation() or not event is InputEventKey:
 		return false
 	var key_event := event as InputEventKey
 	if key_event.echo:
 		return false
-	if key_event.keycode == KEY_SPACE or key_event.physical_keycode == KEY_SPACE:
-		_navigation_space_down = key_event.pressed
-	elif key_event.keycode == KEY_ALT or key_event.physical_keycode == KEY_ALT:
-		_navigation_alt_down = key_event.pressed
-	elif key_event.keycode == KEY_SHIFT or key_event.physical_keycode == KEY_SHIFT:
-		# A Shift change can enter or exit a remappable Shift+Space rotate
-		# chord while Space stays down.
-		pass
-	else:
+	if (
+		key_event.keycode not in [KEY_SPACE, KEY_ALT, KEY_SHIFT]
+		and key_event.physical_keycode not in [KEY_SPACE, KEY_ALT, KEY_SHIFT]
+	):
 		return false
+	var old_tool := _navigation_tool
+	_sync_space_alt_quick_navigation()
+	return old_tool != _navigation_tool or not _navigation_tool.is_empty()
 
-	# Rotate takes priority over quick Pan/Zoom. The previous code kept
-	# switching the selected tool to Pan while Shift+Space was held, making
-	# the effective shortcut depend on key press order.
-	var rotating := Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+
+func _sync_space_alt_quick_navigation() -> void:
+	var blocked := _is_quick_navigation_blocked()
+	var space_down := not blocked and Input.is_key_pressed(KEY_SPACE)
+	var alt_down := not blocked and Input.is_key_pressed(KEY_ALT)
+	var rotating := not blocked and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
 	var wanted_tool := ""
 	if rotating:
-		pass  # Restore the previous tool while the camera handles rotation.
-	elif _navigation_space_down:
-		wanted_tool = "Zoom" if _navigation_alt_down else "Pan"
+		pass  # Camera takes priority over quick Pan/Zoom.
+	elif space_down:
+		wanted_tool = "Zoom" if alt_down else "Pan"
 	elif (
-		_navigation_alt_down
+		alt_down
 		and Tools.has_keyboard_quick_shortcut(&"quick_colorpicker_tool", KEY_ALT, false)
 	):
 		wanted_tool = "ColorPicker"
 
 	if wanted_tool == _navigation_tool:
-		return rotating or not wanted_tool.is_empty()
+		return
 
-	# Finish the current navigation drag before replacing its tool node.
-	# Otherwise Pan can leave camera.drag enabled when switching to Zoom.
+	# Do not interrupt a stroke that was already active when navigation began.
+	if wanted_tool != "" and _navigation_tool.is_empty() and Tools.active_button != -1:
+		return
+
 	if _navigation_tool == "Pan" or _navigation_tool == "Zoom":
 		if Tools.active_button != -1:
 			Tools.get_tool(Tools.active_button).tool_node.draw_end(Vector2i.ZERO)
+			Tools.active_button = -1
 		if _navigation_tool == "Pan":
 			for camera: CanvasCamera in get_tree().get_nodes_in_group("CanvasCameras"):
 				camera.drag = false
 
 	if wanted_tool.is_empty():
-		Tools.quick_assign_tool_revert(MOUSE_BUTTON_RIGHT)
-		Tools.quick_assign_tool_revert(MOUSE_BUTTON_LEFT)
-		# Do not start painting if the user releases Space mid-drag.
-		if _navigation_tool == "Pan" or _navigation_tool == "Zoom":
-			Tools.active_button = -1
+		_restore_quick_navigation_tool()
 	else:
-		# Avoid interrupting a paint stroke when no quick tool is active.
-		if _navigation_tool.is_empty() and Tools.active_button != -1:
-			return true
 		Tools.quick_assign_tool(wanted_tool, MOUSE_BUTTON_LEFT)
 		Tools.quick_assign_tool(wanted_tool, MOUSE_BUTTON_RIGHT)
-		# Switching back to a non-navigation tool must not turn an
-		# unfinished Pan/Zoom drag into a painting or color-picking stroke.
-		if wanted_tool != "Pan" and wanted_tool != "Zoom":
-			if _navigation_tool == "Pan" or _navigation_tool == "Zoom":
-				Tools.active_button = -1
-	_navigation_tool = wanted_tool
-	return true
+		_navigation_tool = wanted_tool
+
+
+func _restore_quick_navigation_tool() -> void:
+	if _navigation_tool.is_empty():
+		return
+	if _navigation_tool == "Pan" or _navigation_tool == "Zoom":
+		if Tools.active_button != -1:
+			Tools.get_tool(Tools.active_button).tool_node.draw_end(Vector2i.ZERO)
+			Tools.active_button = -1
+		for camera: CanvasCamera in get_tree().get_nodes_in_group("CanvasCameras"):
+			camera.drag = false
+	Tools.quick_assign_tool_revert(MOUSE_BUTTON_RIGHT)
+	Tools.quick_assign_tool_revert(MOUSE_BUTTON_LEFT)
+	_navigation_tool = ""
 
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
-		_navigation_space_down = false
-		_navigation_alt_down = false
-		if _navigation_tool == "Pan":
-			for camera: CanvasCamera in get_tree().get_nodes_in_group("CanvasCameras"):
-				camera.drag = false
-		if _navigation_tool == "Pan" or _navigation_tool == "Zoom":
-			Tools.active_button = -1
-		_navigation_tool = ""
+		_restore_quick_navigation_tool()
 
 
 func _on_tool_pressed(tool_pressed: BaseButton) -> void:
