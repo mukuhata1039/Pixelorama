@@ -102,16 +102,15 @@ func _ready() -> void:
 ## Keep every layer control usable at 20px, including group and link buttons.
 func apply_compact_layout(enabled: bool) -> void:
 	var buttons := $HBoxContainer as HBoxContainer
-	buttons.custom_minimum_size.x = 48 if enabled else 84
-	var button_size := Vector2(16, 20) if enabled else Vector2(28, 22)
-	var half_icon := 6.0 if enabled else 11.0
+	buttons.custom_minimum_size.x = 60 if enabled else 84
+	var button_size := Vector2(20, 20) if enabled else Vector2(28, 22)
+	var half_icon := 9.0 if enabled else 11.0
 	for button in buttons.get_children():
 		if button is not Button:
 			continue
 		button.custom_minimum_size = button_size
-		# Aseprite's default timeline theme uses 12x12px eye, lock, and
-		# continuous/link icons in 12px columns. Preserve our 20px row and
-		# a 16px click target, while fitting each source texture to 12x12.
+		# Fit the original 22px icon within the compact 20px row as an
+		# 18px texture, centered in a 20x20 click target.
 		button.clip_contents = enabled
 		var icon := button.get_child(0) as TextureRect
 		if is_instance_valid(icon):
