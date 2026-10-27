@@ -688,6 +688,9 @@ func assign_color(color: Color, button: int, change_alpha := true, index: int = 
 	# locked layer's drawing RGBA. Explicit transparency remains available.
 	var fixed := get_active_layer_drawing_color_lock()
 	if fixed.a > 0.0:
+		# Do not leave an unrelated palette index selected after rejection.
+		if color.a > 0.0 and color != fixed:
+			index = -1
 		color = Color.TRANSPARENT if color.a <= 0.0 else fixed
 		change_alpha = false
 	var c: Color = _slots[button].color
