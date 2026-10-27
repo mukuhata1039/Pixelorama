@@ -30,6 +30,7 @@ var audio_playing_at_frame := 0
 var audio_player: AudioStreamPlayer
 
 var _old_camera_auto_release_gui_focus: bool
+var drawing_color_lock_button: Button
 @onready var properties: AcceptDialog = Global.control.find_child("LayerProperties")
 @onready var main_button := %LayerMainButton as Button
 @onready var expand_button := %ExpandButton as BaseButton
@@ -62,6 +63,8 @@ func _ready() -> void:
 	layer.visibility_changed.connect(_on_layer_visibility_changed)
 	layer.locked_changed.connect(update_buttons)
 	layer.ui_color_changed.connect(func(): layer_ui_color.color = layer.get_ui_color())
+	if layer is PixelLayer:
+		_setup_drawing_color_lock_button(layer)
 	for ancestor in layer.get_ancestors():
 		ancestor.ui_color_changed.connect(func(): layer_ui_color.color = layer.get_ui_color())
 	if layer is PixelLayer:
@@ -99,11 +102,72 @@ func _ready() -> void:
 	apply_compact_layout(Global.animation_timeline.compact_timeline)
 
 
+## Add Aseprite-like color lock after eye, padlock and link/group controls.
+func _setup_drawing_color_lock_button(layer: BaseLayer) -> void:
+	drawing_color_lock_button = Button.new()
+	drawing_color_lock_button.name = "DrawingColorLockButton"
+	drawing_color_lock_button.tooltip_text = (
+		"Lock this layer to the current drawing color and alpha. "
+		+ "Only that color and transparency can be selected."
+	)
+	drawing_color_lock_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	drawing_color_lock_button.add_to_group("UIButtons")
+	$HBoxContainer.add_child(drawing_color_lock_button)
+	drawing_color_lock_button.draw.connect(_draw_drawing_color_lock_indicator)
+	drawing_color_lock_button.pressed.connect(_on_drawing_color_lock_pressed)
+	layer.drawing_color_lock_changed.connect(drawing_color_lock_button.queue_redraw)
+
+
+func _draw_drawing_color_lock_indicator() -> void:
+	if not is_instance_valid(drawing_color_lock_button):
+		return
+	var layer := Global.current_project.layers[layer_index]
+	var locked := layer.drawing_color_locked
+	var center := drawing_color_lock_button.size / 2.0
+	var marker_color := (
+		layer.drawing_color if locked else Color(0.75, 0.75, 0.75, 1.0)
+	)
+	# Render a compact cross, like Aseprite's per-layer color marker.
+	var upright := Rect2(center + Vector2(-2, -5), Vector2(4, 10))
+	var across := Rect2(center + Vector2(-5, -2), Vector2(10, 4))
+	drawing_color_lock_button.draw_rect(upright, marker_color, locked, 1.0)
+	drawing_color_lock_button.draw_rect(across, marker_color, locked, 1.0)
+
+
+func _on_drawing_color_lock_pressed() -> void:
+	var project := Global.current_project
+	var layer := project.layers[layer_index]
+	if not layer is PixelLayer:
+		return
+	var was_locked := layer.drawing_color_locked
+	var new_color := layer.drawing_color
+	if not was_locked:
+		var foreground := Tools.get_assigned_color(MOUSE_BUTTON_LEFT)
+		var background := Tools.get_assigned_color(MOUSE_BUTTON_RIGHT)
+		new_color = foreground if foreground.a > 0.0 else background
+		if new_color.a <= 0.0:
+			return  # No non-transparent color available to lock.
+	Global.transform_content_confirmed.emit()
+	project.undo_redo.create_action("Toggle Layer Drawing Color Lock")
+	project.undo_redo.add_do_property(layer, "drawing_color", new_color)
+	project.undo_redo.add_do_property(layer, "drawing_color_locked", not was_locked)
+	project.undo_redo.add_undo_property(layer, "drawing_color", layer.drawing_color)
+	project.undo_redo.add_undo_property(layer, "drawing_color_locked", was_locked)
+	project.undo_redo.add_do_method(Tools.apply_layer_drawing_color_lock)
+	project.undo_redo.add_undo_method(Tools.apply_layer_drawing_color_lock)
+	project.undo_redo.add_do_method(Global.undo_or_redo.bind(false))
+	project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true))
+	project.undo_redo.commit_action()
+	if Global.select_layer_on_button_click:
+		_select_current_layer()
+
+
 ## Keep every layer control usable at 20px, including group and link buttons.
 func apply_compact_layout(enabled: bool) -> void:
 	var buttons := $HBoxContainer as HBoxContainer
-	buttons.custom_minimum_size.x = 60 if enabled else 84
 	var button_size := Vector2(20, 20) if enabled else Vector2(28, 22)
+	var button_count := 4 if is_instance_valid(drawing_color_lock_button) else 3
+	buttons.custom_minimum_size.x = button_count * int(button_size.x)
 	var half_icon := 9.0 if enabled else 11.0
 	for button in buttons.get_children():
 		if button is not Button:
@@ -112,7 +176,9 @@ func apply_compact_layout(enabled: bool) -> void:
 		# Fit the original 22px icon within the compact 20px row as an
 		# 18px texture, centered in a 20x20 click target.
 		button.clip_contents = enabled
-		var icon := button.get_child(0) as TextureRect
+		var icon: TextureRect
+		if button.get_child_count() > 0:
+			icon = button.get_child(0) as TextureRect
 		if is_instance_valid(icon):
 			icon.expand_mode = (
 				TextureRect.EXPAND_IGNORE_SIZE if enabled else TextureRect.EXPAND_KEEP_SIZE
@@ -146,6 +212,8 @@ func apply_compact_layout(enabled: bool) -> void:
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE if enabled else TextureRect.EXPAND_KEEP_SIZE
 		icon.custom_minimum_size = Vector2(12, 12) if enabled else Vector2.ZERO
 	$LayerMainButton/LayerName/MarginSpacer.custom_minimum_size.x = 0 if enabled else 4
+	if is_instance_valid(drawing_color_lock_button):
+		drawing_color_lock_button.queue_redraw()
 
 
 func _on_cel_switched() -> void:
