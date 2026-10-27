@@ -269,6 +269,28 @@ func _process(_delta: float) -> void:
 	if is_rotating_view == _rotate_view_cursor_active:
 		return
 	_rotate_view_cursor_active = is_rotating_view
+
+	# Temporarily hide normal left/right tool icons and brush previews
+	# while Rotate View is active, just like the quick Pan tool.
+	# Keep the saved cursor preferences intact so they are restored
+	# immediately on releasing the rotation shortcut.
+	var over_main_canvas := (
+		is_instance_valid(Global.main_viewport)
+		and Global.main_viewport.get_global_rect().has_point(get_global_mouse_position())
+	)
+	left_cursor.visible = (
+		not is_rotating_view and over_main_canvas and Global.show_left_tool_icon
+	)
+	right_cursor.visible = (
+		not is_rotating_view
+		and over_main_canvas
+		and Global.show_right_tool_icon
+		and not Global.single_tool_mode
+	)
+	if is_instance_valid(Global.canvas):
+		Global.canvas.indicators.queue_redraw()
+		Global.canvas.previews.queue_redraw()
+
 	if _rotate_view_cursor_active:
 		# Support either the crosshair or arrow shape selected in preferences.
 		Input.set_custom_mouse_cursor(
