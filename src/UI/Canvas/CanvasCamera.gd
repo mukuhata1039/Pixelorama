@@ -92,7 +92,7 @@ func _input(event: InputEvent) -> void:
 		elif event is InputEventMouseMotion and _quick_navigation_drag:
 			if Input.is_key_pressed(KEY_SPACE):
 				if Input.is_key_pressed(KEY_ALT):
-					zoom_camera(-event.relative.x / 3.0)
+					zoom_camera(event.relative.x / 3.0)
 				else:
 					offset = offset - event.relative.rotated(camera_angle) / zoom
 					update_transparent_checker_offset()
