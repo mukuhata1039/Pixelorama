@@ -8,6 +8,7 @@ signal offset_changed
 enum Cameras { MAIN, SECOND, SMALL }
 
 const CAMERA_SPEED_RATE := 15.0
+const ROTATE_CURSOR_ICON := preload("res://assets/graphics/misc/canvas_rotate_cursor.svg")
 
 @export var index := 0
 
@@ -45,6 +46,7 @@ var _clipstudio_rotate_drag := false
 var _clipstudio_rotate_button := MOUSE_BUTTON_LEFT
 var _clipstudio_rotate_mouse_shortcut := false
 var _clipstudio_rotate_previous_mouse := Vector2.ZERO
+var _rotate_cursor_indicator: Sprite2D
 var rotation_slider: ValueSlider
 var zoom_slider: ValueSlider
 var should_tween := true
@@ -59,6 +61,18 @@ func _ready() -> void:
 	if not DisplayServer.is_touchscreen_available():
 		set_process_input(false)
 	if index == Cameras.MAIN:
+		# The camera rotation gesture is not a Tool node, so it has no
+		# ordinary tool cursor. Show a dedicated non-interactive icon near
+		# the pointer while its remappable shortcut is held or dragging.
+		_rotate_cursor_indicator = Sprite2D.new()
+		_rotate_cursor_indicator.name = "CanvasRotationCursor"
+		_rotate_cursor_indicator.texture = ROTATE_CURSOR_ICON
+		_rotate_cursor_indicator.centered = false
+		_rotate_cursor_indicator.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_rotate_cursor_indicator.z_as_relative = false
+		_rotate_cursor_indicator.z_index = 1000
+		_rotate_cursor_indicator.visible = false
+		Global.control.add_child(_rotate_cursor_indicator)
 		rotation_slider = Global.top_menu_container.get_node("%RotationSlider")
 		rotation_slider.value_changed.connect(_rotation_slider_value_changed)
 		zoom_slider = Global.top_menu_container.get_node("%ZoomSlider")
@@ -68,6 +82,36 @@ func _ready() -> void:
 	viewport_container = get_viewport().get_parent()
 	transparent_checker = get_viewport().get_node("TransparentChecker")
 	update_transparent_checker_offset()
+
+
+## Cursor feedback is independent of the rendering/painting tools.
+## Poll the current shortcut profile so remapping, key-release order and
+## mouse-button-bound rotation all update the indicator immediately.
+func _process(_delta: float) -> void:
+	if index != Cameras.MAIN or not is_instance_valid(_rotate_cursor_indicator):
+		return
+	var is_over_canvas := viewport_container.get_global_rect().has_point(
+		viewport_container.get_global_mouse_position()
+	)
+	var showing_rotation := (
+		_clipstudio_rotate_drag
+		or (
+			Tools.active_button == -1
+			and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+		)
+	)
+	_rotate_cursor_indicator.visible = (
+		Global.can_draw
+		and not Global.control.is_writing_text
+		and is_over_canvas
+		and showing_rotation
+	)
+	if _rotate_cursor_indicator.visible:
+		# Above and to the right of the cursor, outside both standard
+		# left/right tool-icon positions (+/-32, +32).
+		_rotate_cursor_indicator.position = (
+			Global.control.get_local_mouse_position() + Vector2(15, -32)
+		)
 
 
 func _notification(what: int) -> void:
