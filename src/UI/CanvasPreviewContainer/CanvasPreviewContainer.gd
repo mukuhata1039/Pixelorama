@@ -1,6 +1,7 @@
 extends PanelContainer
 
 @onready var preview_zoom_slider := $VBox/HBox/VBoxContainer/PreviewZoomSlider as VSlider
+@onready var preview_viewport_container := $VBox/HBox/PreviewViewportContainer as SubViewportContainer
 @onready var canvas_preview := $"%CanvasPreview" as Node2D
 @onready var camera := $"%CameraPreview" as CanvasCamera
 @onready var play_button := $"%PlayButton" as Button
@@ -10,6 +11,33 @@ extends PanelContainer
 
 func _ready() -> void:
 	camera.zoom_changed.connect(_zoom_changed)
+	preview_viewport_container.resized.connect(_fit_preview_if_needed)
+	visibility_changed.connect(_fit_preview_if_needed)
+	Global.project_switched.connect(_fit_preview_if_needed)
+	_fit_preview_if_needed.call_deferred()
+
+
+## Shrink the preview image as its dock becomes narrower, instead of cropping it.
+## Leave deliberate user zooms alone until the viewport is resized.
+func _fit_preview_if_needed() -> void:
+	if not is_visible_in_tree():
+		return
+	var image_size := Vector2(Global.current_project.size)
+	var viewport_size := preview_viewport_container.size
+	if (
+		image_size.x <= 0.0
+		or image_size.y <= 0.0
+		or viewport_size.x <= 0.0
+		or viewport_size.y <= 0.0
+	):
+		return
+	var fit_zoom := minf(viewport_size.x / image_size.x, viewport_size.y / image_size.y)
+	if camera.zoom.x <= fit_zoom:
+		return
+	# Keep the whole image visible while preserving its aspect ratio.
+	var new_zoom := maxf(preview_zoom_slider.min_value, fit_zoom)
+	camera.offset = image_size / 2.0
+	camera.zoom = Vector2(new_zoom, new_zoom)
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -32,7 +60,7 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _zoom_changed() -> void:
-	preview_zoom_slider.value = camera.zoom.x
+	preview_zoom_slider.set_value_no_signal(camera.zoom.x)
 
 
 func _on_PreviewZoomSlider_value_changed(value: float) -> void:

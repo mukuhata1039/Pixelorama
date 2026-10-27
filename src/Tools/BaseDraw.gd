@@ -36,6 +36,15 @@ var _line_polylines := []
 var _stroke_project: Project
 var _stroke_images: Dictionary[Image, Variant]
 var _is_mask_size_zero := true
+var _profile_steps := 0
+var _profile_prepare_us := 0
+var _profile_coords_us := 0
+var _profile_paint_us := 0
+var _profile_native_steps := 0
+var _profile_native_skip_reason := ""
+var _native_brush_rows: Dictionary[int, Vector2i] = {}
+var _native_brush_size := -1
+var _native_brush_type := -1
 var _circle_tool_shortcut: Array[Vector2i]
 var _mm_action: Keychain.MouseMovementInputAction
 
@@ -328,6 +337,18 @@ func commit_undo(action := "Draw") -> void:
 	_undo_data.clear()
 
 
+## The profiler is intentionally kept separate from the paint algorithms.
+func draw_start(pos: Vector2i) -> void:
+	super.draw_start(pos)
+	_profile_steps = 0
+	_profile_prepare_us = 0
+	_profile_coords_us = 0
+	_profile_paint_us = 0
+	_profile_native_steps = 0
+	_profile_native_skip_reason = ""
+	Global.canvas.begin_brush_profile()
+
+
 func draw_tool(pos: Vector2i) -> void:
 	var project := Global.current_project
 	if project.has_selection:
@@ -336,15 +357,49 @@ func draw_tool(pos: Vector2i) -> void:
 		# Even brushes are not perfectly centered and are offsetted by 1 px, so we add it.
 		if int(_stroke_dimensions.x) % 2 == 0:
 			pos.x += 1
+	var started_us := Time.get_ticks_usec()
 	_prepare_tool()
-	var coords_to_draw := _draw_tool(pos)
-	for coord in coords_to_draw:
-		_set_pixel_no_cache(coord)
+	var prepared_us := Time.get_ticks_usec()
+	var coords_done_us: int
+	if _can_use_native_brush():
+		_profile_native_steps += 1
+		var single_point: Array[Vector2i] = [pos]
+		var native_rects := _get_native_brush_rects(single_point)
+		coords_done_us = Time.get_ticks_usec()
+		_paint_native_brush_rects(native_rects)
+	else:
+		var coords_to_draw := _draw_tool(pos)
+		coords_done_us = Time.get_ticks_usec()
+		for coord in coords_to_draw:
+			_set_pixel_no_cache(coord)
+	var painted_us := Time.get_ticks_usec()
+	_profile_steps += 1
+	_profile_prepare_us += prepared_us - started_us
+	_profile_coords_us += coords_done_us - prepared_us
+	_profile_paint_us += painted_us - coords_done_us
 	if project.has_selection:
 		project.selection_map.lock_selection_rect(project, false)
 
 
 func draw_end(pos: Vector2i) -> void:
+	var profile := Global.canvas.finish_brush_profile()
+	if _profile_steps > 0:
+		var steps := float(_profile_steps)
+		print(
+			"[Pixelorama描画計測] ", _profile_steps, "回 (高速=", _profile_native_steps,
+			", ブラシ=", _brush.type, ", サイズ=", _brush_size_dynamics,
+			", 高速対象外=", _profile_native_skip_reason, ") | ",
+			"ペン準備=", "%.2f" % (_profile_prepare_us / steps / 1000.0),
+			"ms/回, 座標計算=", "%.2f" % (_profile_coords_us / steps / 1000.0),
+			"ms/回, ピクセル処理=", "%.2f" % (_profile_paint_us / steps / 1000.0),
+			"ms/回, 画像更新=", "%.2f" % (
+				float(profile.texture_us) / maxf(1.0, float(profile.texture_calls)) / 1000.0
+			),
+			"ms/回 (", profile.texture_calls, "回), 合成準備=", "%.2f" % (
+				float(profile.layers_us) / maxf(1.0, float(profile.layers_calls)) / 1000.0
+			),
+			"ms/回 (", profile.layers_calls, "回)"
+		)
 	super.draw_end(pos)
 	_stroke_project = null
 	_stroke_images = {}
@@ -467,7 +522,9 @@ func draw_fill_gap(start: Vector2i, end: Vector2i) -> void:
 		if int(_stroke_dimensions.x) % 2 == 0:
 			start.x += 1
 			end.x += 1
+	var started_us := Time.get_ticks_usec()
 	_prepare_tool()
+	var prepared_us := Time.get_ticks_usec()
 	var pixel_coords := Geometry2D.bresenham_line(start, end)
 	pixel_coords.pop_front()
 	if project.get_current_cel() is Cel3D:
@@ -478,11 +535,172 @@ func draw_fill_gap(start: Vector2i, end: Vector2i) -> void:
 			if draw_pos == Vector2.INF:
 				return
 			pixel_coords[i] = Vector2i(draw_pos)
-	var coords_to_draw := get_coords_to_draw(pixel_coords)
-	for c in coords_to_draw:
-		_set_pixel_no_cache(c)
+	var coords_done_us: int
+	if _can_use_native_brush():
+		_profile_native_steps += 1
+		var native_rects := _get_native_brush_rects(pixel_coords)
+		coords_done_us = Time.get_ticks_usec()
+		_paint_native_brush_rects(native_rects)
+	else:
+		var coords_to_draw := get_coords_to_draw(pixel_coords)
+		coords_done_us = Time.get_ticks_usec()
+		for c in coords_to_draw:
+			_set_pixel_no_cache(c)
+	var painted_us := Time.get_ticks_usec()
+	_profile_steps += 1
+	_profile_prepare_us += prepared_us - started_us
+	_profile_coords_us += coords_done_us - prepared_us
+	_profile_paint_us += painted_us - coords_done_us
 	if project.has_selection:
 		project.selection_map.lock_selection_rect(project, false)
+
+
+## Only the unmasked, fully opaque pencil can paint many pixels as solid rectangles.
+## Special blending, selections, indexed colors, symmetry etc. use the original path.
+func _can_use_native_brush() -> bool:
+	var reason := _native_brush_skip_reason()
+	if reason != "":
+		if _profile_native_skip_reason == "":
+			_profile_native_skip_reason = reason
+		return false
+	return true
+
+
+## Keep the reasons visible in the diagnostics so disabled fast paths are debuggable.
+func _native_brush_skip_reason() -> String:
+	if _brush.type not in [Brushes.PIXEL, Brushes.FILLED_CIRCLE]:
+		return "ペン種類"
+	if _brush_size_dynamics < 12:
+		return "サイズ"
+	if _spacing_mode:
+		return "間隔モード"
+	if _brush_density != 100:
+		return "密度"
+	if _is_eraser:
+		return "消しゴム"
+	if not _is_mask_size_zero:
+		return "透明度マスク"
+	if _drawer.color_op.get("overwrite") == null:
+		return "ペン以外のツール"
+	if not is_equal_approx(_drawer.color_op.strength, 1.0):
+		return "不透明度設定"
+	if not is_equal_approx(tool_slot.color.a, 1.0):
+		return "色の透明度"
+	if Tools.alpha_locked:
+		return "アルファロック"
+	# Pixel Perfect affects drawing only for 1px pencils; large pencils
+	# already have it disabled in _prepare_tool().
+	if _drawer.pixel_perfect:
+		return "ピクセルパーフェクト"
+	if (
+		Tools.horizontal_mirror
+		or Tools.vertical_mirror
+		or Tools.diagonal_xy_mirror
+		or Tools.diagonal_x_minus_y_mirror
+		or Global.mirror_view
+	):
+		return "反転・対称"
+	if _stroke_project.has_selection:
+		return "選択範囲"
+	if _stroke_project.tiles.mode != Tiles.MODE.NONE:
+		return "タイルモード"
+	if _stroke_images.is_empty():
+		return "描画先なし"
+	for image in _stroke_images:
+		if image is not ImageExtended:
+			return "画像形式"
+		if (image as ImageExtended).is_indexed:
+			return "インデックスカラー"
+		if _stroke_images[image] is not PixelCel:
+			return "レイヤー種類"
+	return ""
+
+## Convert the brush footprint to horizontal runs only when the brush changes.
+func _get_native_brush_rows() -> Dictionary[int, Vector2i]:
+	if _native_brush_size == _brush_size_dynamics and _native_brush_type == _brush.type:
+		return _native_brush_rows
+	_native_brush_rows.clear()
+	_native_brush_size = _brush_size_dynamics
+	_native_brush_type = _brush.type
+	if _brush.type == Brushes.PIXEL:
+		var half := _brush_size_dynamics >> 1
+		for y in range(-half, _brush_size_dynamics - half):
+			_native_brush_rows[y] = Vector2i(-half, _brush_size_dynamics - half - 1)
+	else:
+		# Use the exact existing filled-circle footprint, not an approximation.
+		for offset in _circle_tool_shortcut:
+			if _native_brush_rows.has(offset.y):
+				var row: Vector2i = _native_brush_rows[offset.y]
+				_native_brush_rows[offset.y] = Vector2i(
+					mini(row.x, offset.x), maxi(row.y, offset.x)
+				)
+			else:
+				_native_brush_rows[offset.y] = Vector2i(offset.x, offset.x)
+	return _native_brush_rows
+
+
+## Union overlapping stamp rows before painting, so moving one pixel does
+## not write the same 60x60 block repeatedly.
+func _get_native_brush_rects(centers: Array[Vector2i]) -> Array[Rect2i]:
+	var result: Array[Rect2i] = []
+	if centers.is_empty():
+		return result
+	var footprint := _get_native_brush_rows()
+	if footprint.is_empty():
+		return result
+	var row_spans: Dictionary[int, Vector2i] = {}
+	var canvas_size := _stroke_project.size
+	var min_y := canvas_size.y
+	var max_y := -1
+	for center in centers:
+		for dy in footprint:
+			var y: int = center.y + dy
+			if y < 0 or y >= canvas_size.y:
+				continue
+			var offsets: Vector2i = footprint[dy]
+			var left := maxi(0, center.x + offsets.x)
+			var right := mini(canvas_size.x - 1, center.x + offsets.y)
+			if left > right:
+				continue
+			if row_spans.has(y):
+				var existing: Vector2i = row_spans[y]
+				row_spans[y] = Vector2i(mini(existing.x, left), maxi(existing.y, right))
+			else:
+				row_spans[y] = Vector2i(left, right)
+			min_y = mini(min_y, y)
+			max_y = maxi(max_y, y)
+	# Join identical consecutive rows into larger native fill rectangles.
+	var run_y := -1
+	var run_span := Vector2i.ZERO
+	for y in range(min_y, max_y + 2):
+		var span: Vector2i = row_spans.get(y, Vector2i(-1, -1))
+		if run_y >= 0 and span != run_span:
+			result.append(Rect2i(
+				Vector2i(run_span.x, run_y),
+				Vector2i(run_span.y - run_span.x + 1, y - run_y)
+			))
+			run_y = -1
+		if span.x >= 0 and run_y < 0:
+			run_y = y
+			run_span = span
+	return result
+
+
+func _paint_native_brush_rects(rects: Array[Rect2i]) -> void:
+	if rects.is_empty():
+		return
+	var bounds := rects[0]
+	for rect in rects:
+		bounds = bounds.merge(rect)
+	# Preserve the standard drawer's 8-bit color normalization.
+	var paint_color := Color(tool_slot.color.to_html())
+	for image in _stroke_images:
+		var cel := _stroke_images[image] as PixelCel
+		# Expand the cel at most once for the entire stroke segment.
+		cel.ensure_canvas_rect_in_bounds(bounds.position, bounds.size)
+		for rect in rects:
+			image.fill_rect(Rect2i(rect.position - cel.offset, rect.size), paint_color)
+	_drawer.color_op.changed = true
 
 
 func get_coords_to_draw(points: Array[Vector2i], draw_brush := true) -> PackedVector2Array:

@@ -46,7 +46,7 @@ layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 3
 mouse_default_cursor_shape = 2
-min_value = 1.0
+min_value = 0.01
 max_value = 5.0
 step = 0.01
 value = 1.0
@@ -112,6 +112,7 @@ size_flags_horizontal = 3
 layout_mode = 2
 
 [node name="Label" type="Label" parent="VBox/Animation/VBoxContainer/Mode" unique_id=1920647195]
+visible = false
 layout_mode = 2
 text = "Animation mode:"
 
@@ -119,7 +120,9 @@ text = "Animation mode:"
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_default_cursor_shape = 2
+tooltip_text = "Animation mode"
 clip_text = true
+fit_to_longest_item = false
 selected = 0
 item_count = 2
 popup/item_0/text = "All frames"

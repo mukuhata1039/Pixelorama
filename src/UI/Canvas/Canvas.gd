@@ -9,6 +9,12 @@ var _brush_size_drag_captured_left_mouse := false
 ## One-click sampling when Quick Color Picker is explicitly bound to right mouse.
 var _quick_right_color_picker_active := false
 var sprite_changed_this_frame := false  ## For optimization purposes
+## Diagnostic counters for large-brush performance (draft PR only).
+var brush_profile_active := false
+var brush_profile_texture_us := 0
+var brush_profile_texture_calls := 0
+var brush_profile_layers_us := 0
+var brush_profile_layers_calls := 0
 var update_all_layers := false
 ## For optimization purposes. A kind of override to force include a layer during canvas update.
 ## Used in Undo/Redo for FX and visibility changes
@@ -63,7 +69,11 @@ func _draw() -> void:
 	# Placeholder so we can have a material here
 	var image_to_draw := project.empty_image_texture
 	draw_texture(image_to_draw, Vector2.ZERO)
+	var layer_start_us := Time.get_ticks_usec() if brush_profile_active else 0
 	draw_layers(project_changed)
+	if brush_profile_active:
+		brush_profile_layers_us += Time.get_ticks_usec() - layer_start_us
+		brush_profile_layers_calls += 1
 	project_changed = false
 	if Global.onion_skinning:
 		refresh_onion()
@@ -244,7 +254,30 @@ func _input(event: InputEvent) -> void:
 
 	if sprite_changed_this_frame:
 		queue_redraw()
+		var texture_start_us := Time.get_ticks_usec() if brush_profile_active else 0
 		update_selected_cels_textures()
+		if brush_profile_active:
+			brush_profile_texture_us += Time.get_ticks_usec() - texture_start_us
+			brush_profile_texture_calls += 1
+
+
+## These numbers measure CPU call times, NOT asynchronous GPU execution.
+func begin_brush_profile() -> void:
+	brush_profile_active = true
+	brush_profile_texture_us = 0
+	brush_profile_texture_calls = 0
+	brush_profile_layers_us = 0
+	brush_profile_layers_calls = 0
+
+
+func finish_brush_profile() -> Dictionary:
+	brush_profile_active = false
+	return {
+		"texture_us": brush_profile_texture_us,
+		"texture_calls": brush_profile_texture_calls,
+		"layers_us": brush_profile_layers_us,
+		"layers_calls": brush_profile_layers_calls,
+	}
 
 
 func queue_redraw_all_layers() -> void:
