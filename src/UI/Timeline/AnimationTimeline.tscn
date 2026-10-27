@@ -998,7 +998,7 @@ size_flags_horizontal = 3
 
 [node name="TimelineSettings" type="Popup" parent="." unique_id=2082174526]
 position = Vector2i(0, 24)
-size = Vector2i(296, 211)
+size = Vector2i(296, 242)
 unresizable = false
 borderless = false
 
