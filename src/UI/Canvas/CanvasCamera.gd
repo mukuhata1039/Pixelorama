@@ -83,6 +83,7 @@ func _input(event: InputEvent) -> void:
 		drag = false
 		_quick_navigation_drag = false
 		_clipstudio_rotate_drag = false
+		_clipstudio_rotate_mouse_shortcut = false
 		return
 	mouse_pos = viewport_container.get_local_mouse_position()
 	if _handle_clipstudio_rotation(event):
