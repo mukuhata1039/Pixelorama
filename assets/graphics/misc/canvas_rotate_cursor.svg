@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+  <!-- High-contrast rotation pointer indicator, visible on light/dark artwork. -->
+  <g fill="none" stroke="#181818" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M7 9a9 9 0 1 1-1 10"/>
+    <path d="M3 4v7h7"/>
+  </g>
+  <g fill="none" stroke="#f5f5f5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M7 9a9 9 0 1 1-1 10"/>
+    <path d="M3 4v7h7"/>
+  </g>
+</svg>

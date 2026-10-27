@@ -21,8 +21,8 @@ func _on_ViewportContainer_mouse_entered() -> void:
 
 
 func _on_ViewportContainer_mouse_exited() -> void:
+	camera.cancel_navigation_drag()
 	camera.set_process_input(false)
-	camera.drag = false
 	Global.control.left_cursor.visible = false
 	Global.control.right_cursor.visible = false
 	Input.set_default_cursor_shape(Input.CURSOR_ARROW)

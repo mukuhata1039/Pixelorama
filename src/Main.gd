@@ -4,6 +4,8 @@ extends Control
 signal save_file_dialog_opened(opened: bool)
 
 const SPLASH_DIALOG_SCENE_PATH := "res://src/UI/Dialogs/SplashDialog.tscn"
+const ROTATE_VIEW_CURSOR := preload("res://assets/graphics/misc/canvas_rotate_cursor.svg")
+const ROTATE_VIEW_CURSOR_HOTSPOT := Vector2(14, 14)
 
 var opensprite_file_selected := false
 var redone := false
@@ -11,6 +13,7 @@ var is_quitting_on_save := false
 var is_writing_text := false
 var changed_projects_on_quit: Array[Project]
 var cursor_image := preload("res://assets/graphics/cursor.png")
+var _rotate_view_cursor_active := false
 ## Used to download an image when dragged and dropped directly from a browser into Pixelorama
 var url_to_download := ""
 var splash_dialog: AcceptDialog:
@@ -242,6 +245,66 @@ func _ready() -> void:
 	Global.pixelorama_has_loaded = true
 	Global.pixelorama_opened.emit()
 	print("Time Pixelorama took to open: %sms" % Time.get_ticks_msec())
+
+
+## The normal brush cursor is configured here too. Switching the actual OS
+## cursor is more reliable than drawing a Sprite2D from inside the canvas
+## SubViewport, and works with remapped keyboard/mouse rotation shortcuts.
+func _process(_delta: float) -> void:
+	var is_rotating_view := false
+	if (
+		Global.can_draw
+		and not is_writing_text
+		and is_instance_valid(Global.camera)
+		and is_instance_valid(Global.main_viewport)
+		and Global.main_viewport.get_global_rect().has_point(get_global_mouse_position())
+	):
+		is_rotating_view = (
+			Global.camera._clipstudio_rotate_drag
+			or (
+				Tools.active_button == -1
+				and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+			)
+		)
+	if is_rotating_view == _rotate_view_cursor_active:
+		return
+	_rotate_view_cursor_active = is_rotating_view
+
+	# Temporarily hide normal left/right tool icons and brush previews
+	# while Rotate View is active, just like the quick Pan tool.
+	# Keep the saved cursor preferences intact so they are restored
+	# immediately on releasing the rotation shortcut.
+	var over_main_canvas := (
+		is_instance_valid(Global.main_viewport)
+		and Global.main_viewport.get_global_rect().has_point(get_global_mouse_position())
+	)
+	left_cursor.visible = (
+		not is_rotating_view and over_main_canvas and Global.show_left_tool_icon
+	)
+	right_cursor.visible = (
+		not is_rotating_view
+		and over_main_canvas
+		and Global.show_right_tool_icon
+		and not Global.single_tool_mode
+	)
+	if is_instance_valid(Global.canvas):
+		Global.canvas.indicators.queue_redraw()
+		Global.canvas.previews.queue_redraw()
+
+	if _rotate_view_cursor_active:
+		# Support either the crosshair or arrow shape selected in preferences.
+		Input.set_custom_mouse_cursor(
+			ROTATE_VIEW_CURSOR, Input.CURSOR_CROSS, ROTATE_VIEW_CURSOR_HOTSPOT
+		)
+		Input.set_custom_mouse_cursor(
+			ROTATE_VIEW_CURSOR, Input.CURSOR_ARROW, ROTATE_VIEW_CURSOR_HOTSPOT
+		)
+	else:
+		Input.set_custom_mouse_cursor(null, Input.CURSOR_ARROW)
+		if Global.native_cursors:
+			Input.set_custom_mouse_cursor(null, Input.CURSOR_CROSS)
+		else:
+			set_custom_cursor()
 
 
 func _input(event: InputEvent) -> void:
