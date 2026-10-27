@@ -812,8 +812,9 @@ func _on_OnionSkinning_pressed() -> void:
 
 
 func _on_timeline_settings_button_pressed() -> void:
-	var pos := Vector2i(onion_skinning_button.global_position) - timeline_settings.size
-	timeline_settings.popup_on_parent(Rect2i(pos.x - 16, pos.y + 32, 136, 126))
+	var popup_size := timeline_settings.size
+	var pos := Vector2i(onion_skinning_button.global_position) - popup_size
+	timeline_settings.popup_on_parent(Rect2i(pos.x - 16, pos.y + 32, popup_size.x, popup_size.y))
 
 
 func _on_LoopAnim_pressed() -> void:
