@@ -148,15 +148,21 @@ func _handle_quick_right_color_picker(event: InputEvent) -> bool:
 	return true
 
 func _input(event: InputEvent) -> void:
-	# Block drawing when the currently configured rotation shortcut is
-	# held or a rotation drag is captured, even if its key is released
-	# before mouse-up. Do not interrupt an already active paint stroke.
+	# Do not paint while the user holds the configured rotation key
+	# chord or starts a rotation with a bound mouse button. Captured
+	# rotation drags remain blocked even if their modifier is released.
 	if (
-		(
+		(is_instance_valid(Global.camera) and Global.camera._clipstudio_rotate_drag)
+		or (
 			Tools.active_button == -1
-			and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+			and (
+				Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+				or (
+					event is InputEventMouseButton
+					and event.is_action_pressed(&"canvas_rotate_drag", false, true)
+				)
+			)
 		)
-		or (is_instance_valid(Global.camera) and Global.camera._clipstudio_rotate_drag)
 	):
 		return
 	if _handle_quick_right_color_picker(event):
