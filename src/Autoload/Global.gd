@@ -1042,7 +1042,7 @@ func _initialize_keychain() -> void:
 			"Rotate canvas right 5 degrees", "Canvas", false
 		),
 		&"canvas_rotate_reset": Keychain.InputAction.new(
-			"Reset canvas rotation", "Canvas", false
+			"Reset canvas rotation and mirror", "Canvas", false
 		),
 		&"camera_left": Keychain.InputAction.new("", "Canvas"),
 		&"camera_right": Keychain.InputAction.new("", "Canvas"),
