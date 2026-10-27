@@ -109,6 +109,17 @@ class Dialog:
 			Global.control.get_node("Dialogs").add_child(node)
 
 
+func _enter_tree() -> void:
+	# The Window and Help system menu IDs are intended for macOS.
+	# On Windows, they bind these popups to the native menu renderer,
+	# making them look different from the other Pixelorama menus.
+	if OS.get_name() == "Windows":
+		var window_popup := get_node("MarginContainer/HBoxContainer/MenuBar/Window") as PopupMenu
+		var help_popup := get_node("MarginContainer/HBoxContainer/MenuBar/Help") as PopupMenu
+		window_popup.system_menu_id = NativeMenu.INVALID_MENU_ID
+		help_popup.system_menu_id = NativeMenu.INVALID_MENU_ID
+
+
 func _ready() -> void:
 	handle_main_menu_collapse()
 	main.save_file_dialog_opened.connect(func(opened: bool): can_save = not opened)
