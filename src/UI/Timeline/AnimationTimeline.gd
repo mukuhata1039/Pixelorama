@@ -31,6 +31,7 @@ var cel_size := 36:
 	set = _cel_size_changed
 var compact_timeline := false
 var normal_cel_size := 36
+var _changing_compact_mode := false
 var min_cel_size := 36:
 	set(value):
 		var lower_limit := COMPACT_CEL_SIZE if compact_timeline else CEL_MIN_SIZE_HARD_LIMIT
@@ -358,6 +359,7 @@ func _cel_size_changed(value: int) -> void:
 func _on_compact_timeline_toggled(enabled: bool) -> void:
 	if compact_timeline == enabled:
 		return
+	_changing_compact_mode = true
 	if enabled:
 		normal_cel_size = cel_size
 	compact_timeline = enabled
@@ -369,9 +371,7 @@ func _on_compact_timeline_toggled(enabled: bool) -> void:
 	# Remember the regular cell size separately so turning compact mode off
 	# restores the user's previous size instead of locking them at 20px.
 	cel_size = COMPACT_CEL_SIZE if enabled else normal_cel_size
-	cel_size_slider.mouse_filter = (
-		Control.MOUSE_FILTER_IGNORE if enabled else Control.MOUSE_FILTER_STOP
-	)
+	cel_size_slider.editable = not enabled
 	cel_size_slider.modulate.a = 0.5 if enabled else 1.0
 	for layer_button in layer_vbox.get_children():
 		if layer_button is LayerButton:
@@ -380,6 +380,7 @@ func _on_compact_timeline_toggled(enabled: bool) -> void:
 		for cel_button in cel_hbox.get_children():
 			if cel_button is Button and cel_button.has_method("apply_compact_layout"):
 				cel_button.apply_compact_layout(enabled)
+	_changing_compact_mode = false
 	Global.config_cache.set_value("timeline", "compact", enabled)
 
 
@@ -1776,7 +1777,7 @@ func project_cel_removed(frame: int, layer: int) -> void:
 
 
 func _on_cel_size_slider_value_changed(value: float) -> void:
-	if not compact_timeline:
+	if not compact_timeline and not _changing_compact_mode:
 		cel_size = int(value)
 
 
