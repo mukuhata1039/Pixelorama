@@ -862,7 +862,20 @@ func _draw_brush_image(
 		if variant is PixelCel:
 			variant.ensure_canvas_rect_in_bounds(dst, brush_image.get_size())
 			final_dst -= variant.offset
-		if Tools.alpha_locked:
+		# A transparent selected color is an eraser. Preserve the brush
+		# image's nontransparent pixels as a footprint mask, so outside the
+		# brush shape (and outside selections) is never erased.
+		if is_zero_approx(tool_slot.color.a) and not _is_eraser:
+			# Alpha Lock must prevent removing opacity.
+			if Tools.alpha_locked:
+				continue
+			var clear_image := Image.create(
+				brush_image.get_width(), brush_image.get_height(),
+				false, Image.FORMAT_RGBA8
+			)
+			clear_image.fill(Color.TRANSPARENT)
+			draw_image.blit_rect_mask(clear_image, brush_image, src_rect, final_dst)
+		elif Tools.alpha_locked:
 			var mask := draw_image.get_region(Rect2i(final_dst, brush_image.get_size()))
 			if overwrite:
 				draw_image.blit_rect_mask(brush_image, mask, src_rect, final_dst)
