@@ -256,6 +256,14 @@ func cancel_tool() -> void:
 
 
 func fill(pos: Vector2i) -> void:
+	# Transparent color must not remove pixels while global alpha lock is enabled.
+	if (
+		Tools.alpha_locked
+		and not Tools.is_placing_tiles()
+		and (_fill_with == FillWith.COLOR or _pattern == null)
+		and is_zero_approx(tool_slot.color.a)
+	):
+		return
 	match _fill_area:
 		FillArea.AREA:
 			fill_in_area(pos)
