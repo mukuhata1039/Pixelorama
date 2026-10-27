@@ -189,8 +189,14 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 		viewport_container.get_global_mouse_position()
 	)
 
-	# View reset is handled at the main-window level, so the shortcut
-	# also works when the pointer is outside this SubViewport.
+	# Reset the complete viewing orientation via a single remappable shortcut.
+	# Use the view menu's normal mirror handler to keep its checkmark,
+	# selection outline and canvas redraw synchronized.
+	if in_canvas and event.is_action_pressed(&"canvas_rotate_reset", false, true):
+		reset_canvas_orientation()
+		get_viewport().set_input_as_handled()
+		return true
+
 	# These can be Shift+wheel by default, or any other input the user chooses.
 	if in_canvas and event.is_action_pressed(&"canvas_rotate_step_left", false, true):
 		rotate_camera(-5.0)
