@@ -84,11 +84,21 @@ func _handle_space_alt_quick_navigation(event: InputEvent) -> bool:
 		_navigation_space_down = key_event.pressed
 	elif key_event.keycode == KEY_ALT or key_event.physical_keycode == KEY_ALT:
 		_navigation_alt_down = key_event.pressed
+	elif key_event.keycode == KEY_SHIFT or key_event.physical_keycode == KEY_SHIFT:
+		# A Shift change can enter or exit a remappable Shift+Space rotate
+		# chord while Space stays down.
+		pass
 	else:
 		return false
 
+	# Rotate takes priority over quick Pan/Zoom. The previous code kept
+	# switching the selected tool to Pan while Shift+Space was held, making
+	# the effective shortcut depend on key press order.
+	var rotating := Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
 	var wanted_tool := ""
-	if _navigation_space_down:
+	if rotating:
+		pass  # Restore the previous tool while the camera handles rotation.
+	elif _navigation_space_down:
 		wanted_tool = "Zoom" if _navigation_alt_down else "Pan"
 	elif (
 		_navigation_alt_down
@@ -97,7 +107,7 @@ func _handle_space_alt_quick_navigation(event: InputEvent) -> bool:
 		wanted_tool = "ColorPicker"
 
 	if wanted_tool == _navigation_tool:
-		return not wanted_tool.is_empty()
+		return rotating or not wanted_tool.is_empty()
 
 	# Finish the current navigation drag before replacing its tool node.
 	# Otherwise Pan can leave camera.drag enabled when switching to Zoom.
