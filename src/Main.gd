@@ -301,22 +301,6 @@ func _input(event: InputEvent) -> void:
 		Global.camera.reset_canvas_orientation()
 		get_viewport().set_input_as_handled()
 		return
-	# A user may bind Rotate View to a key already assigned to a tool.
-	# For example, R is Rectangle Select in the default keymap. Claim
-	# the rotation key press in the root viewport before unhandled tool
-	# shortcuts or GUI accelerators can select that other tool.
-	if (
-		Global.can_draw
-		and not is_writing_text
-		and not focused_control is LineEdit
-		and not focused_control is TextEdit
-		and is_instance_valid(Global.main_viewport)
-		and Global.main_viewport.get_global_rect().has_point(get_global_mouse_position())
-		and event is InputEventKey
-		and event.is_action_pressed(&"canvas_rotate_drag", false, true)
-	):
-		get_viewport().set_input_as_handled()
-		return
 	if event.is_action_pressed(&"layer_visibility"):
 		for selected_cel in Global.current_project.selected_cels:
 			var layer := Global.current_project.layers[selected_cel[1]]
