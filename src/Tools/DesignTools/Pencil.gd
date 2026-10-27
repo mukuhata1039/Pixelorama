@@ -21,7 +21,7 @@ class PencilOp:
 		# enabling the optional Overwrite setting. Semi-transparent colors
 		# still accumulate across separate pencil strokes.
 		if is_zero_approx(src.a):
-			return Color.TRANSPARENT
+			return dst if Tools.alpha_locked else Color.TRANSPARENT
 		src.a *= strength
 		if overwrite:
 			return src
