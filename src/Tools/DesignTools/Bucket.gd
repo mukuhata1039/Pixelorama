@@ -304,7 +304,10 @@ func fill_in_color(pos: Vector2i) -> void:
 			continue
 		var pattern_image: Image
 		if _fill_with == FillWith.COLOR or _pattern == null:
-			if tool_slot.color.is_equal_approx(color):
+			# Allow repeated semi-transparent fills to build up opacity.
+			if tool_slot.color.is_equal_approx(color) and (
+				is_zero_approx(tool_slot.color.a) or is_equal_approx(tool_slot.color.a, 1.0)
+			):
 				continue
 		else:
 			# End early if we are filling with an empty pattern
@@ -371,13 +374,21 @@ func fill_in_selection() -> void:
 			var rect := selection_map_copy.get_used_rect()
 			for cel: PixelCel in cels:
 				var image := project.crop_image_to_project_size(cel.get_image(), cel.offset)
-				image.blit_rect_mask(filler, selection_map_copy, rect, rect.position)
+				if tool_slot.color.a > 0.0 and tool_slot.color.a < 1.0:
+					image.blend_rect_mask(filler, selection_map_copy, rect, rect.position)
+				else:
+					image.blit_rect_mask(filler, selection_map_copy, rect, rect.position)
 				cel.blit_image_to_cel(image)
 				#image.convert_rgb_to_indexed()
 		else:
 			for cel: PixelCel in cels:
 				var image := project.crop_image_to_project_size(cel.get_image(), cel.offset)
-				image.fill(tool_slot.color)
+				if tool_slot.color.a > 0.0 and tool_slot.color.a < 1.0:
+					var filler := project.new_empty_image()
+					filler.fill(tool_slot.color)
+					image.blend_rect(filler, Rect2i(Vector2i.ZERO, project.size), Vector2i.ZERO)
+				else:
+					image.fill(tool_slot.color)
 				cel.blit_image_to_cel(image)
 				#image.convert_rgb_to_indexed()
 	else:
@@ -465,7 +476,10 @@ func _flood_fill(pos: Vector2i) -> void:
 			color = _sample_masks.get(cel.get_frame(project), cel.image).get_pixelv(pos)
 		if _fill_with == FillWith.COLOR or _pattern == null:
 			# end early if we are filling with the same color
-			if tool_slot.color.is_equal_approx(color):
+			# Allow repeated semi-transparent fills to build up opacity.
+			if tool_slot.color.is_equal_approx(color) and (
+				is_zero_approx(tool_slot.color.a) or is_equal_approx(tool_slot.color.a, 1.0)
+			):
 				continue
 			# Fill all area if it's completely empty and _fill_merged_area = false
 			if image.get_used_rect().size == Vector2i.ZERO and not _fill_merged_area:
@@ -476,12 +490,20 @@ func _flood_fill(pos: Vector2i) -> void:
 						project, project.size
 					)
 					var rect := selection_map_copy.get_used_rect()
-					image.blit_rect_mask(filler, selection_map_copy, rect, rect.position)
+					if tool_slot.color.a > 0.0 and tool_slot.color.a < 1.0:
+						image.blend_rect_mask(filler, selection_map_copy, rect, rect.position)
+					else:
+						image.blit_rect_mask(filler, selection_map_copy, rect, rect.position)
 					cel.blit_image_to_cel(image)
 					#image.convert_rgb_to_indexed()
 					continue
 				else:
-					image.fill(tool_slot.color)
+					if tool_slot.color.a > 0.0 and tool_slot.color.a < 1.0:
+						var filler := project.new_empty_image()
+						filler.fill(tool_slot.color)
+						image.blend_rect(filler, Rect2i(Vector2i.ZERO, project.size), Vector2i.ZERO)
+					else:
+						image.fill(tool_slot.color)
 					cel.blit_image_to_cel(image)
 					#image.convert_rgb_to_indexed()
 					continue
@@ -517,7 +539,14 @@ func _color_segments(image: Image, segments: Array[FloodFillObject.Segment]) -> 
 			var rect := Rect2(
 				Vector2i(p.left_position, p.y), Vector2i(p.right_position - p.left_position + 1, 1)
 			)
-			image.fill_rect(rect, color)
+			if color.a > 0.0 and color.a < 1.0:
+				# Blend each new fill over the previous layer contents.
+				for x in range(p.left_position, p.right_position + 1):
+					var old := image.get_pixel(x, p.y)
+					image.set_pixel(x, p.y, old.blend(color))
+			else:
+				# Opaque fills replace; fully transparent fills clear.
+				image.fill_rect(rect, color)
 		#image.convert_rgb_to_indexed()
 	else:
 		# shortcircuit tests for patternfills
