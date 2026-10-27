@@ -40,6 +40,9 @@ var mouse_pos := Vector2.ZERO
 var drag := false
 var _quick_navigation_drag := false
 var _quick_zoom_anchor := Vector2.ZERO
+## Clip Studio-style temporary canvas rotation: Shift+Space+left drag.
+var _clipstudio_rotate_drag := false
+var _clipstudio_rotate_previous_mouse := Vector2.ZERO
 var rotation_slider: ValueSlider
 var zoom_slider: ValueSlider
 var should_tween := true
@@ -65,14 +68,22 @@ func _ready() -> void:
 	update_transparent_checker_offset()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_clipstudio_rotate_drag = false
+
+
 func _input(event: InputEvent) -> void:
 	if not DisplayServer.is_touchscreen_available() and auto_release_gui_focus:
 		get_window().gui_release_focus()
 	if !Global.can_draw:
 		drag = false
 		_quick_navigation_drag = false
+		_clipstudio_rotate_drag = false
 		return
 	mouse_pos = viewport_container.get_local_mouse_position()
+	if _handle_clipstudio_rotation(event):
+		return
 
 	# Quick Pan/Zoom must respond to the *held* Space and Alt keys, even when
 	# they are pressed in the opposite order. Handle the physical drag here,
@@ -148,6 +159,74 @@ func _input(event: InputEvent) -> void:
 			and not root.is_writing_text
 		):
 			offset = offset + (dir.rotated(camera_angle) / zoom) * CAMERA_SPEED_RATE
+
+
+## Temporary canvas rotation, without modifying the image pixels.
+## The camera is active only while the pointer is within its viewport.
+## Shift+Space+drag rotates around the center of the viewport; Shift+wheel
+## rotates in 5-degree increments. Shift+Space+double-click resets to zero.
+func _handle_clipstudio_rotation(event: InputEvent) -> bool:
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
+			if not mouse_event.pressed:
+				if _clipstudio_rotate_drag:
+					_clipstudio_rotate_drag = false
+					get_viewport().set_input_as_handled()
+					return true
+				return false
+			if (
+				not Input.is_key_pressed(KEY_SPACE)
+				or not Input.is_key_pressed(KEY_SHIFT)
+				or Input.is_key_pressed(KEY_ALT)
+				or not viewport_container.get_global_rect().has_point(
+					viewport_container.get_global_mouse_position()
+				)
+			):
+				return false
+			_clipstudio_rotate_drag = true
+			_clipstudio_rotate_previous_mouse = mouse_pos
+			drag = false
+			_quick_navigation_drag = false
+			if mouse_event.double_click:
+				camera_angle = 0.0
+			get_viewport().set_input_as_handled()
+			return true
+		if (
+			mouse_event.pressed
+			and mouse_event.shift_pressed
+			and not mouse_event.alt_pressed
+			and not mouse_event.ctrl_pressed
+			and not mouse_event.meta_pressed
+			and viewport_container.get_global_rect().has_point(
+				viewport_container.get_global_mouse_position()
+			)
+		):
+			if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP:
+				rotate_camera(-5.0)
+				get_viewport().set_input_as_handled()
+				return true
+			if mouse_event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				rotate_camera(5.0)
+				get_viewport().set_input_as_handled()
+				return true
+
+	if event is InputEventMouseMotion and _clipstudio_rotate_drag:
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			_clipstudio_rotate_drag = false
+			return true
+		if Input.is_key_pressed(KEY_SPACE) and Input.is_key_pressed(KEY_SHIFT):
+			var center := viewport_container.size * 0.5
+			var previous := _clipstudio_rotate_previous_mouse - center
+			var current := mouse_pos - center
+			# Avoid angular jumps when a drag passes through the rotation pivot.
+			if previous.length_squared() > 256.0 and current.length_squared() > 256.0:
+				var change := previous.angle_to(current)
+				camera_angle -= change
+		_clipstudio_rotate_previous_mouse = mouse_pos
+		get_viewport().set_input_as_handled()
+		return true
+	return false
 
 
 func rotate_camera(dir: float) -> void:
