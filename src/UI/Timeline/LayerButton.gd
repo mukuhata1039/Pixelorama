@@ -131,16 +131,21 @@ func apply_compact_layout(enabled: bool) -> void:
 	var hierarchy_step := 16 if enabled else HIERARCHY_DEPTH_PIXEL_SHIFT
 	main_button.hierarchy_depth_pixel_shift = hierarchy_step
 	hierarchy_spacer.hierarchy_depth_pixel_shift = hierarchy_step
+	var name_row := $LayerMainButton/LayerName as HBoxContainer
 	if enabled:
-		label.add_theme_font_size_override("font_size", 12)
-		line_edit.add_theme_font_size_override("font_size", 12)
+		# Use the horizontal room saved between items for a larger name.
+		# Keep the 20px row height and icon click targets unchanged.
+		name_row.add_theme_constant_override("separation", 1)
+		label.add_theme_font_size_override("font_size", 14)
+		line_edit.add_theme_font_size_override("font_size", 14)
 	else:
+		name_row.remove_theme_constant_override("separation")
 		label.remove_theme_font_size_override("font_size")
 		line_edit.remove_theme_font_size_override("font_size")
 	for icon in [clipping_mask_icon, layer_fx_texture_rect, layer_type_texture_rect]:
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE if enabled else TextureRect.EXPAND_KEEP_SIZE
 		icon.custom_minimum_size = Vector2(12, 12) if enabled else Vector2.ZERO
-	$LayerMainButton/LayerName/MarginSpacer.custom_minimum_size.x = 2 if enabled else 4
+	$LayerMainButton/LayerName/MarginSpacer.custom_minimum_size.x = 0 if enabled else 4
 
 
 func _on_cel_switched() -> void:
