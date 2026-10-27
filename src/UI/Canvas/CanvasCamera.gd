@@ -42,6 +42,8 @@ var _quick_navigation_drag := false
 var _quick_zoom_anchor := Vector2.ZERO
 ## Canvas rotation drag driven by the current editable shortcut profile.
 var _clipstudio_rotate_drag := false
+var _clipstudio_rotate_button := MOUSE_BUTTON_LEFT
+var _clipstudio_rotate_mouse_shortcut := false
 var _clipstudio_rotate_previous_mouse := Vector2.ZERO
 var rotation_slider: ValueSlider
 var zoom_slider: ValueSlider
@@ -163,8 +165,9 @@ func _input(event: InputEvent) -> void:
 
 ## Temporary canvas rotation, without modifying image pixels. All activation
 ## shortcuts come from the active Keychain shortcut profile.
-## Hold the "Rotate canvas (hold + left drag)" key chord and left-drag.
-## Double-click with that held shortcut resets to zero as a convenience.
+## Hold its configured key chord and left-drag, or drag with a bound
+## mouse button (for example Shift+Middle Mouse). Double-click with the
+## same activation resets to zero as a convenience.
 func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 	var in_canvas := viewport_container.get_global_rect().has_point(
 		viewport_container.get_global_mouse_position()
@@ -176,30 +179,6 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 		get_viewport().set_input_as_handled()
 		return true
 
-	if event is InputEventMouseButton:
-		var mouse_event := event as InputEventMouseButton
-		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
-			if not mouse_event.pressed:
-				if _clipstudio_rotate_drag:
-					_clipstudio_rotate_drag = false
-					get_viewport().set_input_as_handled()
-					return true
-				return false
-			if (
-				not in_canvas
-				or not Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
-				or Tools.active_button != -1
-			):
-				return false
-			_clipstudio_rotate_drag = true
-			_clipstudio_rotate_previous_mouse = mouse_pos
-			drag = false
-			_quick_navigation_drag = false
-			if mouse_event.double_click:
-				camera_angle = 0.0
-			get_viewport().set_input_as_handled()
-			return true
-
 	# These can be Shift+wheel by default, or any other input the user chooses.
 	if in_canvas and event.is_action_pressed(&"canvas_rotate_step_left", false, true):
 		rotate_camera(-5.0)
@@ -210,11 +189,43 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 		get_viewport().set_input_as_handled()
 		return true
 
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if _clipstudio_rotate_drag and mouse_event.button_index == _clipstudio_rotate_button:
+			if not mouse_event.pressed:
+				_clipstudio_rotate_drag = false
+				_clipstudio_rotate_mouse_shortcut = false
+				get_viewport().set_input_as_handled()
+				return true
+		if not mouse_event.pressed or not in_canvas or Tools.active_button != -1:
+			return false
+		var held_key_and_left_button := (
+			mouse_event.button_index == MOUSE_BUTTON_LEFT
+			and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+		)
+		var bound_mouse_button := event.is_action_pressed(&"canvas_rotate_drag", false, true)
+		if not held_key_and_left_button and not bound_mouse_button:
+			return false
+		_clipstudio_rotate_drag = true
+		_clipstudio_rotate_button = mouse_event.button_index
+		_clipstudio_rotate_mouse_shortcut = bound_mouse_button and not held_key_and_left_button
+		_clipstudio_rotate_previous_mouse = mouse_pos
+		drag = false
+		_quick_navigation_drag = false
+		if mouse_event.double_click:
+			camera_angle = 0.0
+		get_viewport().set_input_as_handled()
+		return true
+
 	if event is InputEventMouseMotion and _clipstudio_rotate_drag:
-		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		if not Input.is_mouse_button_pressed(_clipstudio_rotate_button):
 			_clipstudio_rotate_drag = false
+			_clipstudio_rotate_mouse_shortcut = false
 			return true
-		if Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag"):
+		if (
+			_clipstudio_rotate_mouse_shortcut
+			or Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+		):
 			var center := viewport_container.size * 0.5
 			var previous := _clipstudio_rotate_previous_mouse - center
 			var current := mouse_pos - center
