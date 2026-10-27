@@ -40,6 +40,7 @@ var _profile_steps := 0
 var _profile_prepare_us := 0
 var _profile_coords_us := 0
 var _profile_paint_us := 0
+var _profile_native_steps := 0
 var _native_brush_rows: Dictionary[int, Vector2i] = {}
 var _native_brush_size := -1
 var _native_brush_type := -1
@@ -342,6 +343,7 @@ func draw_start(pos: Vector2i) -> void:
 	_profile_prepare_us = 0
 	_profile_coords_us = 0
 	_profile_paint_us = 0
+	_profile_native_steps = 0
 	Global.canvas.begin_brush_profile()
 
 
@@ -358,7 +360,9 @@ func draw_tool(pos: Vector2i) -> void:
 	var prepared_us := Time.get_ticks_usec()
 	var coords_done_us: int
 	if _can_use_native_brush():
-		var native_rects := _get_native_brush_rects([pos])
+		_profile_native_steps += 1
+		var single_point: Array[Vector2i] = [pos]
+		var native_rects := _get_native_brush_rects(single_point)
 		coords_done_us = Time.get_ticks_usec()
 		_paint_native_brush_rects(native_rects)
 	else:
@@ -380,7 +384,8 @@ func draw_end(pos: Vector2i) -> void:
 	if _profile_steps > 0:
 		var steps := float(_profile_steps)
 		print(
-			"[Pixelorama描画計測] ", _profile_steps, "回 | ",
+			"[Pixelorama描画計測] ", _profile_steps, "回 (高速=", _profile_native_steps,
+			", ブラシ=", _brush.type, ", サイズ=", _brush_size_dynamics, ") | ",
 			"ペン準備=", "%.2f" % (_profile_prepare_us / steps / 1000.0),
 			"ms/回, 座標計算=", "%.2f" % (_profile_coords_us / steps / 1000.0),
 			"ms/回, ピクセル処理=", "%.2f" % (_profile_paint_us / steps / 1000.0),
@@ -529,6 +534,7 @@ func draw_fill_gap(start: Vector2i, end: Vector2i) -> void:
 			pixel_coords[i] = Vector2i(draw_pos)
 	var coords_done_us: int
 	if _can_use_native_brush():
+		_profile_native_steps += 1
 		var native_rects := _get_native_brush_rects(pixel_coords)
 		coords_done_us = Time.get_ticks_usec()
 		_paint_native_brush_rects(native_rects)
@@ -594,7 +600,7 @@ func _get_native_brush_rows() -> Dictionary[int, Vector2i]:
 		# Use the exact existing filled-circle footprint, not an approximation.
 		for offset in _circle_tool_shortcut:
 			if _native_brush_rows.has(offset.y):
-				var row := _native_brush_rows[offset.y]
+				var row: Vector2i = _native_brush_rows[offset.y]
 				_native_brush_rows[offset.y] = Vector2i(
 					mini(row.x, offset.x), maxi(row.y, offset.x)
 				)
@@ -618,16 +624,16 @@ func _get_native_brush_rects(centers: Array[Vector2i]) -> Array[Rect2i]:
 	var max_y := -1
 	for center in centers:
 		for dy in footprint:
-			var y := center.y + dy
+			var y: int = center.y + dy
 			if y < 0 or y >= canvas_size.y:
 				continue
-			var offsets := footprint[dy]
+			var offsets: Vector2i = footprint[dy]
 			var left := maxi(0, center.x + offsets.x)
 			var right := mini(canvas_size.x - 1, center.x + offsets.y)
 			if left > right:
 				continue
 			if row_spans.has(y):
-				var existing := row_spans[y]
+				var existing: Vector2i = row_spans[y]
 				row_spans[y] = Vector2i(mini(existing.x, left), maxi(existing.y, right))
 			else:
 				row_spans[y] = Vector2i(left, right)
@@ -637,7 +643,7 @@ func _get_native_brush_rects(centers: Array[Vector2i]) -> Array[Rect2i]:
 	var run_y := -1
 	var run_span := Vector2i.ZERO
 	for y in range(min_y, max_y + 2):
-		var span := row_spans.get(y, Vector2i(-1, -1))
+		var span: Vector2i = row_spans.get(y, Vector2i(-1, -1))
 		if run_y >= 0 and span != run_span:
 			result.append(Rect2i(
 				Vector2i(run_span.x, run_y),
