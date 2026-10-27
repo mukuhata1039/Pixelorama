@@ -143,7 +143,8 @@ func _ready() -> void:
 		hex_row, sampler_cont, expand_button
 	]
 	for index in ordered_rows.size():
-		picker_vbox_container.move_child(ordered_rows[index], index)
+		if is_instance_valid(ordered_rows[index]):
+			picker_vbox_container.move_child(ordered_rows[index], index)
 	picker_vbox_container.add_theme_constant_override("separation", 3)
 
 	expand_button.button_pressed = Global.config_cache.get_value(
@@ -349,6 +350,8 @@ func _on_left_color_button_toggled(toggled_on: bool) -> void:
 		Tools.picking_color_for = MOUSE_BUTTON_RIGHT
 		color_picker.color = right_color_rect.color
 	_average(left_color_rect.color, right_color_rect.color)
+	if is_instance_valid(hue_strip):
+		hue_strip.queue_redraw()
 
 
 func reset_options() -> void:
@@ -366,6 +369,8 @@ func update_color(color_info: Dictionary, button: int) -> void:
 	else:
 		left_color_rect.color = color
 	_average(left_color_rect.color, right_color_rect.color)
+	if is_instance_valid(hue_strip):
+		hue_strip.queue_redraw()
 	Global.config_cache.set_value("color_picker", "color_mode", color_picker.color_mode)
 	Global.config_cache.set_value("color_picker", "picker_shape", color_picker.picker_shape)
 	_skip_color_picker_update = false
