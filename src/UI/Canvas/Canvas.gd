@@ -88,12 +88,13 @@ func _quick_picker_matches_right_mouse(event: InputEventMouseButton) -> bool:
 	for shortcut_event in InputMap.action_get_events(&"quick_colorpicker_tool"):
 		if not shortcut_event is InputEventMouseButton:
 			continue
+		var binding := shortcut_event as InputEventMouseButton
 		if (
-			shortcut_event.button_index == MOUSE_BUTTON_RIGHT
-			and shortcut_event.alt_pressed == event.alt_pressed
-			and shortcut_event.shift_pressed == event.shift_pressed
-			and shortcut_event.ctrl_pressed == event.ctrl_pressed
-			and shortcut_event.meta_pressed == event.meta_pressed
+			binding.button_index == MOUSE_BUTTON_RIGHT
+			and binding.alt_pressed == event.alt_pressed
+			and binding.shift_pressed == event.shift_pressed
+			and binding.ctrl_pressed == event.ctrl_pressed
+			and binding.meta_pressed == event.meta_pressed
 		):
 			return true
 	return false
