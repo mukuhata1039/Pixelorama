@@ -18,15 +18,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if _handle_space_alt_quick_navigation(event):
 		return
-	# The canvas handles Quick Color Picker directly if the shortcut is
-	# Right Mouse Button. Do not also temporarily replace both tools here,
-	# since this would happen after the original right tool has already acted.
-	if (
-		event is InputEventMouseButton
-		and event.button_index == MOUSE_BUTTON_RIGHT
-		and event.is_action(&"quick_colorpicker_tool", true)
-	):
-		return
+	# When the quick picker shortcut itself is a right click, the canvas
+	# samples directly from the sprite. Never run the later generic tool
+	# swap for that same physical mouse event.
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
+		for shortcut_event in InputMap.action_get_events(&"quick_colorpicker_tool"):
+			if not shortcut_event is InputEventMouseButton:
+				continue
+			var binding := shortcut_event as InputEventMouseButton
+			if (
+				binding.button_index == MOUSE_BUTTON_RIGHT
+				and binding.alt_pressed == event.alt_pressed
+				and binding.shift_pressed == event.shift_pressed
+				and binding.ctrl_pressed == event.ctrl_pressed
+				and binding.meta_pressed == event.meta_pressed
+			):
+				return
 	var tool_activated := Tools.active_multi_state_tools > 0
 
 	for tool_name in Tools.tools:  # Handle tool shortcuts
