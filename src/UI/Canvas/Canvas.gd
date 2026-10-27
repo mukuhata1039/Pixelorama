@@ -100,10 +100,17 @@ func _input(event: InputEvent) -> void:
 		_brush_size_drag_captured_left_mouse = false
 	if _brush_size_drag_captured_left_mouse:
 		if event is InputEventMouseMotion:
+			# Keep the brush footprint under the mouse while resizing. The
+			# early return must still prevent drawing on the canvas.
+			current_pixel = get_local_mouse_position()
+			var cursor_pixel := Vector2i(current_pixel.floor())
+			Tools.get_tool(MOUSE_BUTTON_LEFT).tool_node.cursor_move(cursor_pixel)
+			Tools.get_tool(MOUSE_BUTTON_RIGHT).tool_node.cursor_move(cursor_pixel)
 			# If the shortcut is no longer held, the tool itself will not resize.
 			var draw_tool := Tools.get_tool(MOUSE_BUTTON_LEFT).tool_node as BaseDrawTool
 			if is_instance_valid(draw_tool):
 				draw_tool.change_brush_size_by_mouse_drag(event)
+			indicators.queue_redraw()
 		return
 	# Space+left-drag navigation is implemented directly by CanvasCamera.
 	# Do not send that drag to the drawing tools as an ordinary brush stroke.
