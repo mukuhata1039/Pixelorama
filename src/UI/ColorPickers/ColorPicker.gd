@@ -120,11 +120,6 @@ func _ready() -> void:
 	picker_vbox_container.add_child(color_buttons)
 	color_buttons.alignment = BoxContainer.ALIGNMENT_CENTER
 	color_buttons.add_theme_constant_override("separation", 2)
-	# Keep the eyedropper and picker-shape menu, but place them on the
-	# same row as foreground/background instead of wasting another row.
-	sampler_cont.get_parent().remove_child(sampler_cont)
-	color_buttons.add_child(sampler_cont)
-	sampler_cont.add_theme_constant_override("separation", 1)
 
 	color_slider_types_hbox = picker_vbox_container.get_child(2, true) as HBoxContainer
 	color_slider_types_hbox.visible = false
@@ -140,6 +135,11 @@ func _ready() -> void:
 		picker_vbox_container.get_child(5, true).get_child(2, true) as GridContainer
 	)
 	presets_container.add_theme_constant_override("h_separation", 5)
+	# Keep the eyedropper and picker-shape menu, but place them on the
+	# same row as foreground/background instead of wasting another row.
+	sampler_cont.get_parent().remove_child(sampler_cont)
+	color_buttons.add_child(sampler_cont)
+	sampler_cont.add_theme_constant_override("separation", 1)
 	# Move the expand button with the rest of the native picker controls.
 	expand_button.get_parent().remove_child(expand_button)
 	picker_vbox_container.add_child(expand_button)
