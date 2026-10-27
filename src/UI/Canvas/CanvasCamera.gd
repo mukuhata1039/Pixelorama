@@ -73,6 +73,7 @@ func _ready() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		_clipstudio_rotate_drag = false
+		_clipstudio_rotate_mouse_shortcut = false
 
 
 func _input(event: InputEvent) -> void:
