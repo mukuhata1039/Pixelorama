@@ -60,7 +60,7 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _zoom_changed() -> void:
-	preview_zoom_slider.value = camera.zoom.x
+	preview_zoom_slider.set_value_no_signal(camera.zoom.x)
 
 
 func _on_PreviewZoomSlider_value_changed(value: float) -> void:
