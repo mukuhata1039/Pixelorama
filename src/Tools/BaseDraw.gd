@@ -40,6 +40,9 @@ var _profile_steps := 0
 var _profile_prepare_us := 0
 var _profile_coords_us := 0
 var _profile_paint_us := 0
+var _native_brush_rows: Dictionary[int, Vector2i] = {}
+var _native_brush_size := -1
+var _native_brush_type := -1
 var _circle_tool_shortcut: Array[Vector2i]
 var _mm_action: Keychain.MouseMovementInputAction
 
@@ -353,10 +356,16 @@ func draw_tool(pos: Vector2i) -> void:
 	var started_us := Time.get_ticks_usec()
 	_prepare_tool()
 	var prepared_us := Time.get_ticks_usec()
-	var coords_to_draw := _draw_tool(pos)
-	var coords_done_us := Time.get_ticks_usec()
-	for coord in coords_to_draw:
-		_set_pixel_no_cache(coord)
+	var coords_done_us: int
+	if _can_use_native_brush():
+		var native_rects := _get_native_brush_rects([pos])
+		coords_done_us = Time.get_ticks_usec()
+		_paint_native_brush_rects(native_rects)
+	else:
+		var coords_to_draw := _draw_tool(pos)
+		coords_done_us = Time.get_ticks_usec()
+		for coord in coords_to_draw:
+			_set_pixel_no_cache(coord)
 	var painted_us := Time.get_ticks_usec()
 	_profile_steps += 1
 	_profile_prepare_us += prepared_us - started_us
@@ -518,10 +527,16 @@ func draw_fill_gap(start: Vector2i, end: Vector2i) -> void:
 			if draw_pos == Vector2.INF:
 				return
 			pixel_coords[i] = Vector2i(draw_pos)
-	var coords_to_draw := get_coords_to_draw(pixel_coords)
-	var coords_done_us := Time.get_ticks_usec()
-	for c in coords_to_draw:
-		_set_pixel_no_cache(c)
+	var coords_done_us: int
+	if _can_use_native_brush():
+		var native_rects := _get_native_brush_rects(pixel_coords)
+		coords_done_us = Time.get_ticks_usec()
+		_paint_native_brush_rects(native_rects)
+	else:
+		var coords_to_draw := get_coords_to_draw(pixel_coords)
+		coords_done_us = Time.get_ticks_usec()
+		for c in coords_to_draw:
+			_set_pixel_no_cache(c)
 	var painted_us := Time.get_ticks_usec()
 	_profile_steps += 1
 	_profile_prepare_us += prepared_us - started_us
@@ -529,6 +544,127 @@ func draw_fill_gap(start: Vector2i, end: Vector2i) -> void:
 	_profile_paint_us += painted_us - coords_done_us
 	if project.has_selection:
 		project.selection_map.lock_selection_rect(project, false)
+
+
+## Only the unmasked, fully opaque pencil can paint many pixels as solid rectangles.
+## Special blending, selections, indexed colors, symmetry etc. use the original path.
+func _can_use_native_brush() -> bool:
+	if (
+		_brush.type not in [Brushes.PIXEL, Brushes.FILLED_CIRCLE]
+		or _brush_size_dynamics < 12
+		or _spacing_mode
+		or _brush_density != 100
+		or _is_eraser
+		or not _is_mask_size_zero
+		or _drawer.color_op.get("overwrite") == null
+		or not is_equal_approx(_drawer.color_op.strength, 1.0)
+		or not is_equal_approx(tool_slot.color.a, 1.0)
+		or Tools.alpha_locked
+		or Tools.pixel_perfect
+		or Tools.horizontal_mirror
+		or Tools.vertical_mirror
+		or Tools.diagonal_xy_mirror
+		or Tools.diagonal_x_minus_y_mirror
+		or Global.mirror_view
+		or _stroke_project.has_selection
+		or _stroke_project.tiles.mode != Tiles.MODE.NONE
+		or _stroke_images.is_empty()
+	):
+		return false
+	for image in _stroke_images:
+		if image is not ImageExtended or (image as ImageExtended).is_indexed:
+			return false
+		if _stroke_images[image] is not PixelCel:
+			return false
+	return true
+
+
+## Convert the brush footprint to horizontal runs only when the brush changes.
+func _get_native_brush_rows() -> Dictionary[int, Vector2i]:
+	if _native_brush_size == _brush_size_dynamics and _native_brush_type == _brush.type:
+		return _native_brush_rows
+	_native_brush_rows.clear()
+	_native_brush_size = _brush_size_dynamics
+	_native_brush_type = _brush.type
+	if _brush.type == Brushes.PIXEL:
+		var half := _brush_size_dynamics >> 1
+		for y in range(-half, _brush_size_dynamics - half):
+			_native_brush_rows[y] = Vector2i(-half, _brush_size_dynamics - half - 1)
+	else:
+		# Use the exact existing filled-circle footprint, not an approximation.
+		for offset in _circle_tool_shortcut:
+			if _native_brush_rows.has(offset.y):
+				var row := _native_brush_rows[offset.y]
+				_native_brush_rows[offset.y] = Vector2i(
+					mini(row.x, offset.x), maxi(row.y, offset.x)
+				)
+			else:
+				_native_brush_rows[offset.y] = Vector2i(offset.x, offset.x)
+	return _native_brush_rows
+
+
+## Union overlapping stamp rows before painting, so moving one pixel does
+## not write the same 60x60 block repeatedly.
+func _get_native_brush_rects(centers: Array[Vector2i]) -> Array[Rect2i]:
+	var result: Array[Rect2i] = []
+	if centers.is_empty():
+		return result
+	var footprint := _get_native_brush_rows()
+	if footprint.is_empty():
+		return result
+	var row_spans: Dictionary[int, Vector2i] = {}
+	var canvas_size := _stroke_project.size
+	var min_y := canvas_size.y
+	var max_y := -1
+	for center in centers:
+		for dy in footprint:
+			var y := center.y + dy
+			if y < 0 or y >= canvas_size.y:
+				continue
+			var offsets := footprint[dy]
+			var left := maxi(0, center.x + offsets.x)
+			var right := mini(canvas_size.x - 1, center.x + offsets.y)
+			if left > right:
+				continue
+			if row_spans.has(y):
+				var existing := row_spans[y]
+				row_spans[y] = Vector2i(mini(existing.x, left), maxi(existing.y, right))
+			else:
+				row_spans[y] = Vector2i(left, right)
+			min_y = mini(min_y, y)
+			max_y = maxi(max_y, y)
+	# Join identical consecutive rows into larger native fill rectangles.
+	var run_y := -1
+	var run_span := Vector2i.ZERO
+	for y in range(min_y, max_y + 2):
+		var span := row_spans.get(y, Vector2i(-1, -1))
+		if run_y >= 0 and span != run_span:
+			result.append(Rect2i(
+				Vector2i(run_span.x, run_y),
+				Vector2i(run_span.y - run_span.x + 1, y - run_y)
+			))
+			run_y = -1
+		if span.x >= 0 and run_y < 0:
+			run_y = y
+			run_span = span
+	return result
+
+
+func _paint_native_brush_rects(rects: Array[Rect2i]) -> void:
+	if rects.is_empty():
+		return
+	var bounds := rects[0]
+	for rect in rects:
+		bounds = bounds.merge(rect)
+	# Preserve the standard drawer's 8-bit color normalization.
+	var paint_color := Color(tool_slot.color.to_html())
+	for image in _stroke_images:
+		var cel := _stroke_images[image] as PixelCel
+		# Expand the cel at most once for the entire stroke segment.
+		cel.ensure_canvas_rect_in_bounds(bounds.position, bounds.size)
+		for rect in rects:
+			image.fill_rect(Rect2i(rect.position - cel.offset, rect.size), paint_color)
+	_drawer.color_op.changed = true
 
 
 func get_coords_to_draw(points: Array[Vector2i], draw_brush := true) -> PackedVector2Array:
