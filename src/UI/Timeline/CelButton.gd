@@ -39,7 +39,7 @@ func _ready() -> void:
 	for selected in Global.current_project.selected_cels:
 		if selected[1] == layer and selected[0] == frame:
 			button_pressed = true
-	_update_range_outline()
+	cel_switched()
 	popup_menu.add_item("Properties", MenuOptions.PROPERTIES)
 	if cel is AudioCel:
 		popup_menu.add_item("Play audio here", MenuOptions.PLAY_AUDIO)
