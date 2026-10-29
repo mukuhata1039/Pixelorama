@@ -1625,6 +1625,7 @@ func _update_layer_ui() -> void:
 		layers[l].index = l
 		layer_vbox.get_child(layers.size() - 1 - l).layer_index = l
 		update_cel_button_ui(l)
+	_refresh_timeline_selection_appearance()
 
 
 func _update_frame_ui() -> void:
@@ -1636,6 +1637,7 @@ func _update_frame_ui() -> void:
 	for l in project.layers.size():  # Update the cel buttons
 		update_cel_button_ui(l)
 	set_timeline_first_and_last_frames()
+	_refresh_timeline_selection_appearance()
 
 
 func update_cel_button_ui(layer_index: int) -> void:
@@ -1772,6 +1774,7 @@ func project_frame_added(frame: int) -> void:
 		cel_hbox.add_child(cel_button)
 		cel_hbox.move_child(cel_button, frame)
 		layer -= 1
+	_refresh_timeline_selection_appearance()
 	await get_tree().process_frame
 	frame_scroll_container.ensure_control_visible(button)
 
@@ -1808,6 +1811,9 @@ func project_layer_added(layer_index: int) -> void:
 		ancestor.expanded = true
 	update_layer_expanded_status.call_deferred()
 	update_global_layer_buttons()
+	# project_changed() constructs layers before frame header buttons exist.
+	if frame_hbox.get_child_count() == project.frames.size():
+		_refresh_timeline_selection_appearance()
 	await get_tree().process_frame
 	if not is_instance_valid(layer_button):
 		return
@@ -1830,6 +1836,7 @@ func project_cel_added(frame: int, layer: int) -> void:
 	cel_button.layer = layer
 	cel_hbox.add_child(cel_button)
 	cel_hbox.move_child(cel_button, frame)
+	_refresh_timeline_selection_appearance()
 
 
 func project_cel_removed(frame: int, layer: int) -> void:
