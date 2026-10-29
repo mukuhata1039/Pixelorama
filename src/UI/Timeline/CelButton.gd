@@ -134,7 +134,8 @@ func cel_switched(_force_stylebox_change := false) -> void:
 ## is drawn separately in _draw() so it doesn't replace the internal grid.
 func _update_range_outline() -> void:
 	var project := Global.current_project
-	if not project.selected_cels.has([frame, layer]):
+	var displayed_cels: Array = Global.animation_timeline.get_displayed_selected_cels()
+	if not displayed_cels.has([frame, layer]):
 		remove_theme_stylebox_override(&"pressed")
 		remove_theme_stylebox_override(&"hover_pressed")
 		return
@@ -147,7 +148,12 @@ func _update_range_outline() -> void:
 	# Retain a distinct, readable cell for every frame, even inside a
 	# rectangular selection. Leave room for textures and linked-cel badges.
 	style.bg_color = normal.bg_color.lerp(ACTIVE_GUIDE_COLOR, 0.30)
-	if frame == project.current_frame and layer == project.current_layer:
+	var focus_frame: int = project.current_frame
+	var focus_layer: int = project.current_layer
+	if Global.animation_timeline.drag_range_preview_active:
+		focus_frame = Global.animation_timeline.drag_range_preview_target.x
+		focus_layer = Global.animation_timeline.drag_range_preview_target.y
+	if frame == focus_frame and layer == focus_layer:
 		style.bg_color = normal.bg_color.lerp(ACTIVE_GUIDE_COLOR, 0.65)
 	style.border_color = normal.border_color
 	style.border_width_left = 1
@@ -628,6 +634,9 @@ func _get_drag_data(_position: Vector2) -> Variant:
 	# Dragging the inside of a cel selects a rectangle of timeline cels.
 	# The selected cel's outer border still starts the existing move/swap operation.
 	if not _drag_started_on_selected_border and not DisplayServer.is_touchscreen_available():
+		# Start updating the visual range immediately, not only after the
+		# cursor enters a second cel. The committed range stays untouched.
+		_preview_cel_rectangle([frame, layer])
 		return ["CelRectangle", [frame, layer]]
 	var button := Button.new()
 	button.size = size
@@ -656,6 +665,10 @@ func _preview_cel_rectangle(origin: Array) -> bool:
 		return false
 	var first_cel: Control = row.get_child(origin[0])
 	var rect := first_cel.get_global_rect().merge(get_global_rect())
+	# Aseprite updates its range on every mouse movement. Match that by
+	# refreshing the transient cels and their row/column guides whenever
+	# the hovered drag target changes, without committing Project.selected_cels.
+	timeline.update_drag_cel_range_preview(origin, frame, layer)
 	# Do not paint the selection preview over layer names or outside the timeline.
 	rect = rect.intersection(timeline.frame_scroll_container.get_global_rect())
 	rect = rect.intersection(timeline.timeline_scroll.get_global_rect())
