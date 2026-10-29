@@ -11,6 +11,7 @@ signal animation_finished
 signal animation_looped
 
 enum LoopType { NO, CYCLE, PINGPONG }
+enum RangeSelectionSource { CELLS, LAYERS, FRAMES }
 
 const FRAME_BUTTON_TSCN := preload("res://src/UI/Timeline/FrameButton.tscn")
 const ANIMATION_TAG_TSCN := preload("res://src/UI/Timeline/AnimationTagUI.tscn")
@@ -19,7 +20,26 @@ const CEL_MIN_SIZE_HARD_LIMIT := 22
 const CEL_MIN_SIZE_OFFSET := 15
 const COMPACT_CEL_SIZE := 20
 const CEL_DROP_HIGHLIGHT_COLOR := Color(0.0, 0.741176, 1.0, 0.501961)
+const ACTIVE_GUIDE_COLOR := Color("688ea4")
+const RANGE_OUTLINE_COLOR := Color("d1c275")
 
+## Aseprite's range outline includes a row/column header only when the
+## selection was started by clicking a layer/frame header.
+var range_selection_source := RangeSelectionSource.CELLS
+## Blue guides follow the selected rows/columns for a cel-rectangle range.
+## Header-originated row/column selection highlights only that axis and the
+## current frame/layer on the other axis, as shown in Aseprite's timeline.
+var range_guide_layers: Dictionary[int, bool] = {}
+var range_guide_frames: Dictionary[int, bool] = {}
+## Preview selection remains separate from Project.selected_cels until drop.
+## Aseprite recalculates its range during mouse movement; we use the
+## same live display behavior without committing a range until release.
+var drag_range_preview_active := false
+var drag_range_preview_origin := Vector2i(-1, -1)
+var drag_range_preview_target := Vector2i(-1, -1)
+var drag_range_preview_cels: Array = []
+## Fast membership tests are important while a large rectangle changes.
+var drag_range_preview_lookup: Dictionary[Vector2i, bool] = {}
 var is_animation_running := false
 var animation_loop := LoopType.CYCLE
 var animation_forward := true
@@ -139,6 +159,12 @@ func _ready() -> void:
 	Global.project_about_to_switch.connect(_on_project_about_to_switch)
 	Global.project_switched.connect(_on_project_switched)
 	Global.cel_switched.connect(_cel_switched)
+	Themes.theme_switched.connect(_refresh_timeline_selection_appearance)
+	# The drag rectangle is an outline, not a translucent blue fill. The
+	# ColorRect supplies its geometry while its draw signal paints the edge.
+	selection_drag_highlight.color = Color.TRANSPARENT
+	selection_drag_highlight.draw.connect(_draw_selection_drag_outline)
+	selection_drag_highlight.visibility_changed.connect(_on_selection_drag_preview_visibility_changed)
 	# Makes sure that the frame and tag scroll bars are in the right place:
 	layer_vbox.emit_signal.call_deferred("resized")
 	drag_highlight.visibility_changed.connect(clear_highlight)
@@ -192,10 +218,49 @@ func _exit_tree() -> void:
 		Global.control.call("set_timeline_cel_drag_cursor", -1)
 
 
+## Hide the previously committed yellow border while the movable drag
+## outline is displayed. Otherwise the user sees two outlines at once.
+## The existing cel fill and grid remain visible.
+func _on_selection_drag_preview_visibility_changed() -> void:
+	if not is_instance_valid(Global.current_project):
+		return
+	if not selection_drag_highlight.visible and drag_range_preview_active:
+		# A canceled drag must restore the previous committed selection,
+		# while a successful drop will show its newly committed range.
+		clear_drag_cel_range_preview()
+		return
+	for cel_index in Global.current_project.selected_cels:
+		var row_index: int = cel_vbox.get_child_count() - 1 - int(cel_index[1])
+		if row_index < 0 or row_index >= cel_vbox.get_child_count():
+			continue
+		var row := cel_vbox.get_child(row_index)
+		var frame_index: int = cel_index[0]
+		if frame_index >= 0 and frame_index < row.get_child_count():
+			row.get_child(frame_index).queue_redraw()
+
+
+## Unlike a filled ColorRect this preview does not hide the cel grid,
+## thumbnails or contents while a range is being dragged.
+func _draw_selection_drag_outline() -> void:
+	var rect_size := selection_drag_highlight.size
+	if rect_size.x <= 1.0 or rect_size.y <= 1.0:
+		return
+	selection_drag_highlight.draw_rect(
+		Rect2(Vector2(0.5, 0.5), rect_size - Vector2.ONE),
+		RANGE_OUTLINE_COLOR,
+		false,
+		1.0,
+		false
+	)
+
+
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_DRAG_END:
 		drag_highlight.hide()
 		selection_drag_highlight.hide()
+		# Also reset one-cel mouse-down previews when drag-and-drop was
+		# canceled before a valid destination received _drop_data().
+		clear_drag_cel_range_preview()
 	elif what == NOTIFICATION_THEME_CHANGED or what == NOTIFICATION_TRANSLATION_CHANGED:
 		await get_tree().process_frame
 		min_cel_size = (
@@ -469,6 +534,13 @@ func _on_compact_timeline_toggled(enabled: bool) -> void:
 			frame_button.apply_compact_layout(enabled)
 	_changing_compact_mode = false
 	Global.config_cache.set_value("timeline", "compact", enabled)
+	# Compact resizing rebuilds the frame buttons' local styleboxes. Restore
+	# the active guide / header-connected range outline after that rebuild.
+	if (
+		frame_hbox.get_child_count() == Global.current_project.frames.size()
+		and layer_vbox.get_child_count() == Global.current_project.layers.size()
+	):
+		_refresh_timeline_selection_appearance()
 
 
 ## Fill the blend modes OptionButton with items
@@ -1556,40 +1628,232 @@ func _on_project_switched() -> void:
 # Methods to update the UI in response to changes in the current project
 
 
-func _cel_switched() -> void:
-	# Unpress all buttons
-	for i in Global.current_project.frames.size():
-		var frame_button: BaseButton = frame_hbox.get_child(i)
-		frame_button.button_pressed = false  # Unpress all frame buttons
-		for cel_hbox in cel_vbox.get_children():
-			if i < cel_hbox.get_child_count():
-				cel_hbox.get_child(i).button_pressed = false  # Unpress all cel buttons
+## Keep the enum internal: callers should not access a script enum through
+## a scene instance, which Godot's type checker does not always allow.
+func select_cel_range_source() -> void:
+	range_selection_source = RangeSelectionSource.CELLS
 
+
+func select_layer_range_source() -> void:
+	range_selection_source = RangeSelectionSource.LAYERS
+
+
+func select_frame_range_source() -> void:
+	range_selection_source = RangeSelectionSource.FRAMES
+
+
+## Only header-originated full rows/columns connect the range border to the
+## label/number header. Rectangles made by dragging cels do not.
+func is_layer_header_range(layer_index: int) -> bool:
+	if range_selection_source != RangeSelectionSource.LAYERS:
+		return false
+	var project := Global.current_project
+	for frame_index in project.frames.size():
+		if not project.selected_cels.has([frame_index, layer_index]):
+			return false
+	return true
+
+
+func is_frame_header_range(frame_index: int) -> bool:
+	if range_selection_source != RangeSelectionSource.FRAMES:
+		return false
+	var project := Global.current_project
+	for layer_index in project.layers.size():
+		if not project.selected_cels.has([frame_index, layer_index]):
+			return false
+	return true
+
+
+## Aseprite timeline.cpp updates its selected range in
+## STATE_SELECTING_CELS -> handleRangeMouseMove() on each mouse move.
+## Keep the changing rectangle as a *visual* preview while Godot's drag
+## runs, so only the final drop writes Project.selected_cels.
+func update_drag_cel_range_preview(origin: Array, end_frame: int, end_layer: int) -> void:
+	if origin.size() != 2:
+		return
+	var start := Vector2i(int(origin[0]), int(origin[1]))
+	var target := Vector2i(end_frame, end_layer)
+	if drag_range_preview_active and start == drag_range_preview_origin and target == drag_range_preview_target:
+		return
+	var next_cels: Array = []
+	for layer_index in range(mini(start.y, target.y), maxi(start.y, target.y) + 1):
+		var row_index: int = cel_vbox.get_child_count() - 1 - layer_index
+		if row_index < 0 or row_index >= cel_vbox.get_child_count():
+			continue
+		var row := cel_vbox.get_child(row_index) as Control
+		if not row.visible:
+			continue
+		for frame_index in range(mini(start.x, target.x), maxi(start.x, target.x) + 1):
+			if frame_index >= 0 and frame_index < row.get_child_count():
+				next_cels.append([frame_index, layer_index])
+	if next_cels.is_empty():
+		return
+	drag_range_preview_origin = start
+	drag_range_preview_target = target
+	drag_range_preview_cels = next_cels
+	drag_range_preview_lookup.clear()
+	for cel_index in next_cels:
+		drag_range_preview_lookup[Vector2i(int(cel_index[0]), int(cel_index[1]))] = true
+	drag_range_preview_active = true
+	_refresh_timeline_selection_appearance()
+
+
+func clear_drag_cel_range_preview() -> void:
+	if not drag_range_preview_active:
+		return
+	drag_range_preview_active = false
+	drag_range_preview_cels.clear()
+	drag_range_preview_lookup.clear()
+	drag_range_preview_origin = Vector2i(-1, -1)
+	drag_range_preview_target = Vector2i(-1, -1)
+	_refresh_timeline_selection_appearance()
+
+
+func get_displayed_selected_cels() -> Array:
+	if drag_range_preview_active:
+		return drag_range_preview_cels
+	return Global.current_project.selected_cels
+
+
+## Render the active row, active column and timeline range independently.
+## Ranges started from the layer/frame header also include that header inside
+## the single outline, as Aseprite does.
+func _refresh_timeline_selection_appearance() -> void:
+	var project := Global.current_project
+	var selected: Dictionary[Vector2i, bool] = {}
+	var display_cels: Array = get_displayed_selected_cels()
+	var display_source: int = (
+		RangeSelectionSource.CELLS if drag_range_preview_active else range_selection_source
+	)
+	for cel_index in display_cels:
+		var frame_index: int = cel_index[0]
+		var layer_index: int = cel_index[1]
+		selected[Vector2i(frame_index, layer_index)] = true
+	# Aseprite's range-selection guides differ from selecting a full
+	# header row/column. A cel rectangle highlights *all* intersecting
+	# layer and frame headers; a layer-header range highlights its rows
+	# plus the currently editable frame, and vice versa for frame headers.
+	range_guide_layers.clear()
+	range_guide_frames.clear()
+	match display_source:
+		RangeSelectionSource.CELLS:
+			for cel_index in display_cels:
+				range_guide_frames[int(cel_index[0])] = true
+				range_guide_layers[int(cel_index[1])] = true
+		RangeSelectionSource.LAYERS:
+			for cel_index in display_cels:
+				range_guide_layers[int(cel_index[1])] = true
+		RangeSelectionSource.FRAMES:
+			for cel_index in display_cels:
+				range_guide_frames[int(cel_index[0])] = true
+	# Preserve the active editing position on the axis not included in
+	# a header range, and when no range has been selected.
+	if display_source == RangeSelectionSource.LAYERS or range_guide_frames.is_empty():
+		range_guide_frames[project.current_frame] = true
+	if display_source == RangeSelectionSource.FRAMES or range_guide_layers.is_empty():
+		range_guide_layers[project.current_layer] = true
+	var selected_rows: Dictionary[int, bool] = {}
+	var selected_columns: Dictionary[int, bool] = {}
+	if display_source == RangeSelectionSource.LAYERS:
+		for layer_index in project.layers.size():
+			var complete := true
+			for frame_index in project.frames.size():
+				if not selected.has(Vector2i(frame_index, layer_index)):
+					complete = false
+					break
+			if complete:
+				selected_rows[layer_index] = true
+	elif display_source == RangeSelectionSource.FRAMES:
+		for frame_index in project.frames.size():
+			var complete := true
+			for layer_index in project.layers.size():
+				if not selected.has(Vector2i(frame_index, layer_index)):
+					complete = false
+					break
+			if complete:
+				selected_columns[frame_index] = true
+
+	for frame_button in frame_hbox.get_children():
+		var f: int = frame_button.frame
+		var is_range := selected_columns.has(f)
+		var active := range_guide_frames.has(f)
+		_set_header_selection_style(
+			frame_button, active, is_range, false,
+			selected_columns.has(f - 1), selected_columns.has(f + 1), true
+		)
 	for layer_button in layer_vbox.get_children():
-		layer_button.button_pressed = false  # Unpress all layer buttons
+		var l: int = layer_button.layer_index
+		var is_range := selected_rows.has(l)
+		var active := range_guide_layers.has(l)
+		_set_header_selection_style(
+			layer_button.main_button, active, is_range, true,
+			selected_rows.has(l + 1), selected_rows.has(l - 1), false
+		)
+		layer_button.z_index = 1 if active or is_range else 0
+	for cel_hbox in cel_vbox.get_children():
+		for cel_button in cel_hbox.get_children():
+			cel_button.button_pressed = selected.has(Vector2i(cel_button.frame, cel_button.layer))
+			cel_button.cel_switched()
 
+
+func _set_header_selection_style(
+	button: Button,
+	active: bool,
+	in_range: bool,
+	is_layer_header: bool,
+	selected_before: bool,
+	selected_after: bool,
+	is_frame_header: bool
+) -> void:
+	var was_custom := button.has_theme_stylebox_override(&"hover_pressed")
+	button.button_pressed = active or in_range
+	button.z_index = 1 if button.button_pressed else 0
+	if not button.button_pressed:
+		if was_custom:
+			button.remove_theme_stylebox_override(&"hover_pressed")
+			if is_frame_header and button.has_method("apply_compact_layout"):
+				button.call("apply_compact_layout", compact_timeline)
+			else:
+				button.remove_theme_stylebox_override(&"pressed")
+		return
+	var theme := Global.control.theme
+	var source := theme.get_stylebox(&"pressed", &"LayerFrameButton")
+	# LayerFrameButton only defines a pressed style of its own. Its normal
+	# style is inherited through CelButton by the Control theme-variation
+	# resolver; Theme.get_stylebox() does not resolve that inheritance. Read
+	# CelButton explicitly instead of silently failing and showing the
+	# lavender fallback pressed style from the regular Button theme.
+	var normal := theme.get_stylebox(&"normal", &"CelButton")
+	if not source is StyleBoxFlat or not normal is StyleBoxFlat:
+		return
+	var style := source.duplicate() as StyleBoxFlat
+	style.bg_color = (normal as StyleBoxFlat).bg_color.lerp(ACTIVE_GUIDE_COLOR, 0.75)
+	style.border_width_left = 0
+	style.border_width_right = 0
+	style.border_width_top = 0
+	style.border_width_bottom = 0
+	if in_range:
+		style.border_color = RANGE_OUTLINE_COLOR
+		if is_layer_header:
+			style.border_width_left = 1
+			style.border_width_top = 0 if selected_before else 1
+			style.border_width_bottom = 0 if selected_after else 1
+		else:
+			style.border_width_top = 1
+			style.border_width_left = 0 if selected_before else 1
+			style.border_width_right = 0 if selected_after else 1
+	# Preserve compact 2-digit frame labels while overriding the active style.
+	if is_frame_header and compact_timeline:
+		style.content_margin_left = 1.0
+		style.content_margin_right = 1.0
+	button.add_theme_stylebox_override(&"pressed", style)
+	button.add_theme_stylebox_override(&"hover_pressed", style)
+
+func _cel_switched() -> void:
+	_refresh_timeline_selection_appearance()
 	for connection in get_incoming_connections():
 		if connection.callable == _on_layer_keyframe_changed:
 			connection.signal.disconnect(_on_layer_keyframe_changed)
-
-	for cel in Global.current_project.selected_cels:  # Press selected buttons
-		var frame_index: int = cel[0]
-		var layer_index: int = cel[1]
-		if frame_index < frame_hbox.get_child_count():
-			var frame_button: BaseButton = frame_hbox.get_child(frame_index)
-			frame_button.button_pressed = true  # Press selected frame buttons
-
-		var layer_vbox_child_count: int = layer_vbox.get_child_count()
-		if layer_index < layer_vbox_child_count:
-			var layer_button = layer_vbox.get_child(layer_vbox_child_count - 1 - layer_index)
-			layer_button.button_pressed = true  # Press selected layer buttons
-
-		var cel_vbox_child_count: int = cel_vbox.get_child_count()
-		if layer_index < cel_vbox_child_count:
-			var cel_hbox: Container = cel_vbox.get_child(cel_vbox_child_count - 1 - layer_index)
-			if frame_index < cel_hbox.get_child_count():
-				var cel_button: BaseButton = cel_hbox.get_child(frame_index)
-				cel_button.button_pressed = true  # Press selected cel buttons
 	_toggle_frame_buttons()
 	_toggle_layer_buttons()
 	_fill_blend_modes_option_button()
@@ -1634,6 +1898,7 @@ func _update_layer_ui() -> void:
 		layers[l].index = l
 		layer_vbox.get_child(layers.size() - 1 - l).layer_index = l
 		update_cel_button_ui(l)
+	_refresh_timeline_selection_appearance()
 
 
 func _update_frame_ui() -> void:
@@ -1645,6 +1910,7 @@ func _update_frame_ui() -> void:
 	for l in project.layers.size():  # Update the cel buttons
 		update_cel_button_ui(l)
 	set_timeline_first_and_last_frames()
+	_refresh_timeline_selection_appearance()
 
 
 func update_cel_button_ui(layer_index: int) -> void:
@@ -1734,6 +2000,7 @@ func _toggle_layer_buttons() -> void:
 
 
 func project_changed() -> void:
+	range_selection_source = RangeSelectionSource.CELLS
 	var project := Global.current_project
 	fps_spinbox.value = project.fps
 	_toggle_frame_buttons()
@@ -1754,23 +2021,7 @@ func project_changed() -> void:
 		button.frame = f
 		frame_hbox.add_child(button)
 
-	# Press selected cel/frame/layer buttons
-	for cel_index in project.selected_cels:
-		var frame: int = cel_index[0]
-		var layer: int = cel_index[1]
-		if frame < frame_hbox.get_child_count():
-			var frame_button: BaseButton = frame_hbox.get_child(frame)
-			frame_button.button_pressed = true
-
-		var vbox_child_count: int = cel_vbox.get_child_count()
-		if layer < vbox_child_count:
-			var cel_hbox: HBoxContainer = cel_vbox.get_child(vbox_child_count - 1 - layer)
-			if frame < cel_hbox.get_child_count():
-				var cel_button := cel_hbox.get_child(frame)
-				cel_button.button_pressed = true
-
-			var layer_button := layer_vbox.get_child(vbox_child_count - 1 - layer)
-			layer_button.button_pressed = true
+	_refresh_timeline_selection_appearance()
 	# Because we are re-creating the nodes, we need to wait one frame in order to call
 	# ensure_control_visible. If waiting wasn't needed, this piece of code wouldn't be needed
 	# anyway, since _cel_switched already calls ensure_control_visible.
@@ -1797,6 +2048,7 @@ func project_frame_added(frame: int) -> void:
 		cel_hbox.add_child(cel_button)
 		cel_hbox.move_child(cel_button, frame)
 		layer -= 1
+	_refresh_timeline_selection_appearance()
 	await get_tree().process_frame
 	frame_scroll_container.ensure_control_visible(button)
 
@@ -1833,6 +2085,9 @@ func project_layer_added(layer_index: int) -> void:
 		ancestor.expanded = true
 	update_layer_expanded_status.call_deferred()
 	update_global_layer_buttons()
+	# project_changed() constructs layers before frame header buttons exist.
+	if frame_hbox.get_child_count() == project.frames.size():
+		_refresh_timeline_selection_appearance()
 	await get_tree().process_frame
 	if not is_instance_valid(layer_button):
 		return
@@ -1855,6 +2110,7 @@ func project_cel_added(frame: int, layer: int) -> void:
 	cel_button.layer = layer
 	cel_hbox.add_child(cel_button)
 	cel_hbox.move_child(cel_button, frame)
+	_refresh_timeline_selection_appearance()
 
 
 func project_cel_removed(frame: int, layer: int) -> void:

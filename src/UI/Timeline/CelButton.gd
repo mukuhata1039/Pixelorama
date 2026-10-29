@@ -4,12 +4,14 @@ enum MenuOptions { PROPERTIES, PLAY_AUDIO, SELECT_PIXELS, CENTER, DELETE, LINK, 
 
 ## A 5px hit target remains usable even in the 20px compact timeline.
 const CEL_DRAG_BORDER := 5.0
+## The active frame/layer guides are separate from the selected cel range.
+const ACTIVE_GUIDE_COLOR := Color("688ea4")
+const RANGE_OUTLINE_COLOR := Color("d1c275")
 
 var frame := 0
 var layer := 0
 var cel: BaseCel
 
-var _is_guide_stylebox := false
 var _drag_started_on_selected_border := false
 
 @onready var popup_menu: PopupMenu = $PopupMenu
@@ -24,7 +26,6 @@ var _drag_started_on_selected_border := false
 func _ready() -> void:
 	if DisplayServer.is_touchscreen_available():
 		mouse_filter = Control.MOUSE_FILTER_PASS
-	Global.cel_switched.connect(cel_switched)
 	Themes.theme_switched.connect(cel_switched.bind(true))
 	cel = Global.current_project.frames[frame].cels[layer]
 	button_setup()
@@ -38,7 +39,7 @@ func _ready() -> void:
 	for selected in Global.current_project.selected_cels:
 		if selected[1] == layer and selected[0] == frame:
 			button_pressed = true
-	_update_range_outline()
+	cel_switched()
 	popup_menu.add_item("Properties", MenuOptions.PROPERTIES)
 	if cel is AudioCel:
 		popup_menu.add_item("Play audio here", MenuOptions.PLAY_AUDIO)
@@ -104,52 +105,104 @@ func _notification(what: int) -> void:
 		)
 
 
-func cel_switched(force_stylebox_change := false) -> void:
+## Aseprite separates the timeline selection range from the blue row/column
+## guides. Every row/column touched by the selected cells receives a blue guide,
+## but the active editing cel remains independent of the range selection.
+## Only the selected cells receive the dark fill and thin yellow perimeter.
+func cel_switched(_force_stylebox_change := false) -> void:
+	var project := Global.current_project
 	z_index = 1 if button_pressed else 0
+	var on_guide_frame: bool = Global.animation_timeline.range_guide_frames.has(frame)
+	var on_guide_layer: bool = Global.animation_timeline.range_guide_layers.has(layer)
+	var in_active_guides: bool = on_guide_frame or on_guide_layer
+	for style_name: StringName in [&"normal", &"hover"]:
+		remove_theme_stylebox_override(style_name)
+		if in_active_guides:
+			var source := Global.control.theme.get_stylebox(style_name, &"CelButton")
+			if source is StyleBoxFlat:
+				var guide := source.duplicate() as StyleBoxFlat
+				var guide_strength := 0.7 if on_guide_frame and on_guide_layer else 0.55
+				guide.bg_color = guide.bg_color.lerp(ACTIVE_GUIDE_COLOR, guide_strength)
+				add_theme_stylebox_override(style_name, guide)
 	_update_range_outline()
-	var current_theme := Global.control.theme
-	var is_guide := false
-	for selected in Global.current_project.selected_cels:
-		if selected[1] == layer or selected[0] == frame:
-			is_guide = true
-			break
-	if is_guide:
-		if not _is_guide_stylebox or force_stylebox_change:
-			var guide_stylebox := current_theme.get_stylebox("guide", "CelButton")
-			add_theme_stylebox_override("normal", guide_stylebox)
-			_is_guide_stylebox = true
-	else:
-		if _is_guide_stylebox or force_stylebox_change:
-			var normal_stylebox := current_theme.get_stylebox("normal", "CelButton")
-			add_theme_stylebox_override("normal", normal_stylebox)
-			_is_guide_stylebox = false
+	queue_redraw()
 
 
-## Aseprite renders one outline around a timeline range, not a separate
-## four-sided outline around every selected cel. Only the outside edges of
-## the selected cels get borders; the focused editing cel is distinguished
-## by a slightly darker fill inside the range.
+## Every selected cel must keep the 1px internal grid. Previously the
+## pressed StyleBox hid the borders between selected neighbors, which merged
+## the entire range into one solid dark rectangle. The thin yellow range outline
+## is drawn separately in _draw() so it doesn't replace the internal grid.
 func _update_range_outline() -> void:
-	if not button_pressed:
+	var project := Global.current_project
+	# Preview membership is hashed so every mouse move does not scan the
+	# entire rectangular selection separately for every cel button.
+	var inside_selection: bool
+	if Global.animation_timeline.drag_range_preview_active:
+		inside_selection = Global.animation_timeline.drag_range_preview_lookup.has(
+			Vector2i(frame, layer)
+		)
+	else:
+		inside_selection = project.selected_cels.has([frame, layer])
+	if not inside_selection:
 		remove_theme_stylebox_override(&"pressed")
 		remove_theme_stylebox_override(&"hover_pressed")
 		return
-	var project := Global.current_project
-	var selection := project.selected_cels
-	var source := Global.control.theme.get_stylebox(&"pressed", &"CelButton") as StyleBoxFlat
-	if not is_instance_valid(source):
+	var source := Global.control.theme.get_stylebox(&"pressed", &"CelButton")
+	var normal_source := Global.control.theme.get_stylebox(&"normal", &"CelButton")
+	if not source is StyleBoxFlat or not normal_source is StyleBoxFlat:
 		return
+	var normal := normal_source as StyleBoxFlat
 	var style := source.duplicate() as StyleBoxFlat
-	style.border_width_left = 0 if selection.has([frame - 1, layer]) else 1
-	style.border_width_right = 0 if selection.has([frame + 1, layer]) else 1
-	style.border_width_top = 0 if selection.has([frame, layer + 1]) else 1
-	style.border_width_bottom = 0 if selection.has([frame, layer - 1]) else 1
-	if selection.size() > 1 and frame == project.current_frame and layer == project.current_layer:
-		style.bg_color = source.bg_color.darkened(0.25)
+	# Retain a distinct, readable cell for every frame, even inside a
+	# rectangular selection. Leave room for textures and linked-cel badges.
+	style.bg_color = normal.bg_color.lerp(ACTIVE_GUIDE_COLOR, 0.30)
+	var focus_frame: int = project.current_frame
+	var focus_layer: int = project.current_layer
+	if Global.animation_timeline.drag_range_preview_active:
+		focus_frame = Global.animation_timeline.drag_range_preview_target.x
+		focus_layer = Global.animation_timeline.drag_range_preview_target.y
+	if frame == focus_frame and layer == focus_layer:
+		style.bg_color = normal.bg_color.lerp(ACTIVE_GUIDE_COLOR, 0.65)
+	style.border_color = normal.border_color
+	style.border_width_left = 1
+	style.border_width_right = 1
+	style.border_width_top = 1
+	style.border_width_bottom = 1
 	add_theme_stylebox_override(&"pressed", style)
-	# A hovered selected cel must not re-introduce an inner border.
 	add_theme_stylebox_override(&"hover_pressed", style)
 
+
+## Render only the perimeter of the actual selected range. The base Button
+## still draws all dark internal grid borders and the original cel thumbnail.
+## Borders touching a selected neighbor are not part of the yellow perimeter.
+func _draw() -> void:
+	if not is_instance_valid(Global.current_project):
+		return
+	# While the rectangle is being dragged, only its moving outline is
+	# visible. Do not leave the old committed range's border underneath it.
+	if Global.animation_timeline.selection_drag_highlight.visible:
+		return
+	var timeline := Global.animation_timeline
+	var selected: Array = timeline.get_displayed_selected_cels()
+	if not selected.has([frame, layer]):
+		return
+	var x_end := size.x - 0.5
+	var y_end := size.y - 0.5
+	if frame > 0 and not selected.has([frame - 1, layer]):
+		draw_line(Vector2(0.5, 0.5), Vector2(0.5, y_end), RANGE_OUTLINE_COLOR, 1.0, false)
+	elif frame == 0 and (
+		timeline.drag_range_preview_active or not timeline.is_layer_header_range(layer)
+	):
+		draw_line(Vector2(0.5, 0.5), Vector2(0.5, y_end), RANGE_OUTLINE_COLOR, 1.0, false)
+	if not selected.has([frame + 1, layer]):
+		draw_line(Vector2(x_end, 0.5), Vector2(x_end, y_end), RANGE_OUTLINE_COLOR, 1.0, false)
+	if layer < Global.current_project.layers.size() - 1:
+		if not selected.has([frame, layer + 1]):
+			draw_line(Vector2(0.5, 0.5), Vector2(x_end, 0.5), RANGE_OUTLINE_COLOR, 1.0, false)
+	elif timeline.drag_range_preview_active or not timeline.is_frame_header_range(frame):
+		draw_line(Vector2(0.5, 0.5), Vector2(x_end, 0.5), RANGE_OUTLINE_COLOR, 1.0, false)
+	if not selected.has([frame, layer - 1]):
+		draw_line(Vector2(0.5, y_end), Vector2(x_end, y_end), RANGE_OUTLINE_COLOR, 1.0, false)
 
 func button_setup() -> void:
 	custom_minimum_size.x = Global.animation_timeline.cel_size
@@ -178,6 +231,30 @@ func _gui_input(event: InputEvent) -> void:
 					or Input.is_key_pressed(KEY_ALT)
 				)
 			)
+			# Aseprite's handleRangeMouseDown highlights the first cel and
+			# its row/column immediately on mouse press, before the drag
+			# threshold is reached. Only the visual range changes here:
+			# actual selected_cels will still be committed by the click
+			# callback or the rectangle's drop handler.
+			if (
+				not _drag_started_on_selected_border
+				and not DisplayServer.is_touchscreen_available()
+				and not Global.is_ctrl_or_cmd_pressed()
+				and not Input.is_key_pressed(KEY_ALT)
+				and not Input.is_action_pressed(&"shift")
+			):
+				Global.animation_timeline.update_drag_cel_range_preview(
+					[frame, layer], frame, layer
+				)
+		elif event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			# A simple click never starts a Godot drag. Discard its temporary
+			# display before the Button's released/pressed callback commits
+			# the actual active cel and selection.
+			if (
+				not get_viewport().gui_is_dragging()
+				and not Global.animation_timeline.selection_drag_highlight.visible
+			):
+				Global.animation_timeline.clear_drag_cel_range_preview()
 	elif event is InputEventMouseMotion:
 		var moving_selected_cels := (
 			Global.current_project.selected_cels.has([frame, layer])
@@ -216,6 +293,7 @@ func _on_CelButton_pressed() -> void:
 	var is_left_click := Input.is_action_just_released(&"left_mouse")
 	if is_left_click or Input.is_action_just_released(&"ui_accept"):
 		Global.transform_content_confirmed.emit()
+		Global.animation_timeline.select_cel_range_source()
 		var frame_layer := [frame, layer]
 		var change_cel := true
 		if is_left_click and Global.is_ctrl_or_cmd_pressed() and Input.is_action_pressed("shift"):
@@ -591,6 +669,9 @@ func _get_drag_data(_position: Vector2) -> Variant:
 	# Dragging the inside of a cel selects a rectangle of timeline cels.
 	# The selected cel's outer border still starts the existing move/swap operation.
 	if not _drag_started_on_selected_border and not DisplayServer.is_touchscreen_available():
+		# Start updating the visual range immediately, not only after the
+		# cursor enters a second cel. The committed range stays untouched.
+		_preview_cel_rectangle([frame, layer])
 		return ["CelRectangle", [frame, layer]]
 	var button := Button.new()
 	button.size = size
@@ -619,12 +700,19 @@ func _preview_cel_rectangle(origin: Array) -> bool:
 		return false
 	var first_cel: Control = row.get_child(origin[0])
 	var rect := first_cel.get_global_rect().merge(get_global_rect())
+	# Aseprite updates its range on every mouse movement. Match that by
+	# refreshing the transient cels and their row/column guides whenever
+	# the hovered drag target changes, without committing Project.selected_cels.
+	timeline.update_drag_cel_range_preview(origin, frame, layer)
 	# Do not paint the selection preview over layer names or outside the timeline.
 	rect = rect.intersection(timeline.frame_scroll_container.get_global_rect())
 	rect = rect.intersection(timeline.timeline_scroll.get_global_rect())
 	timeline.selection_drag_highlight.global_position = rect.position
 	timeline.selection_drag_highlight.size = rect.size
 	timeline.selection_drag_highlight.visible = rect.has_area()
+	# Redraw the yellow perimeter as the drag changes the selection rectangle.
+	# No blue overlay is painted, so the cel grid remains visible.
+	timeline.selection_drag_highlight.queue_redraw()
 	return true
 
 
@@ -642,6 +730,7 @@ func _select_cel_rectangle(origin: Array) -> void:
 			new_selected_cels.append([f, l])
 	if new_selected_cels.is_empty():
 		return
+	Global.animation_timeline.select_cel_range_source()
 	project.selected_cels = new_selected_cels
 	project.change_cel(frame, layer)
 
