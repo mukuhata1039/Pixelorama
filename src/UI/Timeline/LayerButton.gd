@@ -534,6 +534,8 @@ func _on_link_button_pressed() -> void:
 
 
 func _select_current_layer() -> void:
+	# Auxiliary layer controls keep selecting one active cel, not the full row.
+	Global.animation_timeline.select_cel_range_source()
 	Global.current_project.selected_cels.clear()
 	var frame_layer := [Global.current_project.current_frame, layer_index]
 	if !Global.current_project.selected_cels.has(frame_layer):
