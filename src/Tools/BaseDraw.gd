@@ -489,6 +489,29 @@ func draw_tile(pos: Vector2i) -> void:
 				tilemap_cel.set_index(cell, tile_index)
 
 
+## A timeline range is used for moving/copying/transforms, not for
+## painting all of its cells at once. A brush always edits only the current
+## (frame, layer), matching Aseprite's active-cel drawing behavior.
+## Keep BaseTool's general range helpers unchanged for non-brush tools.
+func _get_selected_draw_cels(include_all_layers := true) -> Array[BaseCel]:
+	var result: Array[BaseCel] = []
+	var project := Global.current_project
+	var layer := project.layers[project.current_layer]
+	if not include_all_layers:
+		if not layer.can_layer_get_drawn():
+			return result
+		if (
+			layer.drawing_color_locked
+			and tool_slot.color.a > 0.0
+			and tool_slot.color != layer.drawing_color
+		):
+			return result
+	var cel := project.get_current_cel()
+	if cel is PixelCel:
+		result.append(cel)
+	return result
+
+
 func _prepare_tool() -> void:
 	if !Global.current_project.layers[Global.current_project.current_layer].can_layer_get_drawn():
 		return
@@ -1585,8 +1608,9 @@ func _get_undo_data() -> Dictionary:
 	var project := Global.current_project
 	var cels: Array[BaseCel] = []
 	if Global.animation_timeline.animation_timer.is_stopped():
-		for cel_index in project.selected_cels:
-			cels.append(project.frames[cel_index[0]].cels[cel_index[1]])
+		# Keep Undo/Redo restricted to the cel actually painted, even when a
+		# timeline range covering other cels is selected.
+		cels.append(project.get_current_cel())
 	else:
 		for frame in project.frames:
 			var cel := frame.cels[project.current_layer]
