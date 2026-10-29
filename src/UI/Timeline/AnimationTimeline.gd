@@ -1576,6 +1576,28 @@ func select_frame_range_source() -> void:
 	range_selection_source = RangeSelectionSource.FRAMES
 
 
+## Only header-originated full rows/columns connect the range border to the
+## label/number header. Rectangles made by dragging cels do not.
+func is_layer_header_range(layer_index: int) -> bool:
+	if range_selection_source != RangeSelectionSource.LAYERS:
+		return false
+	var project := Global.current_project
+	for frame_index in project.frames.size():
+		if not project.selected_cels.has([frame_index, layer_index]):
+			return false
+	return true
+
+
+func is_frame_header_range(frame_index: int) -> bool:
+	if range_selection_source != RangeSelectionSource.FRAMES:
+		return false
+	var project := Global.current_project
+	for layer_index in project.layers.size():
+		if not project.selected_cels.has([frame_index, layer_index]):
+			return false
+	return true
+
+
 ## Render the active row, active column and timeline range independently.
 ## Ranges started from the layer/frame header also include that header inside
 ## the single outline, as Aseprite does.
