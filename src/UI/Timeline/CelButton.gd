@@ -132,6 +132,7 @@ func cel_switched(force_stylebox_change := false) -> void:
 func _update_range_outline() -> void:
 	if not button_pressed:
 		remove_theme_stylebox_override(&"pressed")
+		remove_theme_stylebox_override(&"hover_pressed")
 		return
 	var project := Global.current_project
 	var selection := project.selected_cels
@@ -146,6 +147,8 @@ func _update_range_outline() -> void:
 	if selection.size() > 1 and frame == project.current_frame and layer == project.current_layer:
 		style.bg_color = source.bg_color.darkened(0.25)
 	add_theme_stylebox_override(&"pressed", style)
+	# A hovered selected cel must not re-introduce an inner border.
+	add_theme_stylebox_override(&"hover_pressed", style)
 
 
 func button_setup() -> void:
