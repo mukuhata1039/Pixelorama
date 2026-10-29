@@ -124,6 +124,7 @@ func _ready() -> void:
 			shortcut_type_menu.remove_item(i)
 		else:
 			i += 1
+	_localize_shortcut_type_menu()
 
 	profile_option_button.select(Keychain.profile_index)
 	_on_ProfileOptionButton_item_selected(Keychain.profile_index)
@@ -142,11 +143,8 @@ func _notification(what: int) -> void:
 		profile_option_button.set_item_text(
 			i, _profile_display_name(Keychain.profiles[i].name)
 		)
-	mouse_shortcut_selector.input_type_l.text = tr("Mouse Button Index:")
-	joy_key_shortcut_selector.input_type_l.text = tr("Joypad Button Index:")
-	joy_axis_shortcut_selector.input_type_l.text = tr("Joypad Axis Index:")
-	for i in MOUSE_BUTTON_NAMES.size():
-		mouse_shortcut_selector.option_button.set_item_text(i, tr(MOUSE_BUTTON_NAMES[i]))
+	_fill_selector_options()
+	_localize_shortcut_type_menu()
 	if is_instance_valid(profile_settings) and profile_settings.visible:
 		profile_settings.title = tr(
 			"Rename Shortcut Profile" if is_editing else "New Shortcut Profile"
@@ -187,13 +185,17 @@ func _construct_tree() -> void:
 			add_event_tree_item(event, tree_item)
 
 		var buttons_disabled := false if Keychain.selected_profile.customizable else true
-		tree_item.add_button(0, add_tex, 0, buttons_disabled, "Add")
-		tree_item.add_button(0, delete_tex, 1, buttons_disabled, "Delete")
+		tree_item.add_button(0, add_tex, 0, buttons_disabled, tr("Add"))
+		tree_item.add_button(0, delete_tex, 1, buttons_disabled, tr("Delete"))
 		tree_item.collapsed = true
 	mouse_movement_options.hide()
 
 
 func _fill_selector_options() -> void:
+	# Rebuild rather than append; this is also called on language changes.
+	mouse_shortcut_selector.option_button.clear()
+	joy_key_shortcut_selector.option_button.clear()
+	joy_axis_shortcut_selector.option_button.clear()
 	mouse_shortcut_selector.input_type_l.text = tr("Mouse Button Index:")
 	joy_key_shortcut_selector.input_type_l.text = tr("Joypad Button Index:")
 	joy_axis_shortcut_selector.input_type_l.text = tr("Joypad Axis Index:")
@@ -216,6 +218,19 @@ func _fill_selector_options() -> void:
 		var text: String = tr("Axis") + " %s %s %s" % [floori(i), sign_symbol, tr(option)]
 		joy_axis_option_button.add_item(text)
 		i += 0.5
+
+
+func _localize_shortcut_type_menu() -> void:
+	for i in shortcut_type_menu.item_count:
+		match shortcut_type_menu.get_item_id(i):
+			KEYBOARD:
+				shortcut_type_menu.set_item_text(i, tr("Key"))
+			MOUSE:
+				shortcut_type_menu.set_item_text(i, tr("Mouse Button"))
+			JOY_BUTTON:
+				shortcut_type_menu.set_item_text(i, tr("Joy Button"))
+			JOY_AXIS:
+				shortcut_type_menu.set_item_text(i, tr("Joy Axis"))
 
 
 func _create_group_tree_item(group: Keychain.InputGroup, group_name: String) -> void:
@@ -292,8 +307,8 @@ func add_event_tree_item(event: InputEvent, action_tree_item: TreeItem) -> void:
 			event_tree_item.set_icon(0, joy_button_tex)
 		"InputEventJoypadMotion":
 			event_tree_item.set_icon(0, joy_axis_tex)
-	event_tree_item.add_button(0, edit_tex, 0, buttons_disabled, "Edit")
-	event_tree_item.add_button(0, delete_tex, 1, buttons_disabled, "Delete")
+	event_tree_item.add_button(0, edit_tex, 0, buttons_disabled, tr("Edit"))
+	event_tree_item.add_button(0, delete_tex, 1, buttons_disabled, tr("Delete"))
 
 
 func event_to_str(event: InputEvent) -> String:
