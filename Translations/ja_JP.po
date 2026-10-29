@@ -4229,3 +4229,6 @@ msgstr "タイルのプロパティ"
 msgid "Probability:"
 msgstr "確率:"
 
+#. The shortcut editor allows the same keyboard shortcut on multiple left/right tools.
+msgid "Shared tool shortcut: %s"
+msgstr "共有ショートカット: %s（押すたびにツールを切り替え）"

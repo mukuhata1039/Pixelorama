@@ -45,16 +45,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		var right_tool_shortcut := "right_" + t.shortcut + "_tool"
 		if not Global.single_tool_mode and InputMap.has_action(right_tool_shortcut):
 			if event.is_action_pressed(right_tool_shortcut, false, true):
-				# Shortcut for right button (with Alt)
-				Tools.assign_tool(t.name, MOUSE_BUTTON_RIGHT)
-				Tools.prev_tool_names[MOUSE_BUTTON_RIGHT] = ""
+				# All tools sharing this key cycle in their registration order.
+				_assign_cycled_tool(event, MOUSE_BUTTON_RIGHT)
 				return
 		var left_tool_shortcut := "left_" + t.shortcut + "_tool"
 		if InputMap.has_action(left_tool_shortcut):
 			if event.is_action_pressed(left_tool_shortcut, false, true):
-				# Shortcut for left button
-				Tools.assign_tool(t.name, MOUSE_BUTTON_LEFT)
-				Tools.prev_tool_names[MOUSE_BUTTON_LEFT] = ""
+				_assign_cycled_tool(event, MOUSE_BUTTON_LEFT)
 				return
 
 		var quick_tool_shortcut := "quick_" + t.shortcut + "_tool"
@@ -67,6 +64,36 @@ func _unhandled_input(event: InputEvent) -> void:
 				Tools.quick_assign_tool_revert(MOUSE_BUTTON_RIGHT)
 				Tools.quick_assign_tool_revert(MOUSE_BUTTON_LEFT)
 				return
+
+
+## Collect all visible tools whose shortcut matches this event. A single
+## match behaves as before; multiple matches cycle from the current tool.
+## This needs no separate cycle state, so toolbar clicks and other shortcuts
+## immediately establish the correct next tool.
+func _assign_cycled_tool(event: InputEvent, button: MouseButton) -> void:
+	var matches: Array[String] = []
+	var prefix := "right_" if button == MOUSE_BUTTON_RIGHT else "left_"
+	for tool_name in Tools.tools:
+		if not get_node(tool_name).visible:
+			continue
+		var action: StringName = prefix + Tools.tools[tool_name].shortcut + "_tool"
+		if InputMap.has_action(action) and event.is_action_pressed(action, false, true):
+			matches.append(tool_name)
+	if matches.is_empty():
+		return
+	# Keyboard auto-repeat must not cycle a held key repeatedly.
+	if matches.size() > 1 and event is InputEventKey:
+		if (event as InputEventKey).echo:
+			return
+	var target := matches[0]
+	if matches.size() > 1:
+		var active_button := MOUSE_BUTTON_RIGHT if Global.single_tool_mode else button
+		var current_tool := Tools.get_tool(active_button).tool_node.name
+		var current_index := matches.find(current_tool)
+		if current_index >= 0:
+			target = matches[(current_index + 1) % matches.size()]
+	Tools.assign_tool(target, button)
+	Tools.prev_tool_names[button] = ""
 
 
 ## Periodically reconcile quick-navigation tools against actual held keys.

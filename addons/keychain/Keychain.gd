@@ -33,11 +33,17 @@ class InputAction:
 	var display_name := ""
 	var group := ""
 	var global := true
+	## Allow multiple actions in this same group to share a keyboard shortcut.
+	## The owning application handles cycling between the matched actions.
+	var cycle_shared_shortcuts := false
 
-	func _init(_display_name := "", _group := "", _global := true) -> void:
+	func _init(
+		_display_name := "", _group := "", _global := true, _cycle_shared_shortcuts := false
+	) -> void:
 		display_name = _display_name
 		group = _group
 		global = _global
+		cycle_shared_shortcuts = _cycle_shared_shortcuts
 
 
 class MouseMovementInputAction:

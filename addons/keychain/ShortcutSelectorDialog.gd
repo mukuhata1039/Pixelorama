@@ -55,9 +55,17 @@ func _show_assigned_state(event: InputEvent) -> void:
 	elif metadata is StringName:  # Adding a new input event to an action
 		action = metadata
 
-	var matching_pair: Array = _find_matching_event_in_map(action, event)
-	if matching_pair:
-		already_exists.text = tr("Already assigned to: %s") % root.get_action_name(matching_pair[0])
+	var matching_pairs := _find_matching_events_in_map(action, event)
+	for matching_pair in matching_pairs:
+		if not _can_share_tool_shortcut(action, matching_pair[0], event):
+			already_exists.text = (
+				tr("Already assigned to: %s") % root.get_action_name(matching_pair[0])
+			)
+			return
+	if not matching_pairs.is_empty():
+		already_exists.text = (
+			tr("Shared tool shortcut: %s") % root.get_action_name(matching_pairs[0][0])
+		)
 	else:
 		already_exists.text = ""
 
@@ -90,59 +98,79 @@ func _set_shortcut(action: StringName, old_event: InputEvent, new_event: InputEv
 	if old_event:
 		Keychain.action_erase_event(action, old_event)
 
-	# Loop through other actions to see if the event exists there, to re-assign it
-	var matching_pair := _find_matching_event_in_map(action, new_event)
-
-	if matching_pair:
-		var group := ""
-		if action in Keychain.actions:
-			group = Keychain.actions[action].group
-
+	# A keyboard shortcut may be shared by left tools (or by right tools),
+	# so those tools cycle when pressed repeatedly. Other collisions continue
+	# to replace the old assignment. Remove ALL incompatible assignments:
+	# a key may already be shared by several tools.
+	for matching_pair in _find_matching_events_in_map(action, new_event):
 		var action_to_replace: StringName = matching_pair[0]
+		if _can_share_tool_shortcut(action, action_to_replace, new_event):
+			continue
 		var input_to_replace: InputEvent = matching_pair[1]
 		Keychain.action_erase_event(action_to_replace, input_to_replace)
 		Keychain.change_action(action_to_replace)
-		var tree_item: TreeItem = root.tree.get_root()
-		while tree_item != null:  # Loop through Tree's TreeItems...
-			var metadata = tree_item.get_metadata(0)
-			if metadata is InputEvent:
-				if input_to_replace.is_match(metadata):
-					var map_action: StringName = tree_item.get_parent().get_metadata(0)
-					if map_action == action_to_replace:
-						tree_item.free()
-						break
-
-			tree_item = tree_item.get_next_in_tree()
+		_remove_event_tree_item(action_to_replace, input_to_replace)
 
 	Keychain.action_add_event(action, new_event)
 	Keychain.change_action(action)
 	return true
 
 
-func _find_matching_event_in_map(action: StringName, event: InputEvent) -> Array:
+func _can_share_tool_shortcut(
+	action: StringName, other_action: StringName, event: InputEvent
+) -> bool:
+	# Hold-to-switch "Quick tools" and non-keyboard inputs must keep their
+	# original single-owner behavior; cycling them would be ambiguous.
+	if not event is InputEventKey:
+		return false
+	if not Keychain.actions.has(action) or not Keychain.actions.has(other_action):
+		return false
+	var target: Keychain.InputAction = Keychain.actions[action]
+	var other: Keychain.InputAction = Keychain.actions[other_action]
+	return (
+		target.cycle_shared_shortcuts
+		and other.cycle_shared_shortcuts
+		and target.group == other.group
+	)
+
+
+func _remove_event_tree_item(action: StringName, input_event: InputEvent) -> void:
+	var tree_item: TreeItem = root.tree.get_root()
+	while tree_item != null:
+		var metadata = tree_item.get_metadata(0)
+		if metadata is InputEvent and input_event.is_match(metadata):
+			var parent := tree_item.get_parent()
+			if is_instance_valid(parent) and parent.get_metadata(0) == action:
+				tree_item.free()
+				return
+		tree_item = tree_item.get_next_in_tree()
+
+
+func _find_matching_events_in_map(action: StringName, event: InputEvent) -> Array:
+	var matches := []
 	var group := ""
-	if action in Keychain.actions:
+	if Keychain.actions.has(action):
 		group = Keychain.actions[action].group
 
 	for map_action in InputMap.get_actions():
-		if map_action in Keychain.ignore_actions:
+		if map_action == action or map_action in Keychain.ignore_actions:
 			continue
 		if Keychain.ignore_ui_actions and (map_action as String).begins_with("ui_"):
 			continue
 		for map_event in InputMap.action_get_events(map_action):
-			if !event.is_match(map_event):
+			if not event.is_match(map_event):
 				continue
 
-			if map_action in Keychain.actions:
-				# If it's local, check if it's the same group, otherwise ignore
-				if !Keychain.actions[action].global or !Keychain.actions[map_action].global:
-					if Keychain.actions[map_action].group != group:
+			if Keychain.actions.has(map_action) and Keychain.actions.has(action):
+				# Honor the original group isolation for local actions.
+				var target: Keychain.InputAction = Keychain.actions[action]
+				var other: Keychain.InputAction = Keychain.actions[map_action]
+				if not target.global or not other.global:
+					if other.group != group:
 						continue
 
-			return [map_action, map_event]
-
-	return []
-
+			matches.append([map_action, map_event])
+	return matches
 
 func _on_ShortcutSelectorDialog_about_to_show() -> void:
 	var metadata = root.currently_editing_tree_item.get_metadata(0)

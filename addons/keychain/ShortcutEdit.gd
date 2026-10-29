@@ -113,7 +113,7 @@ var folder_tex: Texture2D = preload("assets/folder.svg")
 
 func _ready() -> void:
 	for profile in Keychain.profiles:
-		profile_option_button.add_item(profile.name)
+		profile_option_button.add_item(_profile_display_name(profile.name))
 
 	_fill_selector_options()
 
@@ -124,12 +124,31 @@ func _ready() -> void:
 			shortcut_type_menu.remove_item(i)
 		else:
 			i += 1
+	_localize_shortcut_type_menu()
 
 	profile_option_button.select(Keychain.profile_index)
 	_on_ProfileOptionButton_item_selected(Keychain.profile_index)
 	mm_top_left.button_group.pressed.connect(_on_mouse_movement_angle_changed)
 	if OS.get_name() == "Web":
 		$VBoxContainer/HBoxContainer/OpenProfileFolder.queue_free()
+
+
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_TRANSLATION_CHANGED or not is_node_ready():
+		return
+	# TreeItem text and OptionButton items are set in code, so Godot does not
+	# automatically retranslate them when the application language changes.
+	_reconstruct_tree()
+	for i in Keychain.profiles.size():
+		profile_option_button.set_item_text(
+			i, _profile_display_name(Keychain.profiles[i].name)
+		)
+	_fill_selector_options()
+	_localize_shortcut_type_menu()
+	if is_instance_valid(profile_settings) and profile_settings.visible:
+		profile_settings.title = tr(
+			"Rename Shortcut Profile" if is_editing else "New Shortcut Profile"
+		)
 
 
 func _construct_tree() -> void:
@@ -166,20 +185,24 @@ func _construct_tree() -> void:
 			add_event_tree_item(event, tree_item)
 
 		var buttons_disabled := false if Keychain.selected_profile.customizable else true
-		tree_item.add_button(0, add_tex, 0, buttons_disabled, "Add")
-		tree_item.add_button(0, delete_tex, 1, buttons_disabled, "Delete")
+		tree_item.add_button(0, add_tex, 0, buttons_disabled, tr("Add"))
+		tree_item.add_button(0, delete_tex, 1, buttons_disabled, tr("Delete"))
 		tree_item.collapsed = true
 	mouse_movement_options.hide()
 
 
 func _fill_selector_options() -> void:
-	mouse_shortcut_selector.input_type_l.text = "Mouse Button Index:"
-	joy_key_shortcut_selector.input_type_l.text = "Joypad Button Index:"
-	joy_axis_shortcut_selector.input_type_l.text = "Joypad Axis Index:"
+	# Rebuild rather than append; this is also called on language changes.
+	mouse_shortcut_selector.option_button.clear()
+	joy_key_shortcut_selector.option_button.clear()
+	joy_axis_shortcut_selector.option_button.clear()
+	mouse_shortcut_selector.input_type_l.text = tr("Mouse Button Index:")
+	joy_key_shortcut_selector.input_type_l.text = tr("Joypad Button Index:")
+	joy_axis_shortcut_selector.input_type_l.text = tr("Joypad Axis Index:")
 
 	var mouse_option_button: OptionButton = mouse_shortcut_selector.option_button
 	for option in MOUSE_BUTTON_NAMES:
-		mouse_option_button.add_item(option)
+		mouse_option_button.add_item(tr(option))
 
 	var joy_key_option_button: OptionButton = joy_key_shortcut_selector.option_button
 	for i in JOY_BUTTON_MAX:
@@ -197,6 +220,19 @@ func _fill_selector_options() -> void:
 		i += 0.5
 
 
+func _localize_shortcut_type_menu() -> void:
+	for i in shortcut_type_menu.item_count:
+		match shortcut_type_menu.get_item_id(i):
+			KEYBOARD:
+				shortcut_type_menu.set_item_text(i, tr("Key"))
+			MOUSE:
+				shortcut_type_menu.set_item_text(i, tr("Mouse Button"))
+			JOY_BUTTON:
+				shortcut_type_menu.set_item_text(i, tr("Joy Button"))
+			JOY_AXIS:
+				shortcut_type_menu.set_item_text(i, tr("Joy Axis"))
+
+
 func _create_group_tree_item(group: Keychain.InputGroup, group_name: String) -> void:
 	if group.tree_item:
 		return
@@ -208,7 +244,7 @@ func _create_group_tree_item(group: Keychain.InputGroup, group_name: String) -> 
 		group_root = tree.create_item(parent_group.tree_item)
 	else:
 		group_root = tree.create_item(tree.get_root())
-	group_root.set_text(0, group_name)
+	group_root.set_text(0, tr(group_name))
 	group_root.set_icon(0, folder_tex)
 	group.tree_item = group_root
 	if group.folded:
@@ -220,9 +256,22 @@ func get_action_name(action: String) -> String:
 	if action in Keychain.actions:
 		display_name = Keychain.actions[action].display_name
 
+	# Translate the actual action ID first, rather than its auto-generated
+	# English label. The InputMap name remains unchanged for saved bindings.
+	var translation_key := "Shortcut action: " + action
+	var localized_name := tr(translation_key)
+	if localized_name != translation_key:
+		return localized_name
 	if display_name.is_empty():
 		display_name = Keychain.humanize_snake_case(action)
-	return display_name
+	return tr(display_name)
+
+
+func _profile_display_name(profile_name: String) -> String:
+	# Localize only built-in profile names; custom profile names must remain intact.
+	if profile_name in ["Default", "Custom"]:
+		return tr(profile_name)
+	return profile_name
 
 
 func add_event_tree_item(event: InputEvent, action_tree_item: TreeItem) -> void:
@@ -258,8 +307,8 @@ func add_event_tree_item(event: InputEvent, action_tree_item: TreeItem) -> void:
 			event_tree_item.set_icon(0, joy_button_tex)
 		"InputEventJoypadMotion":
 			event_tree_item.set_icon(0, joy_axis_tex)
-	event_tree_item.add_button(0, edit_tex, 0, buttons_disabled, "Edit")
-	event_tree_item.add_button(0, delete_tex, 1, buttons_disabled, "Delete")
+	event_tree_item.add_button(0, edit_tex, 0, buttons_disabled, tr("Edit"))
+	event_tree_item.add_button(0, delete_tex, 1, buttons_disabled, tr("Delete"))
 
 
 func event_to_str(event: InputEvent) -> String:
@@ -502,8 +551,8 @@ func _on_ProfileOptionButton_item_selected(index: int) -> void:
 
 func _on_NewProfile_pressed() -> void:
 	is_editing = false
-	profile_name.text = "New Shortcut Profile"
-	profile_settings.title = "New Shortcut Profile"
+	profile_name.text = tr("New Shortcut Profile")
+	profile_settings.title = tr("New Shortcut Profile")
 	profile_settings.popup_centered_clamped()
 
 
@@ -514,7 +563,7 @@ func _on_reset_profile_pressed() -> void:
 func _on_RenameProfile_pressed() -> void:
 	is_editing = true
 	profile_name.text = Keychain.selected_profile.name
-	profile_settings.title = "Rename Shortcut Profile"
+	profile_settings.title = tr("Rename Shortcut Profile")
 	profile_settings.popup_centered_clamped()
 
 
@@ -540,10 +589,10 @@ func _on_ProfileSettings_confirmed() -> void:
 		if old_file_name != file_name:
 			_delete_profile_file(old_file_name)
 		Keychain.profiles[Keychain.profile_index] = profile
-		profile_option_button.set_item_text(Keychain.profile_index, profile.name)
+		profile_option_button.set_item_text(Keychain.profile_index, _profile_display_name(profile.name))
 	else:  # Add new shortcut profile
 		Keychain.profiles.append(profile)
-		profile_option_button.add_item(profile.name)
+		profile_option_button.add_item(_profile_display_name(profile.name))
 		Keychain.profile_index = Keychain.profiles.size() - 1
 		profile_option_button.select(Keychain.profile_index)
 		_on_ProfileOptionButton_item_selected(Keychain.profile_index)
