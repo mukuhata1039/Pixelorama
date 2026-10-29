@@ -31,6 +31,13 @@ var range_selection_source := RangeSelectionSource.CELLS
 ## current frame/layer on the other axis, as shown in Aseprite's timeline.
 var range_guide_layers: Dictionary[int, bool] = {}
 var range_guide_frames: Dictionary[int, bool] = {}
+## Preview selection remains separate from Project.selected_cels until drop.
+## Aseprite recalculates its range during mouse movement; we use the
+## same live display behavior without committing a range until release.
+var drag_range_preview_active := false
+var drag_range_preview_origin := Vector2i(-1, -1)
+var drag_range_preview_target := Vector2i(-1, -1)
+var drag_range_preview_cels: Array = []
 var is_animation_running := false
 var animation_loop := LoopType.CYCLE
 var animation_forward := true
@@ -215,8 +222,13 @@ func _exit_tree() -> void:
 func _on_selection_drag_preview_visibility_changed() -> void:
 	if not is_instance_valid(Global.current_project):
 		return
+	if not selection_drag_highlight.visible and drag_range_preview_active:
+		# A canceled drag must restore the previous committed selection,
+		# while a successful drop will show its newly committed range.
+		clear_drag_cel_range_preview()
+		return
 	for cel_index in Global.current_project.selected_cels:
-		var row_index := cel_vbox.get_child_count() - 1 - int(cel_index[1])
+		var row_index: int = cel_vbox.get_child_count() - 1 - int(cel_index[1])
 		if row_index < 0 or row_index >= cel_vbox.get_child_count():
 			continue
 		var row := cel_vbox.get_child(row_index)
@@ -1647,13 +1659,64 @@ func is_frame_header_range(frame_index: int) -> bool:
 	return true
 
 
+## Aseprite timeline.cpp updates its selected range in
+## STATE_SELECTING_CELS -> handleRangeMouseMove() on each mouse move.
+## Keep the changing rectangle as a *visual* preview while Godot's drag
+## runs, so only the final drop writes Project.selected_cels.
+func update_drag_cel_range_preview(origin: Array, end_frame: int, end_layer: int) -> void:
+	if origin.size() != 2:
+		return
+	var start := Vector2i(int(origin[0]), int(origin[1]))
+	var target := Vector2i(end_frame, end_layer)
+	if drag_range_preview_active and start == drag_range_preview_origin and target == drag_range_preview_target:
+		return
+	var next_cels: Array = []
+	for layer_index in range(mini(start.y, target.y), maxi(start.y, target.y) + 1):
+		var row_index := cel_vbox.get_child_count() - 1 - layer_index
+		if row_index < 0 or row_index >= cel_vbox.get_child_count():
+			continue
+		var row := cel_vbox.get_child(row_index) as Control
+		if not row.visible:
+			continue
+		for frame_index in range(mini(start.x, target.x), maxi(start.x, target.x) + 1):
+			if frame_index >= 0 and frame_index < row.get_child_count():
+				next_cels.append([frame_index, layer_index])
+	if next_cels.is_empty():
+		return
+	drag_range_preview_origin = start
+	drag_range_preview_target = target
+	drag_range_preview_cels = next_cels
+	drag_range_preview_active = true
+	_refresh_timeline_selection_appearance()
+
+
+func clear_drag_cel_range_preview() -> void:
+	if not drag_range_preview_active:
+		return
+	drag_range_preview_active = false
+	drag_range_preview_cels.clear()
+	drag_range_preview_origin = Vector2i(-1, -1)
+	drag_range_preview_target = Vector2i(-1, -1)
+	_refresh_timeline_selection_appearance()
+
+
+func get_displayed_selected_cels() -> Array:
+	if drag_range_preview_active:
+		return drag_range_preview_cels
+	return Global.current_project.selected_cels
+
+
 ## Render the active row, active column and timeline range independently.
 ## Ranges started from the layer/frame header also include that header inside
 ## the single outline, as Aseprite does.
 func _refresh_timeline_selection_appearance() -> void:
 	var project := Global.current_project
 	var selected: Dictionary[Vector2i, bool] = {}
-	for cel_index in project.selected_cels:
+	var display_cels: Array = get_displayed_selected_cels()
+	var display_source: int = (
+		RangeSelectionSource.CELLS if drag_range_preview_active else range_selection_source
+	)
+	for cel_index in display_cels:
 		var frame_index: int = cel_index[0]
 		var layer_index: int = cel_index[1]
 		selected[Vector2i(frame_index, layer_index)] = true
@@ -1663,26 +1726,26 @@ func _refresh_timeline_selection_appearance() -> void:
 	# plus the currently editable frame, and vice versa for frame headers.
 	range_guide_layers.clear()
 	range_guide_frames.clear()
-	match range_selection_source:
+	match display_source:
 		RangeSelectionSource.CELLS:
-			for cel_index in project.selected_cels:
+			for cel_index in display_cels:
 				range_guide_frames[int(cel_index[0])] = true
 				range_guide_layers[int(cel_index[1])] = true
 		RangeSelectionSource.LAYERS:
-			for cel_index in project.selected_cels:
+			for cel_index in display_cels:
 				range_guide_layers[int(cel_index[1])] = true
 		RangeSelectionSource.FRAMES:
-			for cel_index in project.selected_cels:
+			for cel_index in display_cels:
 				range_guide_frames[int(cel_index[0])] = true
 	# Preserve the active editing position on the axis not included in
 	# a header range, and when no range has been selected.
-	if range_selection_source == RangeSelectionSource.LAYERS or range_guide_frames.is_empty():
+	if display_source == RangeSelectionSource.LAYERS or range_guide_frames.is_empty():
 		range_guide_frames[project.current_frame] = true
-	if range_selection_source == RangeSelectionSource.FRAMES or range_guide_layers.is_empty():
+	if display_source == RangeSelectionSource.FRAMES or range_guide_layers.is_empty():
 		range_guide_layers[project.current_layer] = true
 	var selected_rows: Dictionary[int, bool] = {}
 	var selected_columns: Dictionary[int, bool] = {}
-	if range_selection_source == RangeSelectionSource.LAYERS:
+	if display_source == RangeSelectionSource.LAYERS:
 		for layer_index in project.layers.size():
 			var complete := true
 			for frame_index in project.frames.size():
@@ -1691,7 +1754,7 @@ func _refresh_timeline_selection_appearance() -> void:
 					break
 			if complete:
 				selected_rows[layer_index] = true
-	elif range_selection_source == RangeSelectionSource.FRAMES:
+	elif display_source == RangeSelectionSource.FRAMES:
 		for frame_index in project.frames.size():
 			var complete := true
 			for layer_index in project.layers.size():
