@@ -1,34 +1,40 @@
-# Aseprite timeline cursors — third-party assets
+# Aseprite application cursors — third-party assets
 
-The following cursor designs are extracted **without modification** from the
-official Aseprite Default Theme sprite sheet and rendered at 2× size
-(**16×16 source pixels → 32×32 cursor pixels**) with nearest-neighbor scaling
-to preserve hard pixel edges.
+Pixelorama uses the **original Aseprite Default Theme cursor sprites** throughout
+its UI where Godot provides matching cursor shapes. The source images themselves
+are unchanged and are displayed at **2× size (16×16 → 32×32 pixels)**
+using **nearest-neighbor scaling**. The source PNG is embedded losslessly as
+Base64 in `src/UI/Timeline/AsepriteCopyCursor.gd` and cropped at runtime.
+The cursor hotspots from Aseprite's `theme.xml` are scaled by the same factor.
 
-| Original `theme.xml` part | Used for | Sprite region (x, y, w, h) |
+| Original `theme.xml` part | Application usage | Source region (x, y, w, h) |
 | --- | --- | --- |
-| `cursor_normal` | Ordinary pointer / cel selection | (80, 0, 16, 16) |
-| `cursor_normal_add` | Ctrl/Alt cel copy drag | (80, 16, 16, 16) |
+| `cursor_normal` | Ordinary pointer | (80, 0, 16, 16) |
+| `cursor_normal_add` | Copy drag / valid drop | (80, 16, 16, 16) |
+| `cursor_crosshair` | Canvas crosshair, if native preference is off | (96, 32, 16, 16) |
 | `cursor_forbidden` | Disallowed cursor state | (80, 32, 16, 16) |
-| `cursor_hand` | Timeline clickable controls | (80, 48, 16, 16) |
-| `cursor_scroll` | Scrolling cursor asset | (80, 64, 16, 16) |
-| `cursor_move` | Selected cel outline / move drag | (80, 80, 16, 16) |
-| `cursor_size_ns` | Vertical resize | (80, 112, 16, 16) |
-| `cursor_size_we` | Horizontal resize | (80, 144, 16, 16) |
+| `cursor_hand` | Clickable controls | (80, 48, 16, 16) |
+| `cursor_scroll` | Included for future cursor uses | (80, 64, 16, 16) |
+| `cursor_move` | Move drag and controls | (80, 80, 16, 16) |
+| `cursor_size_ns` | Vertical resize/split | (80, 112, 16, 16) |
+| `cursor_size_we` | Horizontal resize/split | (80, 144, 16, 16) |
+| `cursor_size_nw` | One diagonal resize direction | (80, 96, 16, 16) |
+| `cursor_size_ne` | Other diagonal resize direction | (80, 128, 16, 16) |
 
-The unmodified source PNG is embedded losslessly as Base64 in
-`AsepriteCopyCursor.gd`; its regions are extracted and **scaled for display
-only**, without altering the original image data or individual pixels. The
-original `theme.xml` cursor hotspot coordinates are scaled by the same factor.
+Unmapped cursor shapes (such as text insertion/I-beam, wait and busy) retain the
+system cursors. Pixelorama's pre-existing *canvas rotation* cursor and per-tool
+brush preview overlays retain their behavior. The "native cursors" preference
+also continues to control the canvas crosshair. The sprite sheet is not
+recolored, edited or resampled other than the stated 2× nearest-neighbor
+display enlargement.
 
 **Aseprite Default Theme**  
 Copyright (C) 2009–2017 David Capello and Ilija Melentijevic.
 
-- Original sprite sheet: https://github.com/aseprite/aseprite/blob/main/data/extensions/aseprite-theme/sheet.png
-- Sprite positions and hotspots: https://github.com/aseprite/aseprite/blob/main/data/extensions/aseprite-theme/theme.xml
-- Original license notice: https://github.com/aseprite/aseprite/blob/main/data/extensions/aseprite-theme/LICENSE.txt
+- Source sprite sheet: https://github.com/aseprite/aseprite/blob/main/data/extensions/aseprite-theme/sheet.png
+- Sprite coordinates and hotspots: https://github.com/aseprite/aseprite/blob/main/data/extensions/aseprite-theme/theme.xml
+- Upstream license notice: https://github.com/aseprite/aseprite/blob/main/data/extensions/aseprite-theme/LICENSE.txt
 - License: [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/)
 
-These cursors are installed temporarily for the timeline or while dragging
-its cels; they are restored to the standard application cursor outside that
-context. This does not change other Pixelorama artwork or its licenses.
+Attribution is provided in accordance with CC BY 4.0. This asset license
+does not change the terms of Pixelorama's other code and artwork.
