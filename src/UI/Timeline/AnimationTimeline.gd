@@ -26,6 +26,10 @@ const RANGE_OUTLINE_COLOR := Color("d1c275")
 ## Aseprite's range outline includes a row/column header only when the
 ## selection was started by clicking a layer/frame header.
 var range_selection_source := RangeSelectionSource.CELLS
+## The Aseprite-style blue row/column guides reflect every row/column
+## intersecting the selected range, even when the focus cel is elsewhere.
+var range_guide_layers: Dictionary[int, bool] = {}
+var range_guide_frames: Dictionary[int, bool] = {}
 var is_animation_running := false
 var animation_loop := LoopType.CYCLE
 var animation_forward := true
@@ -1612,8 +1616,17 @@ func is_frame_header_range(frame_index: int) -> bool:
 func _refresh_timeline_selection_appearance() -> void:
 	var project := Global.current_project
 	var selected: Dictionary[Vector2i, bool] = {}
+	range_guide_layers.clear()
+	range_guide_frames.clear()
 	for cel_index in project.selected_cels:
-		selected[Vector2i(cel_index[0], cel_index[1])] = true
+		var frame_index: int = cel_index[0]
+		var layer_index: int = cel_index[1]
+		selected[Vector2i(frame_index, layer_index)] = true
+		range_guide_layers[layer_index] = true
+		range_guide_frames[frame_index] = true
+	if selected.is_empty():
+		range_guide_layers[project.current_layer] = true
+		range_guide_frames[project.current_frame] = true
 	var selected_rows: Dictionary[int, bool] = {}
 	var selected_columns: Dictionary[int, bool] = {}
 	if range_selection_source == RangeSelectionSource.LAYERS:
@@ -1638,7 +1651,7 @@ func _refresh_timeline_selection_appearance() -> void:
 	for frame_button in frame_hbox.get_children():
 		var f: int = frame_button.frame
 		var is_range := selected_columns.has(f)
-		var active := f == project.current_frame
+		var active := range_guide_frames.has(f)
 		_set_header_selection_style(
 			frame_button, active, is_range, false,
 			selected_columns.has(f - 1), selected_columns.has(f + 1), true
@@ -1646,7 +1659,7 @@ func _refresh_timeline_selection_appearance() -> void:
 	for layer_button in layer_vbox.get_children():
 		var l: int = layer_button.layer_index
 		var is_range := selected_rows.has(l)
-		var active := l == project.current_layer
+		var active := range_guide_layers.has(l)
 		_set_header_selection_style(
 			layer_button.main_button, active, is_range, true,
 			selected_rows.has(l + 1), selected_rows.has(l - 1), false
