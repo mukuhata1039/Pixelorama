@@ -142,6 +142,16 @@ var tools: Dictionary[String, Tool] = {
 		"Hold %s to make a line",
 		["draw_create_line"]
 	),
+	"OrderedDither":
+	Tool.new(
+		"OrderedDither",
+		"Ordered Dither",
+		"ordered_dither",
+		"res://src/Tools/DesignTools/OrderedDither.tscn",
+		[Global.LayerTypes.PIXEL],
+		"Hold %s to make a line",
+		["draw_create_line"]
+	),
 	"Eraser":
 	Tool.new(
 		"Eraser",
@@ -326,8 +336,13 @@ class Tool:
 		layer_types = _layer_types
 		extra_hint = _extra_hint
 		extra_shortcuts = _extra_shortcuts
-		icon = load("res://assets/graphics/tools/%s.png" % name.to_lower())
-		cursor_icon = load("res://assets/graphics/tools/cursors/%s.png" % name.to_lower())
+		if name == "OrderedDither":
+			# Vector icon is imported by Godot; reuse it for the cursor.
+			icon = load("res://assets/graphics/tools/ordereddither.svg")
+			cursor_icon = icon
+		else:
+			icon = load("res://assets/graphics/tools/%s.png" % name.to_lower())
+			cursor_icon = load("res://assets/graphics/tools/cursors/%s.png" % name.to_lower())
 
 	func instantiate_scene() -> Node:
 		if not is_instance_valid(scene):
