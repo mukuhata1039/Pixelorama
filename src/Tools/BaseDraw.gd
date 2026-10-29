@@ -576,16 +576,33 @@ func _native_brush_skip_reason() -> String:
 		return "間隔モード"
 	if _brush_density < 1 or _brush_density > 100:
 		return "密度範囲外"
+	# Fully opaque erasers can clear rectangles directly. Partial-strength
+	# erasers must use the original per-pixel alpha subtraction path.
 	if _is_eraser:
-		return "消しゴム"
-	if not _is_mask_size_zero:
-		return "透明度マスク"
-	if _drawer.color_op.get("overwrite") == null:
-		return "ペン以外のツール"
-	if not is_equal_approx(_drawer.color_op.strength, 1.0):
-		return "不透明度設定"
-	if not is_equal_approx(tool_slot.color.a, 1.0):
-		return "色の透明度"
+		if not is_equal_approx(_drawer.color_op.strength, 1.0):
+			return "消しゴムの不透明度"
+		if not _is_mask_size_zero:
+			return "消しゴムの透明度マスク"
+	else:
+		if _drawer.color_op.get("overwrite") == null:
+			return "ペン以外のツール"
+		if not is_equal_approx(_drawer.color_op.strength, 1.0):
+			return "不透明度設定"
+		# Transparent-color pencils have a special erase behavior; keep it
+		# on its original path rather than treating it as ordinary blending.
+		var color_alpha := Color(tool_slot.color.to_html()).a
+		if is_zero_approx(color_alpha):
+			return "透明色のペン"
+		var needs_alpha_mask := color_alpha < 1.0 and not _drawer.color_op.overwrite
+		if needs_alpha_mask:
+			# Preserve once-per-stroke compositing of overlapping brush dabs.
+			# Varying pressure/velocity opacity still uses the original code.
+			if Tools.dynamics_alpha != Tools.Dynamics.NONE:
+				return "透明度の筆圧設定"
+			if _mask.size() != _stroke_project.size.x * _stroke_project.size.y:
+				return "透明度マスクなし"
+		elif not _is_mask_size_zero:
+			return "透明度マスク"
 	if Tools.alpha_locked:
 		return "アルファロック"
 	# Pixel Perfect affects drawing only for 1px pencils; large pencils
@@ -706,24 +723,75 @@ func _sample_density_rects(rects: Array[Rect2i]) -> Array[Rect2i]:
 	return sampled
 
 
+## Reuse the original pencil alpha mask's semantics for translucent paint:
+## each canvas pixel is composited only on its first successful hit in a
+## stroke, even when neighboring stamps overlap on later mouse movements.
+func _filter_native_alpha_mask_rects(rects: Array[Rect2i]) -> Array[Rect2i]:
+	var accepted: Array[Rect2i] = []
+	var canvas_width := _stroke_project.size.x
+	var alpha_dynamic := Tools.get_alpha_dynamic()
+	for rect in rects:
+		for y in range(rect.position.y, rect.end.y):
+			var run_start := -1
+			var row_index := y * canvas_width
+			for x in range(rect.position.x, rect.end.x):
+				var mask_index := row_index + x
+				if _mask[mask_index] < alpha_dynamic:
+					_mask[mask_index] = alpha_dynamic
+					if run_start == -1:
+						run_start = x
+				elif run_start != -1:
+					accepted.append(Rect2i(run_start, y, x - run_start, 1))
+					run_start = -1
+			if run_start != -1:
+				accepted.append(Rect2i(run_start, y, rect.end.x - run_start, 1))
+	return accepted
+
+
 func _paint_native_brush_rects(rects: Array[Rect2i]) -> void:
 	if rects.is_empty():
 		return
-	# The 100%-density path stays exactly as before.
+	# Preserve the existing 100%-density opaque-pencil fast path.
 	var paint_rects := rects if _brush_density == 100 else _sample_density_rects(rects)
 	if paint_rects.is_empty():
 		return
+	# The normal eraser removes all RGBA channels, unlike blending a
+	# transparent color (which would leave the destination unchanged).
+	var paint_color := Color.TRANSPARENT if _is_eraser else Color(tool_slot.color.to_html())
+	var should_blend := not _is_eraser and paint_color.a < 1.0 and not _drawer.color_op.overwrite
+	if should_blend and not _is_mask_size_zero:
+		paint_rects = _filter_native_alpha_mask_rects(paint_rects)
+		if paint_rects.is_empty():
+			return
 	var bounds := paint_rects[0]
 	for rect in paint_rects:
 		bounds = bounds.merge(rect)
-	# Preserve the standard drawer's 8-bit color normalization.
-	var paint_color := Color(tool_slot.color.to_html())
+	# Blend all pixels inside a native Image operation, not one GDScript
+	# Color.blend plus set_pixel per output pixel. Prepare the uniform source
+	# image only once for all selected cels and rectangles in this update.
+	var blend_source: Image
+	if should_blend:
+		var source_width := 1
+		var source_height := 1
+		for rect in paint_rects:
+			source_width = maxi(source_width, rect.size.x)
+			source_height = maxi(source_height, rect.size.y)
+		blend_source = Image.create_empty(
+			source_width, source_height, false, Image.FORMAT_RGBA8
+		)
+		blend_source.fill(paint_color)
 	for image in _stroke_images:
 		var cel := _stroke_images[image] as PixelCel
 		# Expand the cel at most once for the entire stroke segment.
 		cel.ensure_canvas_rect_in_bounds(bounds.position, bounds.size)
 		for rect in paint_rects:
-			image.fill_rect(Rect2i(rect.position - cel.offset, rect.size), paint_color)
+			var local_rect := Rect2i(rect.position - cel.offset, rect.size)
+			if should_blend:
+				image.blend_rect(
+					blend_source, Rect2i(Vector2i.ZERO, rect.size), local_rect.position
+				)
+			else:
+				image.fill_rect(local_rect, paint_color)
 	_drawer.color_op.changed = true
 
 
