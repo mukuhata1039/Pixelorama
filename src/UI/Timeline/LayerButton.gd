@@ -345,6 +345,9 @@ func _input(event: InputEvent) -> void:
 func _on_layer_main_button_pressed() -> void:
 	var project := Global.current_project
 	Global.transform_content_confirmed.emit()
+	Global.animation_timeline.range_selection_source = (
+		Global.animation_timeline.RangeSelectionSource.LAYERS
+	)
 	var prev_curr_layer := project.current_layer
 	if Input.is_action_pressed(&"shift"):
 		var layer_diff_sign := signi(layer_index - prev_curr_layer)
@@ -362,8 +365,11 @@ func _on_layer_main_button_pressed() -> void:
 			if !project.selected_cels.has(frame_layer):
 				project.selected_cels.append(frame_layer)
 		project.change_cel(-1, layer_index)
-	else:  # If the button is pressed without Shift or Control
-		_select_current_layer()
+	else:  # Aseprite: clicking a layer header selects its whole row.
+		project.selected_cels.clear()
+		for frame_index in project.frames.size():
+			project.selected_cels.append([frame_index, layer_index])
+		project.change_cel(-1, layer_index)
 
 
 func _on_main_button_gui_input(event: InputEvent) -> void:
