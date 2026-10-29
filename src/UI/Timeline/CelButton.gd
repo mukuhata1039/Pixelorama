@@ -114,28 +114,29 @@ func _notification(what: int) -> void:
 func cel_switched(_force_stylebox_change := false) -> void:
 	var project := Global.current_project
 	z_index = 1 if button_pressed else 0
-	var on_active_frame := frame == project.current_frame
-	var on_active_layer := layer == project.current_layer
-	var in_active_guides := on_active_frame or on_active_layer
+	var on_guide_frame := Global.animation_timeline.range_guide_frames.has(frame)
+	var on_guide_layer := Global.animation_timeline.range_guide_layers.has(layer)
+	var in_active_guides := on_guide_frame or on_guide_layer
 	for style_name: StringName in [&"normal", &"hover"]:
 		remove_theme_stylebox_override(style_name)
 		if in_active_guides:
 			var source := Global.control.theme.get_stylebox(style_name, &"CelButton")
 			if source is StyleBoxFlat:
 				var guide := source.duplicate() as StyleBoxFlat
-				var guide_strength := 0.8 if on_active_frame and on_active_layer else 0.65
+				var guide_strength := 0.7 if on_guide_frame and on_guide_layer else 0.55
 				guide.bg_color = guide.bg_color.lerp(ACTIVE_GUIDE_COLOR, guide_strength)
 				add_theme_stylebox_override(style_name, guide)
 	_update_range_outline()
+	queue_redraw()
 
 
-## The range border is drawn only on edges that face unselected cels. All
-## interior edges are omitted. The focus cel has a different fill, but never
-## an extra frame of its own when part of a larger selected range.
+## Every selected cel must keep the 1px internal grid. Previously the
+## pressed StyleBox hid the borders between selected neighbors, which merged
+## the entire range into one solid dark rectangle. The thin yellow range outline
+## is drawn separately in _draw() so it doesn't replace the internal grid.
 func _update_range_outline() -> void:
 	var project := Global.current_project
-	var selection: Array = project.selected_cels
-	if not selection.has([frame, layer]):
+	if not project.selected_cels.has([frame, layer]):
 		remove_theme_stylebox_override(&"pressed")
 		remove_theme_stylebox_override(&"hover_pressed")
 		return
@@ -143,24 +144,46 @@ func _update_range_outline() -> void:
 	var normal_source := Global.control.theme.get_stylebox(&"normal", &"CelButton")
 	if not source is StyleBoxFlat or not normal_source is StyleBoxFlat:
 		return
+	var normal := normal_source as StyleBoxFlat
 	var style := source.duplicate() as StyleBoxFlat
-	var base_color: Color = (normal_source as StyleBoxFlat).bg_color
-	style.bg_color = base_color.darkened(0.17)
+	# Retain a distinct, readable cell for every frame, even inside a
+	# rectangular selection. Leave room for textures and linked-cel badges.
+	style.bg_color = normal.bg_color.lerp(ACTIVE_GUIDE_COLOR, 0.30)
 	if frame == project.current_frame and layer == project.current_layer:
-		style.bg_color = base_color.lerp(ACTIVE_GUIDE_COLOR, 0.55)
-	style.border_color = RANGE_OUTLINE_COLOR
-	style.border_width_left = 0 if selection.has([frame - 1, layer]) else 1
-	style.border_width_right = 0 if selection.has([frame + 1, layer]) else 1
-	style.border_width_top = 0 if selection.has([frame, layer + 1]) else 1
-	style.border_width_bottom = 0 if selection.has([frame, layer - 1]) else 1
-	# A row/column selected by its header has one outline covering the
-	# header and the cells. Do not draw a duplicate edge at their seam.
-	if frame == 0 and Global.animation_timeline.is_layer_header_range(layer):
-		style.border_width_left = 0
-	if layer == project.layers.size() - 1 and Global.animation_timeline.is_frame_header_range(frame):
-		style.border_width_top = 0
+		style.bg_color = normal.bg_color.lerp(ACTIVE_GUIDE_COLOR, 0.65)
+	style.border_color = normal.border_color
+	style.border_width_left = 1
+	style.border_width_right = 1
+	style.border_width_top = 1
+	style.border_width_bottom = 1
 	add_theme_stylebox_override(&"pressed", style)
 	add_theme_stylebox_override(&"hover_pressed", style)
+
+
+## Render only the perimeter of the actual selected range. The base Button
+## still draws all dark internal grid borders and the original cel thumbnail.
+## Borders touching a selected neighbor are not part of the yellow perimeter.
+func _draw() -> void:
+	if not is_instance_valid(Global.current_project):
+		return
+	var selected := Global.current_project.selected_cels
+	if not selected.has([frame, layer]):
+		return
+	var x_end := size.x - 0.5
+	var y_end := size.y - 0.5
+	if frame > 0 and not selected.has([frame - 1, layer]):
+		draw_line(Vector2(0.5, 0.5), Vector2(0.5, y_end), RANGE_OUTLINE_COLOR, 1.0, false)
+	elif frame == 0 and not Global.animation_timeline.is_layer_header_range(layer):
+		draw_line(Vector2(0.5, 0.5), Vector2(0.5, y_end), RANGE_OUTLINE_COLOR, 1.0, false)
+	if not selected.has([frame + 1, layer]):
+		draw_line(Vector2(x_end, 0.5), Vector2(x_end, y_end), RANGE_OUTLINE_COLOR, 1.0, false)
+	if layer < Global.current_project.layers.size() - 1:
+		if not selected.has([frame, layer + 1]):
+			draw_line(Vector2(0.5, 0.5), Vector2(x_end, 0.5), RANGE_OUTLINE_COLOR, 1.0, false)
+	elif not Global.animation_timeline.is_frame_header_range(frame):
+		draw_line(Vector2(0.5, 0.5), Vector2(x_end, 0.5), RANGE_OUTLINE_COLOR, 1.0, false)
+	if not selected.has([frame, layer - 1]):
+		draw_line(Vector2(0.5, y_end), Vector2(x_end, y_end), RANGE_OUTLINE_COLOR, 1.0, false)
 
 func button_setup() -> void:
 	custom_minimum_size.x = Global.animation_timeline.cel_size
