@@ -4,12 +4,14 @@ enum MenuOptions { PROPERTIES, PLAY_AUDIO, SELECT_PIXELS, CENTER, DELETE, LINK, 
 
 ## A 5px hit target remains usable even in the 20px compact timeline.
 const CEL_DRAG_BORDER := 5.0
+## The active frame/layer guides are separate from the selected cel range.
+const ACTIVE_GUIDE_COLOR := Color("688ea4")
+const RANGE_OUTLINE_COLOR := Color("d1c275")
 
 var frame := 0
 var layer := 0
 var cel: BaseCel
 
-var _is_guide_stylebox := false
 var _drag_started_on_selected_border := false
 
 @onready var popup_menu: PopupMenu = $PopupMenu
@@ -24,7 +26,6 @@ var _drag_started_on_selected_border := false
 func _ready() -> void:
 	if DisplayServer.is_touchscreen_available():
 		mouse_filter = Control.MOUSE_FILTER_PASS
-	Global.cel_switched.connect(cel_switched)
 	Themes.theme_switched.connect(cel_switched.bind(true))
 	cel = Global.current_project.frames[frame].cels[layer]
 	button_setup()
@@ -104,52 +105,56 @@ func _notification(what: int) -> void:
 		)
 
 
-func cel_switched(force_stylebox_change := false) -> void:
+## Aseprite has three independent timeline indications:
+##   - the active layer (blue row),
+##   - the active frame (blue column),
+##   - the cel range selected for cut/copy/move (dark fill + thin outline).
+## Neither guide is calculated from selected_cels: selecting a large range
+## must not highlight every layer and frame as if it were the active one.
+func cel_switched(_force_stylebox_change := false) -> void:
+	var project := Global.current_project
 	z_index = 1 if button_pressed else 0
+	var on_active_frame := frame == project.current_frame
+	var on_active_layer := layer == project.current_layer
+	var in_active_guides := on_active_frame or on_active_layer
+	for style_name: StringName in [&"normal", &"hover"]:
+		remove_theme_stylebox_override(style_name)
+		if in_active_guides:
+			var source := Global.control.theme.get_stylebox(style_name, &"CelButton")
+			if source is StyleBoxFlat:
+				var guide := source.duplicate() as StyleBoxFlat
+				var guide_strength := 0.8 if on_active_frame and on_active_layer else 0.65
+				guide.bg_color = guide.bg_color.lerp(ACTIVE_GUIDE_COLOR, guide_strength)
+				add_theme_stylebox_override(style_name, guide)
 	_update_range_outline()
-	var current_theme := Global.control.theme
-	var is_guide := false
-	for selected in Global.current_project.selected_cels:
-		if selected[1] == layer or selected[0] == frame:
-			is_guide = true
-			break
-	if is_guide:
-		if not _is_guide_stylebox or force_stylebox_change:
-			var guide_stylebox := current_theme.get_stylebox("guide", "CelButton")
-			add_theme_stylebox_override("normal", guide_stylebox)
-			_is_guide_stylebox = true
-	else:
-		if _is_guide_stylebox or force_stylebox_change:
-			var normal_stylebox := current_theme.get_stylebox("normal", "CelButton")
-			add_theme_stylebox_override("normal", normal_stylebox)
-			_is_guide_stylebox = false
 
 
-## Aseprite renders one outline around a timeline range, not a separate
-## four-sided outline around every selected cel. Only the outside edges of
-## the selected cels get borders; the focused editing cel is distinguished
-## by a slightly darker fill inside the range.
+## The range border is drawn only on edges that face unselected cels. All
+## interior edges are omitted. The focus cel has a different fill, but never
+## an extra frame of its own when part of a larger selected range.
 func _update_range_outline() -> void:
-	if not button_pressed:
+	var project := Global.current_project
+	var selection: Array = project.selected_cels
+	if not selection.has([frame, layer]):
 		remove_theme_stylebox_override(&"pressed")
 		remove_theme_stylebox_override(&"hover_pressed")
 		return
-	var project := Global.current_project
-	var selection := project.selected_cels
-	var source := Global.control.theme.get_stylebox(&"pressed", &"CelButton") as StyleBoxFlat
-	if not is_instance_valid(source):
+	var source := Global.control.theme.get_stylebox(&"pressed", &"CelButton")
+	var normal_source := Global.control.theme.get_stylebox(&"normal", &"CelButton")
+	if not source is StyleBoxFlat or not normal_source is StyleBoxFlat:
 		return
 	var style := source.duplicate() as StyleBoxFlat
+	var base_color: Color = (normal_source as StyleBoxFlat).bg_color
+	style.bg_color = base_color.darkened(0.17)
+	if frame == project.current_frame and layer == project.current_layer:
+		style.bg_color = base_color.lerp(ACTIVE_GUIDE_COLOR, 0.55)
+	style.border_color = RANGE_OUTLINE_COLOR
 	style.border_width_left = 0 if selection.has([frame - 1, layer]) else 1
 	style.border_width_right = 0 if selection.has([frame + 1, layer]) else 1
 	style.border_width_top = 0 if selection.has([frame, layer + 1]) else 1
 	style.border_width_bottom = 0 if selection.has([frame, layer - 1]) else 1
-	if selection.size() > 1 and frame == project.current_frame and layer == project.current_layer:
-		style.bg_color = source.bg_color.darkened(0.25)
 	add_theme_stylebox_override(&"pressed", style)
-	# A hovered selected cel must not re-introduce an inner border.
 	add_theme_stylebox_override(&"hover_pressed", style)
-
 
 func button_setup() -> void:
 	custom_minimum_size.x = Global.animation_timeline.cel_size
