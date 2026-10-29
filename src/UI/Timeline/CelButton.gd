@@ -2,11 +2,15 @@ extends Button
 
 enum MenuOptions { PROPERTIES, PLAY_AUDIO, SELECT_PIXELS, CENTER, DELETE, LINK, UNLINK, CLONE_CEL }
 
+## A 5px hit target remains usable even in the 20px compact timeline.
+const CEL_DRAG_BORDER := 5.0
+
 var frame := 0
 var layer := 0
 var cel: BaseCel
 
 var _is_guide_stylebox := false
+var _drag_started_on_selected_border := false
 
 @onready var popup_menu: PopupMenu = $PopupMenu
 @onready var ui_color_rect: ColorRect = $UIColorRect
@@ -133,43 +137,71 @@ func button_setup() -> void:
 			linked_rect.color.h = cel.link_set["hue"]
 
 
+## Remember where the press began: Godot starts drag-and-drop after the mouse moves,
+## when the pointer may no longer be on the original 5px border.
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			_drag_started_on_selected_border = (
+				Global.current_project.selected_cels.has([frame, layer])
+				and _is_drag_border(event.position)
+			)
+	elif event is InputEventMouseMotion:
+		var moving_selected_cels := (
+			Global.current_project.selected_cels.has([frame, layer])
+			and _is_drag_border(event.position)
+		)
+		mouse_default_cursor_shape = (
+			Control.CURSOR_MOVE if moving_selected_cels else Control.CURSOR_POINTING_HAND
+		)
+
+
+func _is_drag_border(local_pos: Vector2) -> bool:
+	return (
+		local_pos.x < CEL_DRAG_BORDER
+		or local_pos.x >= size.x - CEL_DRAG_BORDER
+		or local_pos.y < CEL_DRAG_BORDER
+		or local_pos.y >= size.y - CEL_DRAG_BORDER
+	)
+
+
 func _on_CelButton_pressed() -> void:
 	var project := Global.current_project
-	if Input.is_action_just_released(&"left_mouse") or Input.is_action_just_released(&"ui_accept"):
+	var is_left_click := Input.is_action_just_released(&"left_mouse")
+	if is_left_click or Input.is_action_just_released(&"ui_accept"):
 		Global.transform_content_confirmed.emit()
+		var frame_layer := [frame, layer]
 		var change_cel := true
-		if Input.is_action_pressed("shift"):
-			var prev_curr_frame := project.current_frame
-			var prev_curr_layer := project.current_layer
-			var frame_diff_sign := signi(frame - prev_curr_frame)
-			if frame_diff_sign == 0:
-				frame_diff_sign = 1
-			var layer_diff_sign := signi(layer - prev_curr_layer)
-			if layer_diff_sign == 0:
-				layer_diff_sign = 1
-			for i in range(prev_curr_frame, frame + frame_diff_sign, frame_diff_sign):
-				for j in range(prev_curr_layer, layer + layer_diff_sign, layer_diff_sign):
-					var frame_layer := [i, j]
-					if !project.selected_cels.has(frame_layer):
-						project.selected_cels.append(frame_layer)
-		elif Global.is_ctrl_or_cmd_pressed():
-			var frame_layer := [frame, layer]
+		if is_left_click and Global.is_ctrl_or_cmd_pressed() and Input.is_action_pressed("shift"):
+			# Keep a contiguous rectangular selection available without occupying Shift alone.
+			var anchor_frame := project.current_frame
+			var anchor_layer := project.current_layer
+			project.selected_cels.clear()
+			for f in range(mini(anchor_frame, frame), maxi(anchor_frame, frame) + 1):
+				for l in range(mini(anchor_layer, layer), maxi(anchor_layer, layer) + 1):
+					project.selected_cels.append([f, l])
+		elif is_left_click and Global.is_ctrl_or_cmd_pressed() and cel is not AudioCel:
+			# Select the opaque pixels of the clicked cel, not multiple timeline cels.
+			project.selected_cels = [frame_layer]
+			project.change_cel(frame, layer)
+			Global.canvas.selection.select_cel_pixels(project.layers[layer], project.frames[frame])
+			return
+		elif Input.is_action_pressed("shift"):
+			# Add/remove individual, possibly non-adjacent cels.
 			if project.selected_cels.has(frame_layer):
 				if project.selected_cels.size() > 1:
 					project.selected_cels.erase(frame_layer)
 					change_cel = false
 			else:
 				project.selected_cels.append(frame_layer)
-		else:  # If the button is pressed without Shift or Control
-			project.selected_cels.clear()
-			var frame_layer := [frame, layer]
-			if !project.selected_cels.has(frame_layer):
-				project.selected_cels.append(frame_layer)
+		else:
+			project.selected_cels = [frame_layer]
 
 		if change_cel:
 			project.change_cel(frame, layer)
 		else:
-			project.change_cel(project.selected_cels[0][0], project.selected_cels[0][1])
+			var remaining_cel: Array = project.selected_cels[0]
+			project.change_cel(remaining_cel[0], remaining_cel[1])
 			release_focus()
 
 	elif Input.is_action_just_released("right_mouse"):
@@ -180,7 +212,6 @@ func _on_CelButton_pressed() -> void:
 		_delete_cel_content()
 	else:  # An example of this would be Space
 		button_pressed = !button_pressed
-
 
 func _on_PopupMenu_id_pressed(id: int) -> void:
 	var project := Global.current_project
@@ -381,6 +412,10 @@ func _dim_checker() -> void:
 func _get_drag_data(_position: Vector2) -> Variant:
 	if DisplayServer.is_touchscreen_available() and not button_pressed:
 		return null
+	# Dragging the inside of a cel selects a rectangle of timeline cels.
+	# The selected cel's outer border still starts the existing move/swap operation.
+	if not _drag_started_on_selected_border and not DisplayServer.is_touchscreen_available():
+		return ["CelRectangle", [frame, layer]]
 	var button := Button.new()
 	button.size = size
 	button.theme = Global.control.theme
@@ -394,11 +429,53 @@ func _get_drag_data(_position: Vector2) -> Variant:
 	return ["Cel", _get_cel_indices()]
 
 
+func _preview_cel_rectangle(origin: Array) -> bool:
+	if origin.size() != 2:
+		return false
+	var timeline := Global.animation_timeline
+	var cel_vbox := timeline.cel_vbox
+	var row_index: int = cel_vbox.get_child_count() - 1 - origin[1]
+	if row_index < 0 or row_index >= cel_vbox.get_child_count():
+		return false
+	var row: Control = cel_vbox.get_child(row_index)
+	if origin[0] < 0 or origin[0] >= row.get_child_count():
+		return false
+	var first_cel: Control = row.get_child(origin[0])
+	var rect := first_cel.get_global_rect().merge(get_global_rect())
+	# Do not paint the selection preview over layer names or outside the timeline.
+	rect = rect.intersection(timeline.frame_scroll_container.get_global_rect())
+	rect = rect.intersection(timeline.timeline_scroll.get_global_rect())
+	timeline.selection_drag_highlight.global_position = rect.position
+	timeline.selection_drag_highlight.size = rect.size
+	timeline.selection_drag_highlight.visible = rect.has_area()
+	return true
+
+
+func _select_cel_rectangle(origin: Array) -> void:
+	if origin.size() != 2:
+		return
+	var project := Global.current_project
+	var new_selected_cels := []
+	var cel_vbox := Global.animation_timeline.cel_vbox
+	for l in range(mini(origin[1], layer), maxi(origin[1], layer) + 1):
+		var row: Control = cel_vbox.get_child(cel_vbox.get_child_count() - 1 - l)
+		if not row.visible:
+			continue
+		for f in range(mini(origin[0], frame), maxi(origin[0], frame) + 1):
+			new_selected_cels.append([f, l])
+	if new_selected_cels.is_empty():
+		return
+	project.selected_cels = new_selected_cels
+	project.change_cel(frame, layer)
+
 func _can_drop_data(pos: Vector2, data) -> bool:
 	var project := Global.current_project
-	if typeof(data) != TYPE_ARRAY:
+	if typeof(data) != TYPE_ARRAY or data.size() < 2:
 		Global.animation_timeline.drag_highlight.visible = false
 		return false
+	if data[0] == "CelRectangle":
+		Global.animation_timeline.drag_highlight.visible = false
+		return _preview_cel_rectangle(data[1])
 	if data[0] != "Cel":
 		Global.animation_timeline.drag_highlight.visible = false
 		return false
@@ -445,11 +522,19 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 		if l != layer:
 			different_layers = true
 	var is_swapping_or_cloning := (
-		Global.is_ctrl_or_cmd_pressed() or different_layers or Input.is_action_pressed(&"shift")
+		Global.is_ctrl_or_cmd_pressed() or different_layers or Input.is_key_pressed(KEY_ALT)
 	)
 
 	if is_swapping_or_cloning:
 		for cel_idx in drop_cels:
+			var dest_frame: int = cel_idx[0] + offset.x
+			var dest_layer: int = cel_idx[1] + offset.y
+			if dest_frame < 0 or dest_layer < 0 or dest_layer >= project.layers.size():
+				Global.animation_timeline.drag_highlight.visible = false
+				return false
+			if not Input.is_key_pressed(KEY_ALT) and dest_frame >= project.frames.size():
+				Global.animation_timeline.drag_highlight.visible = false
+				return false
 			# Can't move to the same cel
 			if drop_cels.has([cel_idx[0] + offset.x, cel_idx[1] + offset.y]):
 				Global.animation_timeline.drag_highlight.visible = false
@@ -505,6 +590,10 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 
 
 func _drop_data(_pos: Vector2, data) -> void:
+	if data[0] == "CelRectangle":
+		_select_cel_rectangle(data[1])
+		Global.animation_timeline.selection_drag_highlight.hide()
+		return
 	var drop_cels: Array = data[1]
 	drop_cels.sort_custom(_sort_cel_indices_by_frame)
 	var drop_frames: PackedInt32Array = []
@@ -522,10 +611,12 @@ func _drop_data(_pos: Vector2, data) -> void:
 		offset.x = frame - drop_cels[0][0]  # We don't need a new array for this
 		offset.y = layer - Array(drop_layers).max()
 	var project := Global.current_project
-	project.undo_redo.create_action("Move Cels")
-	if Input.is_action_pressed(&"shift"):
+	# Alt duplicates; unlike the old Shift shortcut, this must not open a nested action.
+	if Input.is_key_pressed(KEY_ALT):
 		_clone_cel_content(drop_cels, offset)
-	elif Global.is_ctrl_or_cmd_pressed() or different_layers:  # Swap cels
+		return
+	project.undo_redo.create_action("Move Cels")
+	if Global.is_ctrl_or_cmd_pressed() or different_layers:  # Swap cels
 		var swap_cel_positions := []
 		for cel_idx in drop_cels:
 			var drop_point_frame: int = cel_idx[0] + offset.x
