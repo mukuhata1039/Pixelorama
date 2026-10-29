@@ -159,8 +159,14 @@ func _gui_input(event: InputEvent) -> void:
 				or Input.is_key_pressed(KEY_ALT)
 			)
 		)
+		var copying_selected_cels := (
+			Global.current_project.selected_cels.has([frame, layer])
+			and (Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT))
+		)
 		mouse_default_cursor_shape = (
-			Control.CURSOR_MOVE if moving_selected_cels else Control.CURSOR_POINTING_HAND
+			Control.CURSOR_CAN_DROP
+			if copying_selected_cels
+			else Control.CURSOR_MOVE if moving_selected_cels else Control.CURSOR_POINTING_HAND
 		)
 
 
