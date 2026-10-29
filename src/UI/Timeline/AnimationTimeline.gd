@@ -26,8 +26,10 @@ const RANGE_OUTLINE_COLOR := Color("d1c275")
 ## Aseprite's range outline includes a row/column header only when the
 ## selection was started by clicking a layer/frame header.
 var range_selection_source := RangeSelectionSource.CELLS
-## The Aseprite-style blue row/column guides reflect every row/column
-## intersecting the selected range, even when the focus cel is elsewhere.
+## The blue row/column guides reflect only the current editing layer
+## and frame, regardless of how many cels are selected for range operations.
+## Selecting an entire row must not blue-highlight every frame column, and
+## selecting an entire column must not blue-highlight every layer row.
 var range_guide_layers: Dictionary[int, bool] = {}
 var range_guide_frames: Dictionary[int, bool] = {}
 var is_animation_running := false
@@ -1616,17 +1618,16 @@ func is_frame_header_range(frame_index: int) -> bool:
 func _refresh_timeline_selection_appearance() -> void:
 	var project := Global.current_project
 	var selected: Dictionary[Vector2i, bool] = {}
-	range_guide_layers.clear()
-	range_guide_frames.clear()
 	for cel_index in project.selected_cels:
 		var frame_index: int = cel_index[0]
 		var layer_index: int = cel_index[1]
 		selected[Vector2i(frame_index, layer_index)] = true
-		range_guide_layers[layer_index] = true
-		range_guide_frames[frame_index] = true
-	if selected.is_empty():
-		range_guide_layers[project.current_layer] = true
-		range_guide_frames[project.current_frame] = true
+	# The selection perimeter comes from selected_cels, but the blue
+	# axes are strictly the currently editable frame and layer.
+	range_guide_layers.clear()
+	range_guide_frames.clear()
+	range_guide_layers[project.current_layer] = true
+	range_guide_frames[project.current_frame] = true
 	var selected_rows: Dictionary[int, bool] = {}
 	var selected_columns: Dictionary[int, bool] = {}
 	if range_selection_source == RangeSelectionSource.LAYERS:
