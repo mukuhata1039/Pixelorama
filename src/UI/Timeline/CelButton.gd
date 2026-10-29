@@ -433,7 +433,7 @@ func _preview_cel_rectangle(origin: Array) -> bool:
 	if origin.size() != 2:
 		return false
 	var timeline := Global.animation_timeline
-	var cel_vbox := timeline.cel_vbox
+	var cel_vbox: VBoxContainer = timeline.cel_vbox
 	var row_index: int = cel_vbox.get_child_count() - 1 - origin[1]
 	if row_index < 0 or row_index >= cel_vbox.get_child_count():
 		return false
@@ -456,7 +456,7 @@ func _select_cel_rectangle(origin: Array) -> void:
 		return
 	var project := Global.current_project
 	var new_selected_cels := []
-	var cel_vbox := Global.animation_timeline.cel_vbox
+	var cel_vbox: VBoxContainer = Global.animation_timeline.cel_vbox
 	for l in range(mini(origin[1], layer), maxi(origin[1], layer) + 1):
 		var row: Control = cel_vbox.get_child(cel_vbox.get_child_count() - 1 - l)
 		if not row.visible:
