@@ -420,6 +420,9 @@ func _on_compact_timeline_toggled(enabled: bool) -> void:
 		for cel_button in cel_hbox.get_children():
 			if cel_button is Button and cel_button.has_method("apply_compact_layout"):
 				cel_button.apply_compact_layout(enabled)
+	for frame_button in frame_hbox.get_children():
+		if frame_button.has_method("apply_compact_layout"):
+			frame_button.apply_compact_layout(enabled)
 	_changing_compact_mode = false
 	Global.config_cache.set_value("timeline", "compact", enabled)
 
