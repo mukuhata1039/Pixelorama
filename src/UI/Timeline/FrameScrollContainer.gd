@@ -261,7 +261,7 @@ func _get_future_cel_drop_target(local_pos: Vector2) -> Vector2i:
 		return result  # This script also serves the frame header.
 	if is_instance_valid(keyframe_timeline) and keyframe_timeline.visible:
 		return result
-	var global_pos := to_global(local_pos)
+	var global_pos: Vector2 = get_global_transform() * local_pos
 	if not get_global_rect().has_point(global_pos):
 		return result
 	var cel_rows: VBoxContainer = timeline.cel_vbox
