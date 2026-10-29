@@ -166,7 +166,7 @@ func _gui_input(event: InputEvent) -> void:
 		mouse_default_cursor_shape = (
 			Control.CURSOR_CAN_DROP
 			if copying_selected_cels
-			else Control.CURSOR_MOVE if moving_selected_cels else Control.CURSOR_POINTING_HAND
+			else Control.CURSOR_MOVE if moving_selected_cels else Control.CURSOR_ARROW
 		)
 
 
