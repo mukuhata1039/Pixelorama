@@ -1,6 +1,7 @@
 extends Container
 
 const PADDING := 1
+const CEL_BUTTON_SCRIPT := preload("res://src/UI/Timeline/CelButton.gd")
 # https://github.com/godotengine/godot/blob/master/scene/gui/scroll_bar.h#L113
 const PAGE_DIVISOR := 8
 # https://github.com/godotengine/godot/pull/111305
@@ -249,6 +250,78 @@ func _on_scroll_bar_value_changed(value: float) -> void:
 	if get_child_count() > 0 and is_instance_valid(h_scroll_bar):
 		var cel_margin_container := get_child(0) as Control
 		cel_margin_container.position.x = -value + PADDING
+
+
+## Accept cel copies/moves on the empty strip to the right of the last frame.
+## That strip has no CelButton, so CelButton._can_drop_data() cannot receive it.
+func _get_future_cel_drop_target(local_pos: Vector2) -> Vector2i:
+	var result := Vector2i(-1, -1)
+	var timeline := Global.animation_timeline
+	if timeline.frame_scroll_container != self:
+		return result  # This script also serves the frame header.
+	if is_instance_valid(keyframe_timeline) and keyframe_timeline.visible:
+		return result
+	var global_pos := to_global(local_pos)
+	if not get_global_rect().has_point(global_pos):
+		return result
+	var cel_rows: VBoxContainer = timeline.cel_vbox
+	for row_index in cel_rows.get_child_count():
+		var row := cel_rows.get_child(row_index) as HBoxContainer
+		if not is_instance_valid(row) or not row.visible or row.get_child_count() == 0:
+			continue
+		var first_cel := row.get_child(0) as Control
+		var last_cel := row.get_child(row.get_child_count() - 1) as Control
+		if global_pos.y < first_cel.global_position.y:
+			continue
+		if global_pos.y >= first_cel.global_position.y + first_cel.size.y:
+			continue
+		if global_pos.x < last_cel.global_position.x + last_cel.size.x:
+			continue
+		var frame_index := floori(
+			(global_pos.x - first_cel.global_position.x) / maxf(first_cel.size.x, 1.0)
+		)
+		if frame_index < Global.current_project.frames.size():
+			continue
+		result = Vector2i(frame_index, cel_rows.get_child_count() - row_index - 1)
+		break
+	return result
+
+
+func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
+	if typeof(data) != TYPE_ARRAY or data.size() < 3 or data[0] != "Cel":
+		return false
+	var target := _get_future_cel_drop_target(at_position)
+	if target.x < 0:
+		return false
+	var source_coords: Array = data[1]
+	var anchor: Array = data[2]
+	if source_coords.is_empty() or anchor.size() != 2:
+		return false
+	var offset := target - Vector2i(int(anchor[0]), int(anchor[1]))
+	if not CEL_BUTTON_SCRIPT._can_transfer_pixel_cels(source_coords, offset):
+		return false
+	var destinations := []
+	for coords in source_coords:
+		destinations.append(
+			Vector2i(int(coords[0]) + offset.x, int(coords[1]) + offset.y)
+		)
+	var timeline := Global.animation_timeline
+	timeline.set_virtual_cels_highlight(destinations)
+	timeline.drag_highlight.global_position = global_position
+	timeline.drag_highlight.size = size
+	timeline.drag_highlight.show()
+	return true
+
+
+func _drop_data(at_position: Vector2, data: Variant) -> void:
+	var target := _get_future_cel_drop_target(at_position)
+	if target.x < 0 or data.size() < 3:
+		return
+	var anchor: Array = data[2]
+	var offset := target - Vector2i(int(anchor[0]), int(anchor[1]))
+	var copy := Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT)
+	CEL_BUTTON_SCRIPT._transfer_pixel_cels(data[1], offset, copy)
+	Global.animation_timeline.drag_highlight.hide()
 
 
 func _clips_input() -> bool:
