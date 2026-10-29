@@ -345,9 +345,7 @@ func _input(event: InputEvent) -> void:
 func _on_layer_main_button_pressed() -> void:
 	var project := Global.current_project
 	Global.transform_content_confirmed.emit()
-	Global.animation_timeline.range_selection_source = (
-		Global.animation_timeline.RangeSelectionSource.LAYERS
-	)
+	Global.animation_timeline.select_layer_range_source()
 	var prev_curr_layer := project.current_layer
 	if Input.is_action_pressed(&"shift"):
 		var layer_diff_sign := signi(layer_index - prev_curr_layer)
