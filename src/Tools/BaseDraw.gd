@@ -50,6 +50,11 @@ var _dither_masks: Dictionary[int, Image] = {}
 var _dither_preview_textures: Dictionary[int, ImageTexture] = {}
 var _dither_cached_size := -1
 var _dither_cached_density := -1
+## The regular dither paint source is a single flat color. Keep its backing Image
+## across mouse-move events instead of allocating/filling size² pixels per dab.
+var _dither_paint_source: Image
+var _dither_paint_source_size := -1
+var _dither_paint_source_color := Color(-1.0, -1.0, -1.0, -1.0)
 var _circle_tool_shortcut: Array[Vector2i]
 var _mm_action: Keychain.MouseMovementInputAction
 
@@ -480,13 +485,23 @@ func _prepare_tool() -> void:
 		_brush_size_dynamics = roundi(lerpf(_brush_size, max_increment, Tools.mouse_velocity))
 	_drawer.pixel_perfect = Tools.pixel_perfect if _brush_size == 1 else false
 	_drawer.color_op.strength = strength
-	var previous_preview_size := _indicator.get_size()
-	_indicator = _create_brush_indicator()
-	# Dynamics can rebuild the indicator every movement; only regenerate the
-	# preview texture when the brush footprint dimensions actually change.
-	if previous_preview_size != _indicator.get_size():
-		_color_preview_texture = null
-	_polylines = _create_polylines(_indicator)
+	# A dither brush has a plain square indicator; its Bayer pattern lives in
+	# separately cached 4x4-phase masks. Recreating the square BitMap and scanning
+	# every pixel to rebuild the outline on *every mouse movement* was expensive
+	# for large brushes despite the fast masked-blit painting path below.
+	# update_brush() already regenerates the indicator when its type/settings
+	# change, so during a stroke only a new dynamic size needs a rebuild.
+	var needs_indicator_rebuild := (
+		_brush.type != Brushes.DITHER
+		or _indicator.get_size() != Vector2i.ONE * _brush_size_dynamics
+	)
+	if needs_indicator_rebuild:
+		var previous_preview_size := _indicator.get_size()
+		_indicator = _create_brush_indicator()
+		# Only regenerate the preview texture if its dimensions changed.
+		if previous_preview_size != _indicator.get_size():
+			_color_preview_texture = null
+		_polylines = _create_polylines(_indicator)
 	# Memorize current project
 	_stroke_project = Global.current_project
 	# Memorize the frame/layer we are drawing on rather than fetching it on every pixel
@@ -902,8 +917,13 @@ func _paint_native_dither_stamps(centers: Array[Vector2i]) -> void:
 	var paint_color := Color(tool_slot.color.to_html())
 	if _is_eraser or is_zero_approx(paint_color.a):
 		paint_color = Color.TRANSPARENT
-	var source := Image.create_empty(size, size, false, Image.FORMAT_RGBA8)
-	source.fill(paint_color)
+	if not is_instance_valid(_dither_paint_source) or _dither_paint_source_size != size:
+		_dither_paint_source = Image.create_empty(size, size, false, Image.FORMAT_RGBA8)
+		_dither_paint_source_size = size
+		_dither_paint_source_color = Color(-1.0, -1.0, -1.0, -1.0)
+	if _dither_paint_source_color != paint_color:
+		_dither_paint_source.fill(paint_color)
+		_dither_paint_source_color = paint_color
 	for image in _stroke_images:
 		var cel := _stroke_images[image] as PixelCel
 		cel.ensure_canvas_rect_in_bounds(bounds.position, bounds.size)
@@ -914,7 +934,8 @@ func _paint_native_dither_stamps(centers: Array[Vector2i]) -> void:
 				continue
 			var src_rect := Rect2i(clipped.position - stamp.position, clipped.size)
 			image.blit_rect_mask(
-				source, _get_dither_mask(center), src_rect, clipped.position - cel.offset
+				_dither_paint_source, _get_dither_mask(center), src_rect,
+				clipped.position - cel.offset
 			)
 	_drawer.color_op.changed = true
 
