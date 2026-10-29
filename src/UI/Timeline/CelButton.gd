@@ -658,6 +658,9 @@ func _preview_cel_rectangle(origin: Array) -> bool:
 	timeline.selection_drag_highlight.global_position = rect.position
 	timeline.selection_drag_highlight.size = rect.size
 	timeline.selection_drag_highlight.visible = rect.has_area()
+	# Redraw the yellow perimeter as the drag changes the selection rectangle.
+	# No blue overlay is painted, so the cel grid remains visible.
+	timeline.selection_drag_highlight.queue_redraw()
 	return true
 
 
