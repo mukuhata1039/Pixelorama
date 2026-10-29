@@ -155,6 +155,7 @@ func _ready() -> void:
 	# ColorRect supplies its geometry while its draw signal paints the edge.
 	selection_drag_highlight.color = Color.TRANSPARENT
 	selection_drag_highlight.draw.connect(_draw_selection_drag_outline)
+	selection_drag_highlight.visibility_changed.connect(_on_selection_drag_preview_visibility_changed)
 	# Makes sure that the frame and tag scroll bars are in the right place:
 	layer_vbox.emit_signal.call_deferred("resized")
 	drag_highlight.visibility_changed.connect(clear_highlight)
@@ -206,6 +207,22 @@ func _exit_tree() -> void:
 		"set_timeline_cel_drag_cursor"
 	):
 		Global.control.call("set_timeline_cel_drag_cursor", -1)
+
+
+## Hide the previously committed yellow border while the movable drag
+## outline is displayed. Otherwise the user sees two outlines at once.
+## The existing cel fill and grid remain visible.
+func _on_selection_drag_preview_visibility_changed() -> void:
+	if not is_instance_valid(Global.current_project):
+		return
+	for cel_index in Global.current_project.selected_cels:
+		var row_index := cel_vbox.get_child_count() - 1 - int(cel_index[1])
+		if row_index < 0 or row_index >= cel_vbox.get_child_count():
+			continue
+		var row := cel_vbox.get_child(row_index)
+		var frame_index: int = cel_index[0]
+		if frame_index >= 0 and frame_index < row.get_child_count():
+			row.get_child(frame_index).queue_redraw()
 
 
 ## Unlike a filled ColorRect this preview does not hide the cel grid,
