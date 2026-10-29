@@ -182,21 +182,24 @@ func _draw() -> void:
 	# visible. Do not leave the old committed range's border underneath it.
 	if Global.animation_timeline.selection_drag_highlight.visible:
 		return
-	var selected := Global.current_project.selected_cels
+	var timeline := Global.animation_timeline
+	var selected: Array = timeline.get_displayed_selected_cels()
 	if not selected.has([frame, layer]):
 		return
 	var x_end := size.x - 0.5
 	var y_end := size.y - 0.5
 	if frame > 0 and not selected.has([frame - 1, layer]):
 		draw_line(Vector2(0.5, 0.5), Vector2(0.5, y_end), RANGE_OUTLINE_COLOR, 1.0, false)
-	elif frame == 0 and not Global.animation_timeline.is_layer_header_range(layer):
+	elif frame == 0 and (
+		timeline.drag_range_preview_active or not timeline.is_layer_header_range(layer)
+	):
 		draw_line(Vector2(0.5, 0.5), Vector2(0.5, y_end), RANGE_OUTLINE_COLOR, 1.0, false)
 	if not selected.has([frame + 1, layer]):
 		draw_line(Vector2(x_end, 0.5), Vector2(x_end, y_end), RANGE_OUTLINE_COLOR, 1.0, false)
 	if layer < Global.current_project.layers.size() - 1:
 		if not selected.has([frame, layer + 1]):
 			draw_line(Vector2(0.5, 0.5), Vector2(x_end, 0.5), RANGE_OUTLINE_COLOR, 1.0, false)
-	elif not Global.animation_timeline.is_frame_header_range(frame):
+	elif timeline.drag_range_preview_active or not timeline.is_frame_header_range(frame):
 		draw_line(Vector2(0.5, 0.5), Vector2(x_end, 0.5), RANGE_OUTLINE_COLOR, 1.0, false)
 	if not selected.has([frame, layer - 1]):
 		draw_line(Vector2(0.5, y_end), Vector2(x_end, y_end), RANGE_OUTLINE_COLOR, 1.0, false)
@@ -228,6 +231,30 @@ func _gui_input(event: InputEvent) -> void:
 					or Input.is_key_pressed(KEY_ALT)
 				)
 			)
+			# Aseprite's handleRangeMouseDown highlights the first cel and
+			# its row/column immediately on mouse press, before the drag
+			# threshold is reached. Only the visual range changes here:
+			# actual selected_cels will still be committed by the click
+			# callback or the rectangle's drop handler.
+			if (
+				not _drag_started_on_selected_border
+				and not DisplayServer.is_touchscreen_available()
+				and not Global.is_ctrl_or_cmd_pressed()
+				and not Input.is_key_pressed(KEY_ALT)
+				and not Input.is_action_pressed(&"shift")
+			):
+				Global.animation_timeline.update_drag_cel_range_preview(
+					[frame, layer], frame, layer
+				)
+		elif event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			# A simple click never starts a Godot drag. Discard its temporary
+			# display before the Button's released/pressed callback commits
+			# the actual active cel and selection.
+			if (
+				not get_viewport().gui_is_dragging()
+				and not Global.animation_timeline.selection_drag_highlight.visible
+			):
+				Global.animation_timeline.clear_drag_cel_range_preview()
 	elif event is InputEventMouseMotion:
 		var moving_selected_cels := (
 			Global.current_project.selected_cels.has([frame, layer])
