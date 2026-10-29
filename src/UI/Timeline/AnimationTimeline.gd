@@ -476,6 +476,13 @@ func _on_compact_timeline_toggled(enabled: bool) -> void:
 			frame_button.apply_compact_layout(enabled)
 	_changing_compact_mode = false
 	Global.config_cache.set_value("timeline", "compact", enabled)
+	# Compact resizing rebuilds the frame buttons' local styleboxes. Restore
+	# the active guide / header-connected range outline after that rebuild.
+	if (
+		frame_hbox.get_child_count() == Global.current_project.frames.size()
+		and layer_vbox.get_child_count() == Global.current_project.layers.size()
+	):
+		_refresh_timeline_selection_appearance()
 
 
 ## Fill the blend modes OptionButton with items
