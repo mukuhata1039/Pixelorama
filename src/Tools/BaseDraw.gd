@@ -593,7 +593,7 @@ func _native_brush_skip_reason() -> String:
 		var color_alpha := Color(tool_slot.color.to_html()).a
 		if is_zero_approx(color_alpha):
 			return "透明色のペン"
-		var needs_alpha_mask := color_alpha < 1.0 and not _drawer.color_op.overwrite
+		var needs_alpha_mask: bool = color_alpha < 1.0 and not bool(_drawer.color_op.get("overwrite"))
 		if needs_alpha_mask:
 			# Preserve once-per-stroke compositing of overlapping brush dabs.
 			# Varying pressure/velocity opacity still uses the original code.
@@ -758,7 +758,10 @@ func _paint_native_brush_rects(rects: Array[Rect2i]) -> void:
 	# The normal eraser removes all RGBA channels, unlike blending a
 	# transparent color (which would leave the destination unchanged).
 	var paint_color := Color.TRANSPARENT if _is_eraser else Color(tool_slot.color.to_html())
-	var should_blend := not _is_eraser and paint_color.a < 1.0 and not _drawer.color_op.overwrite
+	var should_blend: bool = (
+		not _is_eraser and paint_color.a < 1.0
+		and not bool(_drawer.color_op.get("overwrite"))
+	)
 	if should_blend and not _is_mask_size_zero:
 		paint_rects = _filter_native_alpha_mask_rects(paint_rects)
 		if paint_rects.is_empty():
