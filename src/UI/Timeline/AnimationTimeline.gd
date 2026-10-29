@@ -202,6 +202,37 @@ func set_cels_highlight(cel_coords: Array, offset: Vector2i) -> void:
 	drag_highlight.queue_redraw()
 
 
+## Preview target positions that do not have cel buttons yet.
+func set_virtual_cels_highlight(destinations: Array) -> void:
+	_clear_drop_preview_draw_connections()
+	drag_highlight.color = Color.TRANSPARENT
+	drag_highlight.draw.connect(_draw_virtual_cels.bind(destinations))
+	drag_highlight.queue_redraw()
+
+
+func _draw_virtual_cels(destinations: Array) -> void:
+	var visible_rect := frame_scroll_container.get_global_rect().intersection(
+		timeline_scroll.get_global_rect()
+	)
+	var row_count := cel_vbox.get_child_count()
+	for target: Vector2i in destinations:
+		var row_index := row_count - 1 - target.y
+		if row_index < 0 or row_index >= row_count:
+			continue
+		var row := cel_vbox.get_child(row_index) as HBoxContainer
+		if not is_instance_valid(row) or not row.visible or row.get_child_count() == 0:
+			continue
+		var first_button := row.get_child(0) as Control
+		var preview_rect := Rect2(
+			first_button.global_position + Vector2(target.x * first_button.size.x, 0),
+			first_button.size
+		)
+		preview_rect = preview_rect.intersection(visible_rect)
+		if preview_rect.has_area():
+			preview_rect.position -= drag_highlight.global_position
+			drag_highlight.draw_rect(preview_rect, CEL_DROP_HIGHLIGHT_COLOR)
+
+
 func _clear_drop_preview_draw_connections() -> void:
 	for connection: Dictionary in drag_highlight.draw.get_connections():
 		var callback: Callable = connection.get("callable", Callable())
