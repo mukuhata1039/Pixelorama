@@ -221,6 +221,9 @@ func _on_CelButton_pressed() -> void:
 	var is_left_click := Input.is_action_just_released(&"left_mouse")
 	if is_left_click or Input.is_action_just_released(&"ui_accept"):
 		Global.transform_content_confirmed.emit()
+		Global.animation_timeline.range_selection_source = (
+			Global.animation_timeline.RangeSelectionSource.CELLS
+		)
 		var frame_layer := [frame, layer]
 		var change_cel := true
 		if is_left_click and Global.is_ctrl_or_cmd_pressed() and Input.is_action_pressed("shift"):
@@ -647,6 +650,9 @@ func _select_cel_rectangle(origin: Array) -> void:
 			new_selected_cels.append([f, l])
 	if new_selected_cels.is_empty():
 		return
+	Global.animation_timeline.range_selection_source = (
+		Global.animation_timeline.RangeSelectionSource.CELLS
+	)
 	project.selected_cels = new_selected_cels
 	project.change_cel(frame, layer)
 
