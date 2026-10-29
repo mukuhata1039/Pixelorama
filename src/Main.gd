@@ -6,6 +6,24 @@ signal save_file_dialog_opened(opened: bool)
 const SPLASH_DIALOG_SCENE_PATH := "res://src/UI/Dialogs/SplashDialog.tscn"
 const ROTATE_VIEW_CURSOR := preload("res://assets/graphics/misc/canvas_rotate_cursor.svg")
 const ROTATE_VIEW_CURSOR_HOTSPOT := Vector2(14, 14)
+const ASEPRITE_CURSOR_ATLAS := preload("res://src/UI/Timeline/AsepriteCopyCursor.gd")
+## Matching Godot OS cursor shapes to Aseprite Default Theme sprite names.
+## I-beam, busy, and help cursors stay native because Aseprite has no equivalents.
+const ASEPRITE_CURSOR_MAP := {
+	Input.CURSOR_ARROW: &"normal",
+	Input.CURSOR_POINTING_HAND: &"hand",
+	Input.CURSOR_CROSS: &"crosshair",
+	Input.CURSOR_MOVE: &"move",
+	Input.CURSOR_DRAG: &"move",
+	Input.CURSOR_CAN_DROP: &"copy",
+	Input.CURSOR_FORBIDDEN: &"forbidden",
+	Input.CURSOR_HSIZE: &"size_we",
+	Input.CURSOR_VSIZE: &"size_ns",
+	Input.CURSOR_HSPLIT: &"size_we",
+	Input.CURSOR_VSPLIT: &"size_ns",
+	Input.CURSOR_FDIAGSIZE: &"size_nw",
+	Input.CURSOR_BDIAGSIZE: &"size_ne",
+}
 
 var opensprite_file_selected := false
 var redone := false
@@ -14,6 +32,9 @@ var is_writing_text := false
 var changed_projects_on_quit: Array[Project]
 var cursor_image := preload("res://assets/graphics/cursor.png")
 var _rotate_view_cursor_active := false
+var _aseprite_cursors := {}
+## -1 = no cel drag; 1 = move cels; 2 = copy cels.
+var _cel_drag_cursor_mode := -1
 ## Used to download an image when dragged and dropped directly from a browser into Pixelorama
 var url_to_download := ""
 var splash_dialog: AcceptDialog:
@@ -214,6 +235,7 @@ func _init() -> void:
 
 func _ready() -> void:
 	get_tree().set_auto_accept_quit(false)
+	_install_aseprite_cursors()
 
 	get_window().title = tr("untitled") + " - Pixelorama " + Global.current_version
 
@@ -300,11 +322,8 @@ func _process(_delta: float) -> void:
 			ROTATE_VIEW_CURSOR, Input.CURSOR_ARROW, ROTATE_VIEW_CURSOR_HOTSPOT
 		)
 	else:
-		Input.set_custom_mouse_cursor(null, Input.CURSOR_ARROW)
-		if Global.native_cursors:
-			Input.set_custom_mouse_cursor(null, Input.CURSOR_CROSS)
-		else:
-			set_custom_cursor()
+		_apply_aseprite_cursor_shape(Input.CURSOR_ARROW)
+		set_custom_cursor()
 
 
 func _input(event: InputEvent) -> void:
@@ -440,19 +459,63 @@ func set_mobile_fullscreen_safe_area() -> void:
 		menu_and_ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 
-func set_custom_cursor() -> void:
-	if Global.native_cursors:
+## Register Aseprite's original default theme cursor designs application-wide.
+## All displayed image regions are rendered at crisp 2x resolution by the atlas.
+func _install_aseprite_cursors() -> void:
+	_aseprite_cursors = ASEPRITE_CURSOR_ATLAS.load_cursors()
+	if _aseprite_cursors.is_empty():
 		return
-	if Global.shrink == 1.0:
-		Input.set_custom_mouse_cursor(cursor_image, Input.CURSOR_CROSS, Vector2(15, 15))
-	else:
-		var cursor_data := cursor_image.get_image()
-		var cursor_size := cursor_data.get_size() * Global.shrink
-		cursor_data.resize(cursor_size.x, cursor_size.y, Image.INTERPOLATE_NEAREST)
-		var cursor_tex := ImageTexture.create_from_image(cursor_data)
+	for cursor_shape: int in ASEPRITE_CURSOR_MAP:
+		_apply_aseprite_cursor_shape(cursor_shape)
+
+
+func _apply_aseprite_cursor_shape(
+	cursor_shape: int, override_name: StringName = &""
+) -> void:
+	if not ASEPRITE_CURSOR_MAP.has(cursor_shape):
+		return
+	if cursor_shape == Input.CURSOR_CROSS and Global.native_cursors:
+		Input.set_custom_mouse_cursor(null, cursor_shape)
+		return
+	var name: StringName = (
+		override_name if not override_name.is_empty() else ASEPRITE_CURSOR_MAP[cursor_shape]
+	)
+	var texture: Texture2D = _aseprite_cursors.get(name)
+	if not is_instance_valid(texture):
+		# Failed image loads should never leave a permanently invisible pointer.
+		Input.set_custom_mouse_cursor(null, cursor_shape)
+		return
+	Input.set_custom_mouse_cursor(texture, cursor_shape, ASEPRITE_CURSOR_ATLAS.get_hotspot(name))
+
+
+## Aseprite's timeline has two exceptions to its global cursor styles:
+## while moving a cel, generic arrow/move cursors show the move sprite;
+## while Ctrl/Alt-copying a cel, they show the copy (double-arrow) sprite.
+## Everything outside the drag reverts to the normal global Aseprite styles.
+func set_timeline_cel_drag_cursor(mode: int) -> void:
+	if mode == _cel_drag_cursor_mode:
+		return
+	_cel_drag_cursor_mode = mode
+	var name: StringName = &""
+	if mode == 1:
+		name = &"move"
+	elif mode == 2:
+		name = &"copy"
+	for cursor_shape: int in [Input.CURSOR_ARROW, Input.CURSOR_MOVE, Input.CURSOR_DRAG]:
+		_apply_aseprite_cursor_shape(cursor_shape, name)
+	if _rotate_view_cursor_active:
 		Input.set_custom_mouse_cursor(
-			cursor_tex, Input.CURSOR_CROSS, Vector2(15, 15) * Global.shrink
+			ROTATE_VIEW_CURSOR, Input.CURSOR_ARROW, ROTATE_VIEW_CURSOR_HOTSPOT
 		)
+	get_viewport().update_mouse_cursor_state()
+
+
+## Respect the existing preference for native canvas crosshairs, and keep the
+## bespoke canvas rotation icon above the Aseprite style when rotation is active.
+func set_custom_cursor() -> void:
+	if _rotate_view_cursor_active:
+		return
+	_apply_aseprite_cursor_shape(Input.CURSOR_CROSS)
 
 
 func _show_splash_screen() -> void:
