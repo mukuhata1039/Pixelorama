@@ -258,6 +258,9 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_DRAG_END:
 		drag_highlight.hide()
 		selection_drag_highlight.hide()
+		# Also reset one-cel mouse-down previews when drag-and-drop was
+		# canceled before a valid destination received _drop_data().
+		clear_drag_cel_range_preview()
 	elif what == NOTIFICATION_THEME_CHANGED or what == NOTIFICATION_TRANSLATION_CHANGED:
 		await get_tree().process_frame
 		min_cel_size = (
