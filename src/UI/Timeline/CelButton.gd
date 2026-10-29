@@ -717,7 +717,10 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 			Global.animation_timeline.set_cels_highlight(copy_drop_cels, offset)
 			# Draw the target rectangles relative to this overlay.
 			region = Global.animation_timeline.frame_scroll_container.get_global_rect()
-		else:  # Move cels
+		else:  # Move cels using the old insertion/reordering path
+			Global.animation_timeline.drag_highlight.color = (
+				Global.animation_timeline.CEL_DROP_HIGHLIGHT_COLOR
+			)
 			if _get_region_rect(0, 0.5).has_point(get_global_mouse_position()):  # Left
 				region = _get_region_rect(-0.125, 0.125)
 				region.position.x -= 2  # Container spacing
