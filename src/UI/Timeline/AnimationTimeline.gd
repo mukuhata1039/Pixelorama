@@ -38,6 +38,8 @@ var drag_range_preview_active := false
 var drag_range_preview_origin := Vector2i(-1, -1)
 var drag_range_preview_target := Vector2i(-1, -1)
 var drag_range_preview_cels: Array = []
+## Fast membership tests are important while a large rectangle changes.
+var drag_range_preview_lookup: Dictionary[Vector2i, bool] = {}
 var is_animation_running := false
 var animation_loop := LoopType.CYCLE
 var animation_forward := true
@@ -1686,6 +1688,9 @@ func update_drag_cel_range_preview(origin: Array, end_frame: int, end_layer: int
 	drag_range_preview_origin = start
 	drag_range_preview_target = target
 	drag_range_preview_cels = next_cels
+	drag_range_preview_lookup.clear()
+	for cel_index in next_cels:
+		drag_range_preview_lookup[Vector2i(int(cel_index[0]), int(cel_index[1]))] = true
 	drag_range_preview_active = true
 	_refresh_timeline_selection_appearance()
 
@@ -1695,6 +1700,7 @@ func clear_drag_cel_range_preview() -> void:
 		return
 	drag_range_preview_active = false
 	drag_range_preview_cels.clear()
+	drag_range_preview_lookup.clear()
 	drag_range_preview_origin = Vector2i(-1, -1)
 	drag_range_preview_target = Vector2i(-1, -1)
 	_refresh_timeline_selection_appearance()
