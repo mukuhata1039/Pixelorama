@@ -153,6 +153,12 @@ func _update_range_outline() -> void:
 	style.border_width_right = 0 if selection.has([frame + 1, layer]) else 1
 	style.border_width_top = 0 if selection.has([frame, layer + 1]) else 1
 	style.border_width_bottom = 0 if selection.has([frame, layer - 1]) else 1
+	# A row/column selected by its header has one outline covering the
+	# header and the cells. Do not draw a duplicate edge at their seam.
+	if frame == 0 and Global.animation_timeline.is_layer_header_range(layer):
+		style.border_width_left = 0
+	if layer == project.layers.size() - 1 and Global.animation_timeline.is_frame_header_range(frame):
+		style.border_width_top = 0
 	add_theme_stylebox_override(&"pressed", style)
 	add_theme_stylebox_override(&"hover_pressed", style)
 
