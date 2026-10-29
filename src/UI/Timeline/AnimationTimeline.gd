@@ -18,6 +18,7 @@ const ANIMATION_TAG_TSCN := preload("res://src/UI/Timeline/AnimationTagUI.tscn")
 const CEL_MIN_SIZE_HARD_LIMIT := 22
 const CEL_MIN_SIZE_OFFSET := 15
 const COMPACT_CEL_SIZE := 20
+const CEL_DROP_HIGHLIGHT_COLOR := Color(0.0, 0.741176, 1.0, 0.501961)
 
 var is_animation_running := false
 var animation_loop := LoopType.CYCLE
@@ -83,6 +84,7 @@ var global_layer_expand := true
 @onready var timeline_settings := $TimelineSettings as Popup
 @onready var new_tile_map_layer_dialog := $NewTileMapLayerDialog as ConfirmationDialog
 @onready var drag_highlight := $DragHighlight as ColorRect
+@onready var selection_drag_highlight := $SelectionDragHighlight as ColorRect
 
 
 func _ready() -> void:
@@ -146,9 +148,54 @@ func _ready() -> void:
 	layer.keyframe_unset.connect(_on_layer_keyframe_changed)
 
 
+## Select a contextual Aseprite cursor shape for timeline cel interaction.
+## The complete cursor skin is installed once, application-wide, by Main.gd.
+## This script only changes the selected shape and active drag mode.
+func _process(_delta: float) -> void:
+	var copy_modifier: bool = Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT)
+	var hovered: Control = get_viewport().gui_get_hovered_control()
+	if is_instance_valid(hovered) and is_ancestor_of(hovered):
+		if hovered.has_method("_is_drag_border"):
+			var coords := [int(hovered.get("frame")), int(hovered.get("layer"))]
+			var selected: bool = Global.current_project.selected_cels.has(coords)
+			var desired_shape := Control.CURSOR_ARROW
+			if selected and copy_modifier:
+				desired_shape = Control.CURSOR_CAN_DROP
+			elif selected and bool(
+				hovered.call("_is_drag_border", hovered.get_local_mouse_position())
+			):
+				desired_shape = Control.CURSOR_MOVE
+			if hovered.mouse_default_cursor_shape != desired_shape:
+				hovered.mouse_default_cursor_shape = desired_shape
+				get_viewport().update_mouse_cursor_state()
+
+	var drag_data: Variant = null
+	if get_viewport().gui_is_dragging():
+		drag_data = get_viewport().gui_get_drag_data()
+	var dragging_cels := false
+	if drag_data is Array:
+		var drag_array: Array = drag_data
+		dragging_cels = not drag_array.is_empty() and drag_array[0] == "Cel"
+	var next_mode := -1
+	if dragging_cels:
+		next_mode = 2 if copy_modifier else 1
+	if is_instance_valid(Global.control) and Global.control.has_method(
+		"set_timeline_cel_drag_cursor"
+	):
+		Global.control.call("set_timeline_cel_drag_cursor", next_mode)
+
+
+func _exit_tree() -> void:
+	if is_instance_valid(Global.control) and Global.control.has_method(
+		"set_timeline_cel_drag_cursor"
+	):
+		Global.control.call("set_timeline_cel_drag_cursor", -1)
+
+
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_DRAG_END:
 		drag_highlight.hide()
+		selection_drag_highlight.hide()
 	elif what == NOTIFICATION_THEME_CHANGED or what == NOTIFICATION_TRANSLATION_CHANGED:
 		await get_tree().process_frame
 		min_cel_size = (
@@ -173,8 +220,8 @@ func clear_highlight() -> void:
 
 ## Manages frame highlighting during drag and drop.
 func set_frames_highlight(frame_indices: Array, offset: int) -> void:
-	if drag_highlight.draw.is_connected(_draw_highlight_frames):
-		drag_highlight.draw.disconnect(_draw_highlight_frames)
+	_clear_drop_preview_draw_connections()
+	drag_highlight.color = CEL_DROP_HIGHLIGHT_COLOR
 	drag_highlight.draw.connect(_draw_highlight_frames.bind(frame_indices, offset))
 	drag_highlight.queue_redraw()
 
@@ -188,15 +235,53 @@ func _draw_highlight_frames(frame_indices: Array, offset: int) -> void:
 			var frame_rect: Rect2i = frame_button.get_global_rect()
 			frame_rect.position -= Vector2i(drag_highlight.global_position)
 			drag_highlight.draw_rect(frame_rect, drag_highlight.color)
-	frame_indices.clear()
 
 
 ## Manages cel highlighting during drag and drop.
 func set_cels_highlight(cel_coords: Array, offset: Vector2i) -> void:
-	if drag_highlight.draw.is_connected(_draw_highlight_cels):
-		drag_highlight.draw.disconnect(_draw_highlight_cels)
+	_clear_drop_preview_draw_connections()
+	# Keep the overlay background transparent and draw only destination cels.
+	drag_highlight.color = Color.TRANSPARENT
 	drag_highlight.draw.connect(_draw_highlight_cels.bind(cel_coords, offset))
 	drag_highlight.queue_redraw()
+
+
+## Preview target positions that do not have cel buttons yet.
+func set_virtual_cels_highlight(destinations: Array) -> void:
+	_clear_drop_preview_draw_connections()
+	drag_highlight.color = Color.TRANSPARENT
+	drag_highlight.draw.connect(_draw_virtual_cels.bind(destinations))
+	drag_highlight.queue_redraw()
+
+
+func _draw_virtual_cels(destinations: Array) -> void:
+	var visible_rect := frame_scroll_container.get_global_rect().intersection(
+		timeline_scroll.get_global_rect()
+	)
+	var row_count := cel_vbox.get_child_count()
+	for target: Vector2i in destinations:
+		var row_index := row_count - 1 - target.y
+		if row_index < 0 or row_index >= row_count:
+			continue
+		var row := cel_vbox.get_child(row_index) as HBoxContainer
+		if not is_instance_valid(row) or not row.visible or row.get_child_count() == 0:
+			continue
+		var first_button := row.get_child(0) as Control
+		var preview_rect := Rect2(
+			first_button.global_position + Vector2(target.x * first_button.size.x, 0),
+			first_button.size
+		)
+		preview_rect = preview_rect.intersection(visible_rect)
+		if preview_rect.has_area():
+			preview_rect.position -= drag_highlight.global_position
+			drag_highlight.draw_rect(preview_rect, CEL_DROP_HIGHLIGHT_COLOR)
+
+
+func _clear_drop_preview_draw_connections() -> void:
+	for connection: Dictionary in drag_highlight.draw.get_connections():
+		var callback: Callable = connection.get("callable", Callable())
+		if callback.is_valid():
+			drag_highlight.draw.disconnect(callback)
 
 
 ## Draws cel highlighting during drag and drop.
@@ -211,8 +296,7 @@ func _draw_highlight_cels(cel_coords: Array, offset: Vector2i) -> void:
 				var cel_button: BaseButton = cel_hbox.get_child(frame)
 				var cel_rect: Rect2i = cel_button.get_global_rect()
 				cel_rect.position -= Vector2i(drag_highlight.global_position)
-				drag_highlight.draw_rect(cel_rect, drag_highlight.color)
-	cel_coords.clear()
+				drag_highlight.draw_rect(cel_rect, CEL_DROP_HIGHLIGHT_COLOR)
 
 
 func _input(event: InputEvent) -> void:
@@ -380,6 +464,9 @@ func _on_compact_timeline_toggled(enabled: bool) -> void:
 		for cel_button in cel_hbox.get_children():
 			if cel_button is Button and cel_button.has_method("apply_compact_layout"):
 				cel_button.apply_compact_layout(enabled)
+	for frame_button in frame_hbox.get_children():
+		if frame_button.has_method("apply_compact_layout"):
+			frame_button.apply_compact_layout(enabled)
 	_changing_compact_mode = false
 	Global.config_cache.set_value("timeline", "compact", enabled)
 

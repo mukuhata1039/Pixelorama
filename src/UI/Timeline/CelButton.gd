@@ -2,11 +2,15 @@ extends Button
 
 enum MenuOptions { PROPERTIES, PLAY_AUDIO, SELECT_PIXELS, CENTER, DELETE, LINK, UNLINK, CLONE_CEL }
 
+## A 5px hit target remains usable even in the 20px compact timeline.
+const CEL_DRAG_BORDER := 5.0
+
 var frame := 0
 var layer := 0
 var cel: BaseCel
 
 var _is_guide_stylebox := false
+var _drag_started_on_selected_border := false
 
 @onready var popup_menu: PopupMenu = $PopupMenu
 @onready var ui_color_rect: ColorRect = $UIColorRect
@@ -133,43 +137,89 @@ func button_setup() -> void:
 			linked_rect.color.h = cel.link_set["hue"]
 
 
+## Remember where the press began: Godot starts drag-and-drop after the mouse moves,
+## when the pointer may no longer be on the original 5px border.
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			_drag_started_on_selected_border = (
+				Global.current_project.selected_cels.has([frame, layer])
+				and (
+					_is_drag_border(event.position)
+					or Global.is_ctrl_or_cmd_pressed()
+					or Input.is_key_pressed(KEY_ALT)
+				)
+			)
+	elif event is InputEventMouseMotion:
+		var moving_selected_cels := (
+			Global.current_project.selected_cels.has([frame, layer])
+			and (
+				_is_drag_border(event.position)
+				or Global.is_ctrl_or_cmd_pressed()
+				or Input.is_key_pressed(KEY_ALT)
+			)
+		)
+		var copying_selected_cels := (
+			Global.current_project.selected_cels.has([frame, layer])
+			and (Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT))
+		)
+		mouse_default_cursor_shape = (
+			Control.CURSOR_CAN_DROP
+			if copying_selected_cels
+			else Control.CURSOR_MOVE if moving_selected_cels else Control.CURSOR_ARROW
+		)
+
+
+func _is_drag_border(local_pos: Vector2) -> bool:
+	# Aseprite uses the outside of the selected range, not every inner cell edge.
+	var selected: Array = Global.current_project.selected_cels
+	if not selected.has([frame, layer]):
+		return false
+	return (
+		(local_pos.x < CEL_DRAG_BORDER and not selected.has([frame - 1, layer]))
+		or (local_pos.x >= size.x - CEL_DRAG_BORDER and not selected.has([frame + 1, layer]))
+		or (local_pos.y < CEL_DRAG_BORDER and not selected.has([frame, layer + 1]))
+		or (local_pos.y >= size.y - CEL_DRAG_BORDER and not selected.has([frame, layer - 1]))
+	)
+
+
 func _on_CelButton_pressed() -> void:
 	var project := Global.current_project
-	if Input.is_action_just_released(&"left_mouse") or Input.is_action_just_released(&"ui_accept"):
+	var is_left_click := Input.is_action_just_released(&"left_mouse")
+	if is_left_click or Input.is_action_just_released(&"ui_accept"):
 		Global.transform_content_confirmed.emit()
+		var frame_layer := [frame, layer]
 		var change_cel := true
-		if Input.is_action_pressed("shift"):
-			var prev_curr_frame := project.current_frame
-			var prev_curr_layer := project.current_layer
-			var frame_diff_sign := signi(frame - prev_curr_frame)
-			if frame_diff_sign == 0:
-				frame_diff_sign = 1
-			var layer_diff_sign := signi(layer - prev_curr_layer)
-			if layer_diff_sign == 0:
-				layer_diff_sign = 1
-			for i in range(prev_curr_frame, frame + frame_diff_sign, frame_diff_sign):
-				for j in range(prev_curr_layer, layer + layer_diff_sign, layer_diff_sign):
-					var frame_layer := [i, j]
-					if !project.selected_cels.has(frame_layer):
-						project.selected_cels.append(frame_layer)
-		elif Global.is_ctrl_or_cmd_pressed():
-			var frame_layer := [frame, layer]
+		if is_left_click and Global.is_ctrl_or_cmd_pressed() and Input.is_action_pressed("shift"):
+			# Keep a contiguous rectangular selection available without occupying Shift alone.
+			var anchor_frame := project.current_frame
+			var anchor_layer := project.current_layer
+			project.selected_cels.clear()
+			for f in range(mini(anchor_frame, frame), maxi(anchor_frame, frame) + 1):
+				for l in range(mini(anchor_layer, layer), maxi(anchor_layer, layer) + 1):
+					project.selected_cels.append([f, l])
+		elif is_left_click and Global.is_ctrl_or_cmd_pressed() and cel is not AudioCel:
+			# Select the opaque pixels of the clicked cel, not multiple timeline cels.
+			project.selected_cels = [frame_layer]
+			project.change_cel(frame, layer)
+			Global.canvas.selection.select_cel_pixels(project.layers[layer], project.frames[frame])
+			return
+		elif Input.is_action_pressed("shift"):
+			# Add/remove individual, possibly non-adjacent cels.
 			if project.selected_cels.has(frame_layer):
 				if project.selected_cels.size() > 1:
 					project.selected_cels.erase(frame_layer)
 					change_cel = false
 			else:
 				project.selected_cels.append(frame_layer)
-		else:  # If the button is pressed without Shift or Control
-			project.selected_cels.clear()
-			var frame_layer := [frame, layer]
-			if !project.selected_cels.has(frame_layer):
-				project.selected_cels.append(frame_layer)
+		else:
+			project.selected_cels = [frame_layer]
 
 		if change_cel:
 			project.change_cel(frame, layer)
 		else:
-			project.change_cel(project.selected_cels[0][0], project.selected_cels[0][1])
+			var remaining_cel: Array = project.selected_cels[0]
+			project.change_cel(remaining_cel[0], remaining_cel[1])
 			release_focus()
 
 	elif Input.is_action_just_released("right_mouse"):
@@ -180,7 +230,6 @@ func _on_CelButton_pressed() -> void:
 		_delete_cel_content()
 	else:  # An example of this would be Space
 		button_pressed = !button_pressed
-
 
 func _on_PopupMenu_id_pressed(id: int) -> void:
 	var project := Global.current_project
@@ -283,6 +332,130 @@ func _on_PopupMenu_id_pressed(id: int) -> void:
 			_clone_cel_content(_get_cel_indices())
 
 
+## Aseprite moves/copies the contents of cels to the destination instead of
+## reordering the timeline. Use this path for ordinary, unlinked image cels.
+## Linked/procedural cels keep the older Pixelorama implementation for safety.
+static func _can_transfer_pixel_cels(indices: Array, paste_offset: Vector2i) -> bool:
+	var project := Global.current_project
+	if indices.is_empty() or paste_offset == Vector2i.ZERO:
+		return false
+	for indices_pair in indices:
+		var source := Vector2i(int(indices_pair[0]), int(indices_pair[1]))
+		var target := source + paste_offset
+		if (
+			source.x < 0
+			or source.x >= project.frames.size()
+			or source.y < 0
+			or source.y >= project.layers.size()
+			or target.x < 0
+			or target.y < 0
+			or target.y >= project.layers.size()
+		):
+			return false
+		var source_cel: BaseCel = project.frames[source.x].cels[source.y]
+		if source_cel is not PixelCel or source_cel.link_set != null:
+			return false
+		if project.layers[source.y].get_script() != project.layers[target.y].get_script():
+			return false
+		if target.x < project.frames.size():
+			var target_cel: BaseCel = project.frames[target.x].cels[target.y]
+			if target_cel is not PixelCel or target_cel.link_set != null:
+				return false
+		elif project.layers[target.y].new_cels_linked:
+			return false
+	return true
+
+
+static func _pixel_cel_state(cel: PixelCel, content: Variant) -> Dictionary:
+	return {
+		"content": content,
+		"opacity": cel.opacity,
+		"z_index": cel.z_index,
+		"user_data": cel.user_data,
+		"ui_color": cel.ui_color,
+	}
+
+
+static func _transfer_pixel_cels(indices: Array, paste_offset: Vector2i, copy: bool) -> bool:
+	if not _can_transfer_pixel_cels(indices, paste_offset):
+		return false
+	var project := Global.current_project
+	var old_selection := project.selected_cels.duplicate(true)
+	var old_frame := project.current_frame
+	var old_layer := project.current_layer
+	var max_target := project.frames.size() - 1
+	var states := {}
+	var changes := {}
+	var selected_destinations := []
+	# Snapshot every source before touching destinations, including overlapping ranges.
+	for indices_pair in indices:
+		var source := Vector2i(int(indices_pair[0]), int(indices_pair[1]))
+		var cel: PixelCel = project.frames[source.x].cels[source.y] as PixelCel
+		states[source] = _pixel_cel_state(cel, cel.copy_content())
+	for indices_pair in indices:
+		var source := Vector2i(int(indices_pair[0]), int(indices_pair[1]))
+		var target := source + paste_offset
+		max_target = maxi(max_target, target.x)
+		selected_destinations.append([target.x, target.y])
+		if not copy:
+			var cel: PixelCel = project.frames[source.x].cels[source.y] as PixelCel
+			changes[source] = {
+				"content": cel.create_empty_content(),
+				"opacity": 1.0,
+				"z_index": 0,
+				"user_data": "",
+				"ui_color": Color.TRANSPARENT,
+			}
+	for indices_pair in indices:
+		var source := Vector2i(int(indices_pair[0]), int(indices_pair[1]))
+		changes[source + paste_offset] = states[source]
+
+	# Global.undo_or_redo refreshes cel textures for the standard "Draw" action.
+	project.undo_redo.create_action("Draw")
+	var new_frames: Dictionary[int, Frame] = {}
+	if max_target >= project.frames.size():
+		var new_indices := PackedInt32Array()
+		for i in range(project.frames.size(), max_target + 1):
+			new_indices.append(i)
+		new_frames = Global.animation_timeline.undo_redo_add_frames(new_indices)
+
+	for coord: Vector2i in changes:
+		var destination: PixelCel
+		var created_frame := new_frames.has(coord.x)
+		if created_frame:
+			destination = new_frames[coord.x].cels[coord.y] as PixelCel
+		else:
+			destination = project.frames[coord.x].cels[coord.y] as PixelCel
+		var before_content: Variant = destination.get_content()
+		var after_state: Dictionary = changes[coord]
+		project.undo_redo.add_do_method(destination.set_content.bind(after_state["content"]))
+		if not created_frame:
+			project.undo_redo.add_undo_method(destination.set_content.bind(before_content))
+		for property_name: String in ["opacity", "z_index", "user_data", "ui_color"]:
+			project.undo_redo.add_do_property(
+				destination, property_name, after_state[property_name]
+			)
+			if not created_frame:
+				project.undo_redo.add_undo_property(
+					destination, property_name, destination.get(property_name)
+				)
+		project.undo_redo.add_do_method(
+			Global.undo_or_redo.bind(false, coord.x, coord.y, project)
+		)
+		if not created_frame:
+			project.undo_redo.add_undo_method(
+				Global.undo_or_redo.bind(true, coord.x, coord.y, project)
+			)
+	project.undo_redo.add_do_property(project, "selected_cels", selected_destinations)
+	project.undo_redo.add_do_method(
+		project.change_cel.bind(selected_destinations[0][0], selected_destinations[0][1])
+	)
+	project.undo_redo.add_undo_property(project, "selected_cels", old_selection)
+	project.undo_redo.add_undo_method(project.change_cel.bind(old_frame, old_layer))
+	project.undo_redo.commit_action()
+	return true
+
+
 ## Clones the cel content only (skips other properties like duration, opacity etc...)
 static func _clone_cel_content(indices: Array, paste_offset := Vector2i.RIGHT) -> void:
 	var project := Global.current_project
@@ -290,6 +463,7 @@ static func _clone_cel_content(indices: Array, paste_offset := Vector2i.RIGHT) -
 	var new_selected_cels := []
 	var new_frames: Dictionary[int, Frame] = {}
 	var new_frames_idx := PackedInt32Array()
+	var max_dest_frame := project.frames.size() - 1
 	var filtered_indices := []
 	for cel_index in indices:
 		# Calculate which indices are valid and which indices need new frames
@@ -301,8 +475,13 @@ static func _clone_cel_content(indices: Array, paste_offset := Vector2i.RIGHT) -
 		):
 			continue
 		filtered_indices.append(cel_index)
-		if new_frame_layer[0] >= project.frames.size() and not new_frame_layer[0] in new_frames_idx:
-			new_frames_idx.append(new_frame_layer[0])
+		max_dest_frame = maxi(max_dest_frame, new_frame_layer[0])
+	# The copy may extend beyond the last frame, requiring intermediate empty frames.
+	for f in range(project.frames.size(), max_dest_frame + 1):
+		new_frames_idx.append(f)
+	if filtered_indices.is_empty():
+		project.undo_redo.commit_action()
+		return
 	if new_frames_idx.size() > 0:
 		new_frames = Global.animation_timeline.undo_redo_add_frames(new_frames_idx)
 	for cel_index in filtered_indices:
@@ -312,7 +491,7 @@ static func _clone_cel_content(indices: Array, paste_offset := Vector2i.RIGHT) -
 		if !new_selected_cels.has(new_frame_layer):
 			new_selected_cels.append(new_frame_layer)
 		var selected_cel := project.frames[frame_index].cels[layer_index]
-		var next_cel: PixelCel = null
+		var next_cel: BaseCel = null
 		var is_using_new_frame := false
 		if new_frames.has(new_frame_layer[0]):
 			next_cel = new_frames.get(new_frame_layer[0]).cels[new_frame_layer[1]]
@@ -381,6 +560,10 @@ func _dim_checker() -> void:
 func _get_drag_data(_position: Vector2) -> Variant:
 	if DisplayServer.is_touchscreen_available() and not button_pressed:
 		return null
+	# Dragging the inside of a cel selects a rectangle of timeline cels.
+	# The selected cel's outer border still starts the existing move/swap operation.
+	if not _drag_started_on_selected_border and not DisplayServer.is_touchscreen_available():
+		return ["CelRectangle", [frame, layer]]
 	var button := Button.new()
 	button.size = size
 	button.theme = Global.control.theme
@@ -391,14 +574,57 @@ func _get_drag_data(_position: Vector2) -> Variant:
 	texture_rect.texture = cel_texture.texture
 	button.add_child(texture_rect)
 	set_drag_preview(button)
-	return ["Cel", _get_cel_indices()]
+	# Keep the clicked cel as the drag anchor, even when several cels are selected.
+	return ["Cel", _get_cel_indices(), [frame, layer]]
 
+
+func _preview_cel_rectangle(origin: Array) -> bool:
+	if origin.size() != 2:
+		return false
+	var timeline := Global.animation_timeline
+	var cel_vbox: VBoxContainer = timeline.cel_vbox
+	var row_index: int = cel_vbox.get_child_count() - 1 - origin[1]
+	if row_index < 0 or row_index >= cel_vbox.get_child_count():
+		return false
+	var row: Control = cel_vbox.get_child(row_index)
+	if origin[0] < 0 or origin[0] >= row.get_child_count():
+		return false
+	var first_cel: Control = row.get_child(origin[0])
+	var rect := first_cel.get_global_rect().merge(get_global_rect())
+	# Do not paint the selection preview over layer names or outside the timeline.
+	rect = rect.intersection(timeline.frame_scroll_container.get_global_rect())
+	rect = rect.intersection(timeline.timeline_scroll.get_global_rect())
+	timeline.selection_drag_highlight.global_position = rect.position
+	timeline.selection_drag_highlight.size = rect.size
+	timeline.selection_drag_highlight.visible = rect.has_area()
+	return true
+
+
+func _select_cel_rectangle(origin: Array) -> void:
+	if origin.size() != 2:
+		return
+	var project := Global.current_project
+	var new_selected_cels := []
+	var cel_vbox: VBoxContainer = Global.animation_timeline.cel_vbox
+	for l in range(mini(origin[1], layer), maxi(origin[1], layer) + 1):
+		var row: Control = cel_vbox.get_child(cel_vbox.get_child_count() - 1 - l)
+		if not row.visible:
+			continue
+		for f in range(mini(origin[0], frame), maxi(origin[0], frame) + 1):
+			new_selected_cels.append([f, l])
+	if new_selected_cels.is_empty():
+		return
+	project.selected_cels = new_selected_cels
+	project.change_cel(frame, layer)
 
 func _can_drop_data(pos: Vector2, data) -> bool:
 	var project := Global.current_project
-	if typeof(data) != TYPE_ARRAY:
+	if typeof(data) != TYPE_ARRAY or data.size() < 2:
 		Global.animation_timeline.drag_highlight.visible = false
 		return false
+	if data[0] == "CelRectangle":
+		Global.animation_timeline.drag_highlight.visible = false
+		return _preview_cel_rectangle(data[1])
 	if data[0] != "Cel":
 		Global.animation_timeline.drag_highlight.visible = false
 		return false
@@ -424,8 +650,9 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 			cel_vbox.get_child(frame_container_index - 1)
 		)
 
-	var drop_cels: Array = data[1]
+	var drop_cels: Array = data[1].duplicate(true)
 	drop_cels.sort_custom(_sort_cel_indices_by_frame)
+	var drag_anchor: Array = data[2] if data.size() > 2 else drop_cels[0]
 	var drop_frames: PackedInt32Array = []
 	var drop_layers: PackedInt32Array = []
 	for cel_idx in drop_cels:
@@ -435,8 +662,8 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 	# Get offset
 	var offset: Vector2i = Vector2i.ZERO
 	if drop_cels.size() > 0:
-		offset.x = frame - drop_cels[0][0]  # We don't need a new array for this
-		offset.y = layer - Array(drop_layers).max()
+		offset.x = frame - drag_anchor[0]
+		offset.y = layer - drag_anchor[1]
 
 	var drop_layer := drop_layers[0]
 	# Check if all dropped cels are on the same layer
@@ -444,14 +671,22 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 	for l in drop_layers:
 		if l != layer:
 			different_layers = true
-	var is_swapping_or_cloning := (
-		Global.is_ctrl_or_cmd_pressed() or different_layers or Input.is_action_pressed(&"shift")
-	)
+	var copy_drag := Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT)
+	var pixel_transfer := _can_transfer_pixel_cels(drop_cels, offset)
+	var is_swapping_or_cloning := pixel_transfer or copy_drag or different_layers
 
 	if is_swapping_or_cloning:
 		for cel_idx in drop_cels:
+			var dest_frame: int = cel_idx[0] + offset.x
+			var dest_layer: int = cel_idx[1] + offset.y
+			if dest_frame < 0 or dest_layer < 0 or dest_layer >= project.layers.size():
+				Global.animation_timeline.drag_highlight.visible = false
+				return false
+			if not (copy_drag or pixel_transfer) and dest_frame >= project.frames.size():
+				Global.animation_timeline.drag_highlight.visible = false
+				return false
 			# Can't move to the same cel
-			if drop_cels.has([cel_idx[0] + offset.x, cel_idx[1] + offset.y]):
+			if not (copy_drag or pixel_transfer) and drop_cels.has([cel_idx[0] + offset.x, cel_idx[1] + offset.y]):
 				Global.animation_timeline.drag_highlight.visible = false
 				return false
 			# Can't move different types of layers between them
@@ -484,11 +719,15 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 		or (project.frames[frame].cels[layer].link_set == null and not are_dropped_cels_linked)
 	):
 		var region: Rect2
-		if is_swapping_or_cloning:  # Swap cels
-			var copy_drop_cels := drop_cels.duplicate()  # to prevent overriting original array.
-			# Don't highlight this button right now (it is done later, a few lines ahead)
+		if is_swapping_or_cloning:  # Copy or swap cels
+			var copy_drop_cels := drop_cels.duplicate(true)
 			Global.animation_timeline.set_cels_highlight(copy_drop_cels, offset)
-		else:  # Move cels
+			# Draw the target rectangles relative to this overlay.
+			region = Global.animation_timeline.frame_scroll_container.get_global_rect()
+		else:  # Move cels using the old insertion/reordering path
+			Global.animation_timeline.drag_highlight.color = Color(
+				0.0, 0.741176, 1.0, 0.501961
+			)
 			if _get_region_rect(0, 0.5).has_point(get_global_mouse_position()):  # Left
 				region = _get_region_rect(-0.125, 0.125)
 				region.position.x -= 2  # Container spacing
@@ -505,8 +744,13 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 
 
 func _drop_data(_pos: Vector2, data) -> void:
-	var drop_cels: Array = data[1]
+	if data[0] == "CelRectangle":
+		_select_cel_rectangle(data[1])
+		Global.animation_timeline.selection_drag_highlight.hide()
+		return
+	var drop_cels: Array = data[1].duplicate(true)
 	drop_cels.sort_custom(_sort_cel_indices_by_frame)
+	var drag_anchor: Array = data[2] if data.size() > 2 else drop_cels[0]
 	var drop_frames: PackedInt32Array = []
 	var drop_layers: PackedInt32Array = []
 	for cel_idx in drop_cels:
@@ -519,13 +763,20 @@ func _drop_data(_pos: Vector2, data) -> void:
 	# Get offset
 	var offset: Vector2i = Vector2i.ZERO
 	if drop_cels.size() > 0:
-		offset.x = frame - drop_cels[0][0]  # We don't need a new array for this
-		offset.y = layer - Array(drop_layers).max()
+		offset.x = frame - drag_anchor[0]
+		offset.y = layer - drag_anchor[1]
 	var project := Global.current_project
+	# Aseprite moves/copies the cel content, rather than reordering frame slots.
+	var copy_drag := Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT)
+	if _transfer_pixel_cels(drop_cels, offset, copy_drag):
+		return
+	# Fallback for linked, group, or other non-pixel cels.
+	if copy_drag:
+		if offset != Vector2i.ZERO:
+			_clone_cel_content(drop_cels, offset)
+		return
 	project.undo_redo.create_action("Move Cels")
-	if Input.is_action_pressed(&"shift"):
-		_clone_cel_content(drop_cels, offset)
-	elif Global.is_ctrl_or_cmd_pressed() or different_layers:  # Swap cels
+	if different_layers:  # Preserve the old cross-layer swap for plain movement
 		var swap_cel_positions := []
 		for cel_idx in drop_cels:
 			var drop_point_frame: int = cel_idx[0] + offset.x

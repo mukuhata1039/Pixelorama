@@ -2,6 +2,12 @@ extends Button
 
 enum { PROPERTIES, REMOVE, CLONE, MOVE_LEFT, MOVE_RIGHT, NEW_TAG, IMPORT_TAG, REVERSE, CENTER }
 
+## The compact timeline uses 20px frame buttons. Normal styleboxes reserve 12px
+## of horizontal content margins, leaving too little space for 2-digit labels.
+const COMPACT_FONT_SIZE := 11
+const COMPACT_HORIZONTAL_TEXT_MARGIN := 1.0
+const COMPACT_STYLEBOX_NAMES := [&"normal", &"hover", &"pressed"]
+
 var frame := 0
 
 @onready var popup_menu: PopupMenu = $PopupMenu
@@ -16,11 +22,27 @@ func _ready() -> void:
 	Global.cel_switched.connect(func(): z_index = 1 if button_pressed else 0)
 	custom_minimum_size.x = Global.animation_timeline.cel_size
 	text = str(frame + 1)
-	if frame >= 99:
-		alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	apply_compact_layout(Global.animation_timeline.compact_timeline)
 	pressed.connect(_button_pressed)
 	mouse_entered.connect(_update_tooltip)
 
+
+## Show complete 1- and 2-digit frame numbers in the compact 20px timeline.
+## Restore the inherited theme styles when switching back to regular size.
+func apply_compact_layout(enabled: bool) -> void:
+	for style_name: StringName in COMPACT_STYLEBOX_NAMES:
+		remove_theme_stylebox_override(style_name)
+	if enabled:
+		add_theme_font_size_override(&"font_size", COMPACT_FONT_SIZE)
+		for style_name: StringName in COMPACT_STYLEBOX_NAMES:
+			var stylebox := get_theme_stylebox(style_name).duplicate() as StyleBox
+			stylebox.content_margin_left = COMPACT_HORIZONTAL_TEXT_MARGIN
+			stylebox.content_margin_right = COMPACT_HORIZONTAL_TEXT_MARGIN
+			add_theme_stylebox_override(style_name, stylebox)
+		alignment = HORIZONTAL_ALIGNMENT_CENTER
+	else:
+		remove_theme_font_size_override(&"font_size")
+		alignment = HORIZONTAL_ALIGNMENT_RIGHT if frame >= 99 else HORIZONTAL_ALIGNMENT_CENTER
 
 func _update_tooltip() -> void:
 	var frame_class := Global.current_project.frames[frame]
