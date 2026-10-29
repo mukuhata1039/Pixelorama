@@ -83,6 +83,7 @@ var global_layer_expand := true
 @onready var timeline_settings := $TimelineSettings as Popup
 @onready var new_tile_map_layer_dialog := $NewTileMapLayerDialog as ConfirmationDialog
 @onready var drag_highlight := $DragHighlight as ColorRect
+@onready var selection_drag_highlight := $SelectionDragHighlight as ColorRect
 
 
 func _ready() -> void:
@@ -149,6 +150,7 @@ func _ready() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_DRAG_END:
 		drag_highlight.hide()
+		selection_drag_highlight.hide()
 	elif what == NOTIFICATION_THEME_CHANGED or what == NOTIFICATION_TRANSLATION_CHANGED:
 		await get_tree().process_frame
 		min_cel_size = (
