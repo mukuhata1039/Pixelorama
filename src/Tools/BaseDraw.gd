@@ -588,12 +588,14 @@ func _native_brush_skip_reason() -> String:
 			return "ペン以外のツール"
 		if not is_equal_approx(_drawer.color_op.strength, 1.0):
 			return "不透明度設定"
-		# Transparent-color pencils have a special erase behavior; keep it
-		# on its original path rather than treating it as ordinary blending.
+		# A fully transparent pencil color clears RGBA just like a full
+		# eraser. Only semi-transparent pencil colors need alpha blending.
 		var color_alpha := Color(tool_slot.color.to_html()).a
-		if is_zero_approx(color_alpha):
-			return "透明色のペン"
-		var needs_alpha_mask: bool = color_alpha < 1.0 and not bool(_drawer.color_op.get("overwrite"))
+		var needs_alpha_mask: bool = (
+			not is_zero_approx(color_alpha)
+			and color_alpha < 1.0
+			and not bool(_drawer.color_op.get("overwrite"))
+		)
 		if needs_alpha_mask:
 			# Preserve once-per-stroke compositing of overlapping brush dabs.
 			# Varying pressure/velocity opacity still uses the original code.
@@ -755,11 +757,13 @@ func _paint_native_brush_rects(rects: Array[Rect2i]) -> void:
 	var paint_rects := rects if _brush_density == 100 else _sample_density_rects(rects)
 	if paint_rects.is_empty():
 		return
-	# The normal eraser removes all RGBA channels, unlike blending a
-	# transparent color (which would leave the destination unchanged).
-	var paint_color := Color.TRANSPARENT if _is_eraser else Color(tool_slot.color.to_html())
+	# Both the full eraser and the fully transparent pencil clear RGBA.
+	# Blending a transparent source would otherwise have no effect.
+	var selected_color := Color(tool_slot.color.to_html())
+	var clear_pixels: bool = _is_eraser or is_zero_approx(selected_color.a)
+	var paint_color := Color.TRANSPARENT if clear_pixels else selected_color
 	var should_blend: bool = (
-		not _is_eraser and paint_color.a < 1.0
+		not clear_pixels and paint_color.a < 1.0
 		and not bool(_drawer.color_op.get("overwrite"))
 	)
 	if should_blend and not _is_mask_size_zero:
