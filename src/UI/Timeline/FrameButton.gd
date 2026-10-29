@@ -57,6 +57,9 @@ func _update_tooltip() -> void:
 func _button_pressed() -> void:
 	if Input.is_action_just_released(&"left_mouse") or Input.is_action_just_released(&"ui_accept"):
 		Global.transform_content_confirmed.emit()
+		Global.animation_timeline.range_selection_source = (
+			Global.animation_timeline.RangeSelectionSource.FRAMES
+		)
 		var prev_curr_frame := Global.current_project.current_frame
 		if Input.is_action_pressed("shift"):
 			var frame_diff_sign := signi(frame - prev_curr_frame)
@@ -72,11 +75,10 @@ func _button_pressed() -> void:
 				var frame_layer := [frame, j]
 				if !Global.current_project.selected_cels.has(frame_layer):
 					Global.current_project.selected_cels.append(frame_layer)
-		else:  # If the button is pressed without Shift or Control
+		else:  # Aseprite: clicking a frame header selects its whole column.
 			Global.current_project.selected_cels.clear()
-			var frame_layer := [frame, Global.current_project.current_layer]
-			if !Global.current_project.selected_cels.has(frame_layer):
-				Global.current_project.selected_cels.append(frame_layer)
+			for layer_index in Global.current_project.layers.size():
+				Global.current_project.selected_cels.append([frame, layer_index])
 
 		Global.current_project.change_cel(frame, -1)
 
