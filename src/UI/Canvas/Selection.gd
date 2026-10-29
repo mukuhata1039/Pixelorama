@@ -291,7 +291,8 @@ func cut() -> void:
 	if !project.layers[project.current_layer].can_layer_get_drawn():
 		return
 	copy()
-	delete(false)
+	# Cut retains its original deselection behavior; Delete alone preserves the selection.
+	delete(false, false)
 
 
 ## Copies the selection content (works in or between pixelorama instances only).
@@ -523,8 +524,9 @@ func paste_from_clipboard() -> void:
 	queue_redraw()
 
 
-## Deletes the drawing enclosed within the selection's area.
-func delete(selected_cels := true) -> void:
+## Deletes pixels inside the selection without deselecting for the Delete command.
+## Cut passes keep_selection=false to preserve its existing behavior.
+func delete(selected_cels := true, keep_selection := true) -> void:
 	var project := Global.current_project
 	if !project.layers[project.current_layer].can_layer_get_drawn():
 		return
@@ -592,7 +594,8 @@ func delete(selected_cels := true) -> void:
 			image.fill(0)
 			cel.shrink_to_content()
 			image.convert_rgb_to_indexed()
-	clear_selection()
+	if not keep_selection:
+		clear_selection()
 	commit_undo("Draw", undo_data_tmp)
 
 
