@@ -11,6 +11,7 @@ signal animation_finished
 signal animation_looped
 
 enum LoopType { NO, CYCLE, PINGPONG }
+enum RangeSelectionSource { CELLS, LAYERS, FRAMES }
 
 const FRAME_BUTTON_TSCN := preload("res://src/UI/Timeline/FrameButton.tscn")
 const ANIMATION_TAG_TSCN := preload("res://src/UI/Timeline/AnimationTagUI.tscn")
@@ -19,7 +20,12 @@ const CEL_MIN_SIZE_HARD_LIMIT := 22
 const CEL_MIN_SIZE_OFFSET := 15
 const COMPACT_CEL_SIZE := 20
 const CEL_DROP_HIGHLIGHT_COLOR := Color(0.0, 0.741176, 1.0, 0.501961)
+const ACTIVE_GUIDE_COLOR := Color("688ea4")
+const RANGE_OUTLINE_COLOR := Color("d1c275")
 
+## Aseprite's range outline includes a row/column header only when the
+## selection was started by clicking a layer/frame header.
+var range_selection_source := RangeSelectionSource.CELLS
 var is_animation_running := false
 var animation_loop := LoopType.CYCLE
 var animation_forward := true
@@ -1556,25 +1562,105 @@ func _on_project_switched() -> void:
 # Methods to update the UI in response to changes in the current project
 
 
-## Update the active row/column and selected range independently. A selected
-## cel is not necessarily the active one, and selecting many cels must not
-## mark all their frame/layer headers as active.
+## Render the active row, active column and timeline range independently.
+## Ranges started from the layer/frame header also include that header inside
+## the single outline, as Aseprite does.
 func _refresh_timeline_selection_appearance() -> void:
 	var project := Global.current_project
 	var selected: Dictionary[Vector2i, bool] = {}
 	for cel_index in project.selected_cels:
 		selected[Vector2i(cel_index[0], cel_index[1])] = true
+	var selected_rows: Dictionary[int, bool] = {}
+	var selected_columns: Dictionary[int, bool] = {}
+	if range_selection_source == RangeSelectionSource.LAYERS:
+		for layer_index in project.layers.size():
+			var complete := true
+			for frame_index in project.frames.size():
+				if not selected.has(Vector2i(frame_index, layer_index)):
+					complete = false
+					break
+			if complete:
+				selected_rows[layer_index] = true
+	elif range_selection_source == RangeSelectionSource.FRAMES:
+		for frame_index in project.frames.size():
+			var complete := true
+			for layer_index in project.layers.size():
+				if not selected.has(Vector2i(frame_index, layer_index)):
+					complete = false
+					break
+			if complete:
+				selected_columns[frame_index] = true
+
 	for frame_button in frame_hbox.get_children():
-		frame_button.button_pressed = frame_button.frame == project.current_frame
-		frame_button.z_index = 1 if frame_button.button_pressed else 0
+		var f: int = frame_button.frame
+		var is_range := selected_columns.has(f)
+		var active := f == project.current_frame
+		_set_header_selection_style(
+			frame_button, active, is_range, false,
+			selected_columns.has(f - 1), selected_columns.has(f + 1), true
+		)
 	for layer_button in layer_vbox.get_children():
-		layer_button.button_pressed = layer_button.layer_index == project.current_layer
-		layer_button.z_index = 1 if layer_button.button_pressed else 0
+		var l: int = layer_button.layer_index
+		var is_range := selected_rows.has(l)
+		var active := l == project.current_layer
+		_set_header_selection_style(
+			layer_button.main_button, active, is_range, true,
+			selected_rows.has(l + 1), selected_rows.has(l - 1), false
+		)
+		layer_button.z_index = 1 if active or is_range else 0
 	for cel_hbox in cel_vbox.get_children():
 		for cel_button in cel_hbox.get_children():
 			cel_button.button_pressed = selected.has(Vector2i(cel_button.frame, cel_button.layer))
 			cel_button.cel_switched()
 
+
+func _set_header_selection_style(
+	button: Button,
+	active: bool,
+	in_range: bool,
+	is_layer_header: bool,
+	selected_before: bool,
+	selected_after: bool,
+	is_frame_header: bool
+) -> void:
+	var was_custom := button.has_theme_stylebox_override(&"hover_pressed")
+	button.button_pressed = active or in_range
+	button.z_index = 1 if button.button_pressed else 0
+	if not button.button_pressed:
+		if was_custom:
+			button.remove_theme_stylebox_override(&"hover_pressed")
+			if is_frame_header and button.has_method("apply_compact_layout"):
+				button.call("apply_compact_layout", compact_timeline)
+			else:
+				button.remove_theme_stylebox_override(&"pressed")
+		return
+	var theme := Global.control.theme
+	var source := theme.get_stylebox(&"pressed", &"LayerFrameButton")
+	var normal := theme.get_stylebox(&"normal", &"LayerFrameButton")
+	if not source is StyleBoxFlat or not normal is StyleBoxFlat:
+		return
+	var style := source.duplicate() as StyleBoxFlat
+	style.bg_color = (normal as StyleBoxFlat).bg_color.lerp(ACTIVE_GUIDE_COLOR, 0.75)
+	style.border_width_left = 0
+	style.border_width_right = 0
+	style.border_width_top = 0
+	style.border_width_bottom = 0
+	if in_range:
+		style.border_color = RANGE_OUTLINE_COLOR
+		if is_layer_header:
+			style.border_width_left = 1
+			style.border_width_top = 0 if selected_before else 1
+			style.border_width_bottom = 0 if selected_after else 1
+		else:
+			style.border_width_top = 1
+			style.border_width_left = 0 if selected_before else 1
+			style.border_width_right = 0 if selected_after else 1
+	# Preserve compact 2-digit frame labels while overriding the active style.
+	if is_frame_header and compact_timeline:
+		style.content_margin_left = 1.0
+		style.content_margin_right = 1.0
+	button.add_theme_stylebox_override(&"pressed", style)
+	button.add_theme_stylebox_override(&"hover_pressed", style)
 
 func _cel_switched() -> void:
 	_refresh_timeline_selection_appearance()
@@ -1727,6 +1813,7 @@ func _toggle_layer_buttons() -> void:
 
 
 func project_changed() -> void:
+	range_selection_source = RangeSelectionSource.CELLS
 	var project := Global.current_project
 	fps_spinbox.value = project.fps
 	_toggle_frame_buttons()
