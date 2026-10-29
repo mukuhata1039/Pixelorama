@@ -183,7 +183,7 @@ func _process(_delta: float) -> void:
 	var drag_data: Variant = null
 	if get_viewport().gui_is_dragging():
 		drag_data = get_viewport().gui_get_drag_data()
-	var copy_drag := (
+	var copy_drag: bool = (
 		copy_modifier
 		and typeof(drag_data) == TYPE_ARRAY
 		and drag_data.size() > 0
