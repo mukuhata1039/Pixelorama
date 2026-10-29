@@ -105,12 +105,10 @@ func _notification(what: int) -> void:
 		)
 
 
-## Aseprite has three independent timeline indications:
-##   - the active layer (blue row),
-##   - the active frame (blue column),
-##   - the cel range selected for cut/copy/move (dark fill + thin outline).
-## Neither guide is calculated from selected_cels: selecting a large range
-## must not highlight every layer and frame as if it were the active one.
+## Aseprite separates the timeline selection range from the blue row/column
+## guides. Every row/column touched by the selected cells receives a blue guide,
+## but the active editing cel remains independent of the range selection.
+## Only the selected cells receive the dark fill and thin yellow perimeter.
 func cel_switched(_force_stylebox_change := false) -> void:
 	var project := Global.current_project
 	z_index = 1 if button_pressed else 0
