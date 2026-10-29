@@ -200,6 +200,8 @@ func _set_copy_cursor_active(active: bool) -> void:
 		Input.set_custom_mouse_cursor(
 			_copy_cursor_texture if active else null, cursor_shape, Vector2.ZERO
 		)
+	# Refresh immediately when Ctrl/Alt is pressed or released without moving the mouse.
+	get_viewport().update_mouse_cursor_state()
 
 
 func _exit_tree() -> void:
