@@ -14,13 +14,19 @@ enum LoopType { NO, CYCLE, PINGPONG }
 
 const FRAME_BUTTON_TSCN := preload("res://src/UI/Timeline/FrameButton.tscn")
 const ANIMATION_TAG_TSCN := preload("res://src/UI/Timeline/AnimationTagUI.tscn")
-const ASEPRITE_COPY_CURSOR := preload("res://src/UI/Timeline/AsepriteCopyCursor.gd")
-const COPY_CURSOR_SHAPES := [
-	Input.CURSOR_ARROW,
-	Input.CURSOR_MOVE,
-	Input.CURSOR_DRAG,
-	Input.CURSOR_CAN_DROP,
-]
+const ASEPRITE_TIMELINE_CURSORS := preload("res://src/UI/Timeline/AsepriteCopyCursor.gd")
+## Install original theme cursors only when the pointer is on the timeline, or
+## while a cel drag from the timeline is still in progress.
+const TIMELINE_CURSOR_SHAPES := {
+	Input.CURSOR_ARROW: &"normal",
+	Input.CURSOR_POINTING_HAND: &"hand",
+	Input.CURSOR_MOVE: &"move",
+	Input.CURSOR_DRAG: &"move",
+	Input.CURSOR_CAN_DROP: &"copy",
+	Input.CURSOR_FORBIDDEN: &"forbidden",
+	Input.CURSOR_HSIZE: &"size_we",
+	Input.CURSOR_VSIZE: &"size_ns",
+}
 ## Do not let [member min_cel_size] go below 22, as this is the size of the layer icons.
 const CEL_MIN_SIZE_HARD_LIMIT := 22
 const CEL_MIN_SIZE_OFFSET := 15
@@ -35,8 +41,9 @@ var first_frame := 0
 var animation_canon_frame: int = 0
 var last_frame := 0
 var is_mouse_hover := false
-var _copy_cursor_texture: Texture2D
-var _copy_cursor_active := false
+var _timeline_cursor_textures := {}
+## -1 means native cursor; 0 timeline cursor; 1 move-drag; 2 copy-drag.
+var _timeline_cursor_mode := -1
 var cel_size := 36:
 	set = _cel_size_changed
 var compact_timeline := false
@@ -97,7 +104,7 @@ var global_layer_expand := true
 
 
 func _ready() -> void:
-	_copy_cursor_texture = ASEPRITE_COPY_CURSOR.create_copy_cursor()
+	_timeline_cursor_textures = ASEPRITE_TIMELINE_CURSORS.load_cursors()
 	var layer_properties_dialog := Global.control.find_child("LayerProperties")
 	layer_properties_dialog.layer_property_changed.connect(_update_layer_settings_ui)
 	layer_container.custom_minimum_size.x = layer_settings_container.size.x + 12
@@ -158,54 +165,65 @@ func _ready() -> void:
 	layer.keyframe_unset.connect(_on_layer_keyframe_changed)
 
 
-## Keep Aseprite's actual copy cursor confined to timeline cel copy operations.
-## Polling is intentional: Ctrl/Alt can change without another mouse-motion event,
-## including while a Godot drag-and-drop operation is already in progress.
+## The cursor changes when a modifier is pressed, even if the mouse never moves.
+## Godot drag-and-drop can otherwise continue showing an outdated cursor shape.
 func _process(_delta: float) -> void:
-	if not is_instance_valid(_copy_cursor_texture):
+	if _timeline_cursor_textures.is_empty():
 		return
-	var copy_modifier := Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT)
-	var hovered := get_viewport().gui_get_hovered_control()
-	var copy_hover := false
-	if is_instance_valid(hovered) and is_ancestor_of(hovered):
-		if hovered.has_method("_is_drag_border"):
-			var coords := [int(hovered.get("frame")), int(hovered.get("layer"))]
-			var selected := Global.current_project.selected_cels.has(coords)
-			copy_hover = selected and copy_modifier
-			if copy_hover:
-				hovered.mouse_default_cursor_shape = Control.CURSOR_CAN_DROP
-			else:
-				var local_pos := hovered.get_local_mouse_position()
-				var move_hover := selected and bool(hovered.call("_is_drag_border", local_pos))
-				hovered.mouse_default_cursor_shape = (
-					Control.CURSOR_MOVE if move_hover else Control.CURSOR_POINTING_HAND
-				)
+	var copy_modifier: bool = Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT)
+	var hovered: Control = get_viewport().gui_get_hovered_control()
+	var inside_timeline := is_instance_valid(hovered) and is_ancestor_of(hovered)
+	if inside_timeline and hovered.has_method("_is_drag_border"):
+		# Aseprite uses normal on ordinary cels, move on selection outlines,
+		# and its distinct double-arrow cursor for copies.
+		var coords := [int(hovered.get("frame")), int(hovered.get("layer"))]
+		var selected: bool = Global.current_project.selected_cels.has(coords)
+		if selected and copy_modifier:
+			hovered.mouse_default_cursor_shape = Control.CURSOR_CAN_DROP
+		elif selected and bool(hovered.call("_is_drag_border", hovered.get_local_mouse_position())):
+			hovered.mouse_default_cursor_shape = Control.CURSOR_MOVE
+		else:
+			hovered.mouse_default_cursor_shape = Control.CURSOR_ARROW
 	var drag_data: Variant = null
 	if get_viewport().gui_is_dragging():
 		drag_data = get_viewport().gui_get_drag_data()
-	var copy_drag: bool = (
-		copy_modifier
-		and typeof(drag_data) == TYPE_ARRAY
-		and drag_data.size() > 0
-		and drag_data[0] == "Cel"
-	)
-	_set_copy_cursor_active(copy_hover or copy_drag)
+	var dragging_cels: bool = false
+	if drag_data is Array:
+		var drag_array: Array = drag_data
+		dragging_cels = not drag_array.is_empty() and drag_array[0] == "Cel"
+	var next_mode := -1
+	if dragging_cels:
+		next_mode = 2 if copy_modifier else 1
+	elif inside_timeline:
+		next_mode = 0
+	_set_timeline_cursor_mode(next_mode)
 
 
-func _set_copy_cursor_active(active: bool) -> void:
-	if _copy_cursor_active == active:
+func _set_timeline_cursor_mode(mode: int) -> void:
+	if _timeline_cursor_mode == mode:
 		return
-	_copy_cursor_active = active
-	for cursor_shape: int in COPY_CURSOR_SHAPES:
+	_timeline_cursor_mode = mode
+	for cursor_shape: int in TIMELINE_CURSOR_SHAPES:
+		if mode < 0:
+			Input.set_custom_mouse_cursor(null, cursor_shape)
+			continue
+		var cursor_name: StringName = TIMELINE_CURSOR_SHAPES[cursor_shape]
+		if mode == 2 and cursor_shape in [Input.CURSOR_ARROW, Input.CURSOR_MOVE, Input.CURSOR_DRAG]:
+			cursor_name = &"copy"
+		elif mode == 1 and cursor_shape in [Input.CURSOR_ARROW, Input.CURSOR_MOVE, Input.CURSOR_DRAG]:
+			cursor_name = &"move"
+		var cursor_texture: Texture2D = _timeline_cursor_textures.get(cursor_name)
 		Input.set_custom_mouse_cursor(
-			_copy_cursor_texture if active else null, cursor_shape, Vector2.ZERO
+			cursor_texture,
+			cursor_shape,
+			ASEPRITE_TIMELINE_CURSORS.get_hotspot(cursor_name)
 		)
-	# Refresh immediately when Ctrl/Alt is pressed or released without moving the mouse.
+	# Update without needing to move the pointer after Ctrl/Alt is pressed or released.
 	get_viewport().update_mouse_cursor_state()
 
 
 func _exit_tree() -> void:
-	_set_copy_cursor_active(false)
+	_set_timeline_cursor_mode(-1)
 
 
 func _notification(what: int) -> void:
