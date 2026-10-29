@@ -45,6 +45,11 @@ var _profile_native_skip_reason := ""
 var _native_brush_rows: Dictionary[int, Vector2i] = {}
 var _native_brush_size := -1
 var _native_brush_type := -1
+# Cache up to 16 masks (one per canvas phase) for each size/density pair.
+var _dither_masks: Dictionary[int, Image] = {}
+var _dither_preview_textures: Dictionary[int, ImageTexture] = {}
+var _dither_cached_size := -1
+var _dither_cached_density := -1
 var _circle_tool_shortcut: Array[Vector2i]
 var _mm_action: Keychain.MouseMovementInputAction
 
@@ -206,6 +211,9 @@ func update_brush() -> void:
 					load("res://assets/graphics/circle_filled_9x9.png")
 				)
 				_stroke_dimensions = Vector2.ONE * _brush_size
+			Brushes.DITHER:
+				_brush_texture = ImageTexture.create_from_image(_brush.image)
+				_stroke_dimensions = Vector2.ONE * _brush_size
 			Brushes.FILE, Brushes.RANDOM_FILE, Brushes.CUSTOM:
 				$Brush/BrushSize.suffix = "00 %"  # Use a different size convention on images
 				if _brush.random.size() <= 1:
@@ -364,9 +372,13 @@ func draw_tool(pos: Vector2i) -> void:
 	if _can_use_native_brush():
 		_profile_native_steps += 1
 		var single_point: Array[Vector2i] = [pos]
-		var native_rects := _get_native_brush_rects(single_point)
-		coords_done_us = Time.get_ticks_usec()
-		_paint_native_brush_rects(native_rects)
+		if _brush.type == Brushes.DITHER:
+			coords_done_us = Time.get_ticks_usec()
+			_paint_native_dither_stamps(single_point)
+		else:
+			var native_rects := _get_native_brush_rects(single_point)
+			coords_done_us = Time.get_ticks_usec()
+			_paint_native_brush_rects(native_rects)
 	else:
 		var coords_to_draw := _draw_tool(pos)
 		coords_done_us = Time.get_ticks_usec()
@@ -505,6 +517,8 @@ func _draw_tool(pos: Vector2, draw_brush := true) -> PackedVector2Array:
 			return _compute_draw_tool_circle(pos, false)
 		Brushes.FILLED_CIRCLE:
 			return _compute_draw_tool_circle(pos, true)
+		Brushes.DITHER:
+			return _compute_draw_tool_dither(Vector2i(pos))
 		_:
 			if draw_brush:
 				draw_tool_brush(pos)
@@ -538,9 +552,13 @@ func draw_fill_gap(start: Vector2i, end: Vector2i) -> void:
 	var coords_done_us: int
 	if _can_use_native_brush():
 		_profile_native_steps += 1
-		var native_rects := _get_native_brush_rects(pixel_coords)
-		coords_done_us = Time.get_ticks_usec()
-		_paint_native_brush_rects(native_rects)
+		if _brush.type == Brushes.DITHER:
+			coords_done_us = Time.get_ticks_usec()
+			_paint_native_dither_stamps(pixel_coords)
+		else:
+			var native_rects := _get_native_brush_rects(pixel_coords)
+			coords_done_us = Time.get_ticks_usec()
+			_paint_native_brush_rects(native_rects)
 	else:
 		var coords_to_draw := get_coords_to_draw(pixel_coords)
 		coords_done_us = Time.get_ticks_usec()
@@ -568,7 +586,7 @@ func _can_use_native_brush() -> bool:
 
 ## Keep the reasons visible in the diagnostics so disabled fast paths are debuggable.
 func _native_brush_skip_reason() -> String:
-	if _brush.type not in [Brushes.PIXEL, Brushes.FILLED_CIRCLE]:
+	if _brush.type not in [Brushes.PIXEL, Brushes.FILLED_CIRCLE, Brushes.DITHER]:
 		return "ペン種類"
 	if _brush_size_dynamics < 12:
 		return "サイズ"
@@ -605,9 +623,16 @@ func _native_brush_skip_reason() -> String:
 				return "透明度マスクなし"
 		elif not _is_mask_size_zero:
 			return "透明度マスク"
+	if _brush.type == Brushes.DITHER and not _is_eraser:
+		# The native mask-blit path is an exact overwrite for opaque colors.
+		# Use the normal color operation for translucent or transparent-alpha
+		# effects (other than fully transparent clearing).
+		var dither_alpha := Color(tool_slot.color.to_html()).a
+		if dither_alpha > 0.0 and dither_alpha < 1.0:
+			return "ディザ半透明の通常描画"
 	if Tools.alpha_locked:
 		return "アルファロック"
-	# Pixel Perfect affects drawing only for 1px pencils; large pencils
+	# Pixel Perfect affects drawing only for 1px pencils
 	# already have it disabled in _prepare_tool().
 	if _drawer.pixel_perfect:
 		return "ピクセルパーフェクト"
@@ -799,6 +824,98 @@ func _paint_native_brush_rects(rects: Array[Rect2i]) -> void:
 				)
 			else:
 				image.fill_rect(local_rect, paint_color)
+	_drawer.color_op.changed = true
+
+
+## Retrieve a precomputed stamp mask. The phase anchors the 4x4 Bayer
+## pattern to canvas pixels instead of restarting it at every mouse position.
+func _get_dither_mask(center: Vector2i) -> Image:
+	if _dither_cached_size != _brush_size_dynamics or _dither_cached_density != _brush_density:
+		_dither_masks.clear()
+		_dither_preview_textures.clear()
+		_dither_cached_size = _brush_size_dynamics
+		_dither_cached_density = _brush_density
+	var phase := posmod(center.y, 4) * 4 + posmod(center.x, 4)
+	if _dither_masks.has(phase):
+		return _dither_masks[phase]
+	var size := maxi(1, _brush_size_dynamics)
+	var half := size >> 1
+	var origin := center - Vector2i(half, half)
+	var mask := Image.create_empty(size, size, false, Image.FORMAT_RGBA8)
+	mask.fill(Color.TRANSPARENT)
+	for y in size:
+		for x in size:
+			var local := Vector2i(x, y)
+			if Brushes.ordered_dither_pixel_visible(
+				local, origin + local, size, _brush_density
+			):
+				mask.set_pixel(x, y, Color.WHITE)
+	_dither_masks[phase] = mask
+	return mask
+
+
+func _get_dither_preview_texture(center: Vector2i) -> ImageTexture:
+	var mask := _get_dither_mask(center)
+	var phase := posmod(center.y, 4) * 4 + posmod(center.x, 4)
+	if not _dither_preview_textures.has(phase):
+		_dither_preview_textures[phase] = ImageTexture.create_from_image(mask)
+	return _dither_preview_textures[phase]
+
+
+## Slow-path geometry for selections, alpha lock, translucent colors,
+## and other special settings. Reuses exactly the same Bayer stamp masks.
+func _compute_draw_tool_dither(center: Vector2i) -> PackedVector2Array:
+	var result := PackedVector2Array()
+	var mask := _get_dither_mask(center)
+	var size := mask.get_width()
+	var origin := center - Vector2i.ONE * (size >> 1)
+	for y in size:
+		for x in size:
+			if mask.get_pixel(x, y).a > 0.0:
+				result.append(Vector2(origin + Vector2i(x, y)))
+	return result
+
+
+## Fast path: native masked copying of a single-color source image.
+## This handles opaque paint and fully transparent clears while preserving
+## the exact screen-anchored dot pattern and the surrounding transparent gaps.
+func _paint_native_dither_stamps(centers: Array[Vector2i]) -> void:
+	if centers.is_empty():
+		return
+	var size := maxi(1, _brush_size_dynamics)
+	var half := size >> 1
+	var canvas_rect := Rect2i(Vector2i.ZERO, _stroke_project.size)
+	var has_bounds := false
+	var bounds := Rect2i()
+	for center in centers:
+		var stamp := Rect2i(center - Vector2i.ONE * half, Vector2i.ONE * size)
+		var clipped := stamp.intersection(canvas_rect)
+		if not clipped.has_area():
+			continue
+		if not has_bounds:
+			bounds = clipped
+			has_bounds = true
+		else:
+			bounds = bounds.merge(clipped)
+	if not has_bounds:
+		return
+	var paint_color := Color(tool_slot.color.to_html())
+	if _is_eraser or is_zero_approx(paint_color.a):
+		paint_color = Color.TRANSPARENT
+	var source := Image.create_empty(size, size, false, Image.FORMAT_RGBA8)
+	source.fill(paint_color)
+	for image in _stroke_images:
+		var cel := _stroke_images[image] as PixelCel
+		cel.ensure_canvas_rect_in_bounds(bounds.position, bounds.size)
+		for center in centers:
+			var stamp := Rect2i(center - Vector2i.ONE * half, Vector2i.ONE * size)
+			var clipped := stamp.intersection(canvas_rect)
+			if not clipped.has_area():
+				continue
+			var src_rect := Rect2i(clipped.position - stamp.position, clipped.size)
+			image.blit_rect_mask(
+				source, _get_dither_mask(center), src_rect, clipped.position - cel.offset
+			)
 	_drawer.color_op.changed = true
 
 
@@ -1046,6 +1163,11 @@ func draw_indicator_at(pos: Vector2i, offset: Vector2i, color: Color) -> void:
 			var preview_color := tool_slot.color
 			if _brush.type == Brushes.PIXEL:
 				canvas.draw_rect(Rect2(pos, _indicator.get_size()), preview_color, true)
+			elif _brush.type == Brushes.DITHER:
+				# Preview matches the canvas-anchored Bayer phase at the cursor.
+				var center := pos + Vector2i(_indicator.get_size()) / 2
+				var dither_texture := _get_dither_preview_texture(Vector2i(center))
+				canvas.draw_texture(dither_texture, pos, preview_color)
 			else:
 				var preview_texture := _get_color_preview_texture()
 				if preview_texture != null:
@@ -1108,7 +1230,9 @@ func _set_pixel(pos: Vector2i, ignore_mirroring := false) -> void:
 func _set_pixel_no_cache(pos: Vector2i, ignore_mirroring := false) -> void:
 	if _stroke_project == null:
 		return
-	if randi() % 100 >= _brush_density:
+	# Ordered dithering already tested each pixel against the fixed Bayer
+	# pattern while constructing the mask; never add random density here.
+	if _brush.type != Brushes.DITHER and randi() % 100 >= _brush_density:
 		return
 	pos = _stroke_project.tiles.get_canon_position(pos)
 	if _stroke_project.has_selection:
@@ -1236,6 +1360,8 @@ func _create_brush_indicator() -> BitMap:
 			return _create_circle_indicator(_brush_size_dynamics, false)
 		Brushes.FILLED_CIRCLE:
 			return _create_circle_indicator(_brush_size_dynamics, true)
+		Brushes.DITHER:
+			return _create_pixel_indicator(_brush_size_dynamics)
 		_:
 			return _create_image_indicator(_brush_image)
 
