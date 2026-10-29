@@ -50,12 +50,14 @@ var _dither_masks: Dictionary[int, Image] = {}
 var _dither_preview_textures: Dictionary[int, ImageTexture] = {}
 var _dither_cached_size := -1
 var _dither_cached_density := -1
-## Precomputed per-phase RGBA8 mask bytes for fast alpha-mask construction.
-var _dither_mask_bytes: Dictionary[int, PackedByteArray] = {}
-## Reuse one native alpha mask while visiting all dabs in a single paint event.
-var _dither_novel_mask: Image
-var _dither_novel_mask_bytes := PackedByteArray()
-var _dither_novel_mask_size := -1
+## Accumulated stroke coverage. Build the union of Bayer stamps using
+## native image blits rather than scanning all pixels in GDScript.
+var _dither_stroke_coverage: Image
+## Original image + canvas offset captured on the first translucent dab.
+## The originals let overlapping stamps composite only once per stroke.
+var _dither_stroke_baselines: Dictionary[Image, Dictionary] = {}
+var _dither_batch_source: Image
+var _dither_batch_source_color := Color(-1.0, -1.0, -1.0, -1.0)
 ## The regular dither paint source is a single flat color. Keep its backing Image
 ## across mouse-move events instead of allocating/filling size² pixels per dab.
 var _dither_paint_source: Image
@@ -365,6 +367,8 @@ func draw_start(pos: Vector2i) -> void:
 	_profile_paint_us = 0
 	_profile_native_steps = 0
 	_profile_native_skip_reason = ""
+	_dither_stroke_coverage = null
+	_dither_stroke_baselines.clear()
 	Global.canvas.begin_brush_profile()
 
 
@@ -424,6 +428,8 @@ func draw_end(pos: Vector2i) -> void:
 			"ms/回 (", profile.layers_calls, "回)"
 		)
 	super.draw_end(pos)
+	_dither_stroke_coverage = null
+	_dither_stroke_baselines.clear()
 	_stroke_project = null
 	_stroke_images = {}
 	drawing_on_3d_node = null
@@ -846,7 +852,6 @@ func _paint_native_brush_rects(rects: Array[Rect2i]) -> void:
 func _get_dither_mask(center: Vector2i) -> Image:
 	if _dither_cached_size != _brush_size_dynamics or _dither_cached_density != _brush_density:
 		_dither_masks.clear()
-		_dither_mask_bytes.clear()
 		_dither_preview_textures.clear()
 		_dither_cached_size = _brush_size_dynamics
 		_dither_cached_density = _brush_density
@@ -866,7 +871,6 @@ func _get_dither_mask(center: Vector2i) -> Image:
 			):
 				mask.set_pixel(x, y, Color.WHITE)
 	_dither_masks[phase] = mask
-	_dither_mask_bytes[phase] = mask.get_data()
 	return mask
 
 
@@ -936,7 +940,9 @@ func _paint_native_dither_stamps(centers: Array[Vector2i]) -> void:
 		var cel := _stroke_images[image] as PixelCel
 		cel.ensure_canvas_rect_in_bounds(bounds.position, bounds.size)
 	if blend_translucent:
-		_paint_native_translucent_dither(centers, size, half, canvas_rect)
+		_paint_native_translucent_dither(
+			centers, size, half, canvas_rect, bounds, paint_color
+		)
 	else:
 		for image in _stroke_images:
 			var cel := _stroke_images[image] as PixelCel
@@ -953,59 +959,78 @@ func _paint_native_dither_stamps(centers: Array[Vector2i]) -> void:
 	_drawer.color_op.changed = true
 
 
-## With translucent dither paint, every dot must be alpha-composited only on
-## its first appearance in the stroke (the original per-pixel _mask contract).
-## Build an RGBA8 novelty mask directly from cached Bayer bytes + stroke mask,
-## then let Godot blend all newly touched pixels in one native blit per dab.
+## Alpha-composite the union of all Bayer dabs once per stroke. Previously
+## the translucent fast path still visited up to 10,000 GDScript pixels for
+## each 100px dab. Here all per-pixel work happens in Godot's native Image API:
+## 1. Build an accumulated RGBA coverage mask using blit_rect_mask.
+## 2. Restore the original pixels for the affected bounds.
+## 3. Alpha-blend the solid source only once, masked by accumulated coverage.
+## Restoring original pixels matters: just blend_rect_mask on every dab would
+## darken overlapping semi-transparent dots during the same mouse stroke.
 func _paint_native_translucent_dither(
-	centers: Array[Vector2i], size: int, half: int, canvas_rect: Rect2i
+	centers: Array[Vector2i],
+	size: int,
+	half: int,
+	canvas_rect: Rect2i,
+	bounds: Rect2i,
+	paint_color: Color
 ) -> void:
-	if not is_instance_valid(_dither_novel_mask) or _dither_novel_mask_size != size:
-		_dither_novel_mask = Image.create_empty(size, size, false, Image.FORMAT_RGBA8)
-		_dither_novel_mask_size = size
-		_dither_novel_mask_bytes.resize(size * size * 4)
-	var canvas_width := _stroke_project.size.x
-	var alpha_dynamic := Tools.get_alpha_dynamic()
+	if not is_instance_valid(_dither_stroke_coverage):
+		_dither_stroke_coverage = Image.create_empty(
+			_stroke_project.size.x, _stroke_project.size.y, false, Image.FORMAT_RGBA8
+		)
+		_dither_stroke_coverage.fill(Color.TRANSPARENT)
+		# Save each cel before this stroke's first paint; later resized cels may
+		# have moved their offsets, but the original pixels must stay unchanged.
+		for image in _stroke_images:
+			var cel := _stroke_images[image] as PixelCel
+			_dither_stroke_baselines[image] = {
+				"image": image.duplicate(),
+				"offset": cel.offset,
+			}
+	# A coverage image is a union of masked native blits. Reading from the
+	# same Bayer image as source and mask is safe: both are read-only here.
 	for center in centers:
 		var stamp := Rect2i(center - Vector2i.ONE * half, Vector2i.ONE * size)
 		var clipped := stamp.intersection(canvas_rect)
 		if not clipped.has_area():
 			continue
-		# Ensure the cached alpha bytes for this phase are populated.
-		_get_dither_mask(center)
-		var phase := posmod(center.y, 4) * 4 + posmod(center.x, 4)
-		var phase_bytes: PackedByteArray = _dither_mask_bytes[phase]
-		_dither_novel_mask_bytes.fill(0)
-		var has_new_dots := false
-		var rel := clipped.position - stamp.position
-		for y in clipped.size.y:
-			var mask_y := y + rel.y
-			var canvas_y := y + clipped.position.y
-			var canvas_row := canvas_y * canvas_width
-			for x in clipped.size.x:
-				var mask_x := x + rel.x
-				var pixel_offset := (mask_y * size + mask_x) * 4 + 3
-				if phase_bytes[pixel_offset] == 0:
-					continue
-				var stroke_index := canvas_row + clipped.position.x + x
-				if _mask[stroke_index] >= alpha_dynamic:
-					continue
-				_mask[stroke_index] = alpha_dynamic
-				_dither_novel_mask_bytes[pixel_offset] = 255
-				has_new_dots = true
-		if not has_new_dots:
-			continue
-		_dither_novel_mask.set_data(
-			size, size, false, Image.FORMAT_RGBA8, _dither_novel_mask_bytes
+		var dither_mask := _get_dither_mask(center)
+		var src_rect := Rect2i(clipped.position - stamp.position, clipped.size)
+		_dither_stroke_coverage.blit_rect_mask(
+			dither_mask, dither_mask, src_rect, clipped.position
 		)
-		var src_rect := Rect2i(rel, clipped.size)
-		for image in _stroke_images:
-			var cel := _stroke_images[image] as PixelCel
-			image.blend_rect_mask(
-				_dither_paint_source, _dither_novel_mask, src_rect,
-				clipped.position - cel.offset
+	# A single mask extraction / native blend handles every dab of this event.
+	var union_mask := _dither_stroke_coverage.get_region(bounds)
+	if not is_instance_valid(_dither_batch_source) or _dither_batch_source.get_size() != bounds.size:
+		_dither_batch_source = Image.create_empty(
+			bounds.size.x, bounds.size.y, false, Image.FORMAT_RGBA8
+		)
+		_dither_batch_source_color = Color(-1.0, -1.0, -1.0, -1.0)
+	if _dither_batch_source_color != paint_color:
+		_dither_batch_source.fill(paint_color)
+		_dither_batch_source_color = paint_color
+	var local_src_rect := Rect2i(Vector2i.ZERO, bounds.size)
+	for image in _stroke_images:
+		var cel := _stroke_images[image] as PixelCel
+		var saved: Dictionary = _dither_stroke_baselines[image]
+		var original: Image = saved["image"]
+		var original_offset: Vector2i = saved["offset"]
+		var local_dst := bounds.position - cel.offset
+		# Restore to the beginning-of-stroke state before applying the union.
+		# Areas outside the original image must be transparent.
+		image.fill_rect(Rect2i(local_dst, bounds.size), Color.TRANSPARENT)
+		var original_bounds := Rect2i(original_offset, original.get_size())
+		var overlap := bounds.intersection(original_bounds)
+		if overlap.has_area():
+			image.blit_rect(
+				original,
+				Rect2i(overlap.position - original_offset, overlap.size),
+				overlap.position - cel.offset
 			)
-
+		image.blend_rect_mask(
+			_dither_batch_source, union_mask, local_src_rect, local_dst
+		)
 
 func get_coords_to_draw(points: Array[Vector2i], draw_brush := true) -> PackedVector2Array:
 	if _brush_size_dynamics == 1 and not _spacing_mode and not is_image_brush():
