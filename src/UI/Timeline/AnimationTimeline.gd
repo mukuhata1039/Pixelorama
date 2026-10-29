@@ -26,10 +26,9 @@ const RANGE_OUTLINE_COLOR := Color("d1c275")
 ## Aseprite's range outline includes a row/column header only when the
 ## selection was started by clicking a layer/frame header.
 var range_selection_source := RangeSelectionSource.CELLS
-## The blue row/column guides reflect only the current editing layer
-## and frame, regardless of how many cels are selected for range operations.
-## Selecting an entire row must not blue-highlight every frame column, and
-## selecting an entire column must not blue-highlight every layer row.
+## Blue guides follow the selected rows/columns for a cel-rectangle range.
+## Header-originated row/column selection highlights only that axis and the
+## current frame/layer on the other axis, as shown in Aseprite's timeline.
 var range_guide_layers: Dictionary[int, bool] = {}
 var range_guide_frames: Dictionary[int, bool] = {}
 var is_animation_running := false
@@ -152,6 +151,10 @@ func _ready() -> void:
 	Global.project_switched.connect(_on_project_switched)
 	Global.cel_switched.connect(_cel_switched)
 	Themes.theme_switched.connect(_refresh_timeline_selection_appearance)
+	# The drag rectangle is an outline, not a translucent blue fill. The
+	# ColorRect supplies its geometry while its draw signal paints the edge.
+	selection_drag_highlight.color = Color.TRANSPARENT
+	selection_drag_highlight.draw.connect(_draw_selection_drag_outline)
 	# Makes sure that the frame and tag scroll bars are in the right place:
 	layer_vbox.emit_signal.call_deferred("resized")
 	drag_highlight.visibility_changed.connect(clear_highlight)
@@ -203,6 +206,21 @@ func _exit_tree() -> void:
 		"set_timeline_cel_drag_cursor"
 	):
 		Global.control.call("set_timeline_cel_drag_cursor", -1)
+
+
+## Unlike a filled ColorRect this preview does not hide the cel grid,
+## thumbnails or contents while a range is being dragged.
+func _draw_selection_drag_outline() -> void:
+	var rect_size := selection_drag_highlight.size
+	if rect_size.x <= 1.0 or rect_size.y <= 1.0:
+		return
+	selection_drag_highlight.draw_rect(
+		Rect2(Vector2(0.5, 0.5), rect_size - Vector2.ONE),
+		RANGE_OUTLINE_COLOR,
+		false,
+		1.0,
+		false
+	)
 
 
 func _notification(what: int) -> void:
@@ -1622,12 +1640,29 @@ func _refresh_timeline_selection_appearance() -> void:
 		var frame_index: int = cel_index[0]
 		var layer_index: int = cel_index[1]
 		selected[Vector2i(frame_index, layer_index)] = true
-	# The selection perimeter comes from selected_cels, but the blue
-	# axes are strictly the currently editable frame and layer.
+	# Aseprite's range-selection guides differ from selecting a full
+	# header row/column. A cel rectangle highlights *all* intersecting
+	# layer and frame headers; a layer-header range highlights its rows
+	# plus the currently editable frame, and vice versa for frame headers.
 	range_guide_layers.clear()
 	range_guide_frames.clear()
-	range_guide_layers[project.current_layer] = true
-	range_guide_frames[project.current_frame] = true
+	match range_selection_source:
+		RangeSelectionSource.CELLS:
+			for cel_index in project.selected_cels:
+				range_guide_frames[int(cel_index[0])] = true
+				range_guide_layers[int(cel_index[1])] = true
+		RangeSelectionSource.LAYERS:
+			for cel_index in project.selected_cels:
+				range_guide_layers[int(cel_index[1])] = true
+		RangeSelectionSource.FRAMES:
+			for cel_index in project.selected_cels:
+				range_guide_frames[int(cel_index[0])] = true
+	# Preserve the active editing position on the axis not included in
+	# a header range, and when no range has been selected.
+	if range_selection_source == RangeSelectionSource.LAYERS or range_guide_frames.is_empty():
+		range_guide_frames[project.current_frame] = true
+	if range_selection_source == RangeSelectionSource.FRAMES or range_guide_layers.is_empty():
+		range_guide_layers[project.current_layer] = true
 	var selected_rows: Dictionary[int, bool] = {}
 	var selected_columns: Dictionary[int, bool] = {}
 	if range_selection_source == RangeSelectionSource.LAYERS:
