@@ -1562,6 +1562,20 @@ func _on_project_switched() -> void:
 # Methods to update the UI in response to changes in the current project
 
 
+## Keep the enum internal: callers should not access a script enum through
+## a scene instance, which Godot's type checker does not always allow.
+func select_cel_range_source() -> void:
+	range_selection_source = RangeSelectionSource.CELLS
+
+
+func select_layer_range_source() -> void:
+	range_selection_source = RangeSelectionSource.LAYERS
+
+
+func select_frame_range_source() -> void:
+	range_selection_source = RangeSelectionSource.FRAMES
+
+
 ## Render the active row, active column and timeline range independently.
 ## Ranges started from the layer/frame header also include that header inside
 ## the single outline, as Aseprite does.
