@@ -1,0 +1,819 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: Keychain Japanese\n"
+"Language: ja_JP\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+# Keychain UI labels, grouped settings, and Pixelorama shortcut action names.
+# Action IDs are left untouched; only their visible names are translated.
+msgid "OK"
+msgstr "OK"
+
+msgid "Cancel"
+msgstr "キャンセル"
+
+msgid "Add"
+msgstr "追加"
+
+msgid "Edit"
+msgstr "編集"
+
+msgid "Delete"
+msgstr "削除"
+
+msgid "Shortcut profile:"
+msgstr "ショートカットのプロファイル:"
+
+msgid "Default"
+msgstr "既定"
+
+msgid "Custom"
+msgstr "カスタム"
+
+msgid "New"
+msgstr "新規"
+
+msgid "Reset"
+msgstr "リセット"
+
+msgid "Rename"
+msgstr "名前の変更"
+
+msgid "Open Folder"
+msgstr "フォルダーを開く"
+
+msgid "New Shortcut Profile"
+msgstr "新しいショートカットプロファイル"
+
+msgid "Rename Shortcut Profile"
+msgstr "ショートカットプロファイル名の変更"
+
+msgid "Are you sure you want to delete this shortcut profile?"
+msgstr "このショートカットプロファイルを削除しますか？"
+
+msgid "Are you sure you want to restore all shortcuts to their default settings?"
+msgstr "すべてのショートカットを既定の設定に戻しますか？"
+
+msgid "Key"
+msgstr "キー"
+
+msgid "Mouse Button"
+msgstr "マウスボタン"
+
+msgid "Joy Button"
+msgstr "ゲームパッドのボタン"
+
+msgid "Joy Axis"
+msgstr "ゲームパッドの軸"
+
+msgid "Button"
+msgstr "ボタン"
+
+msgid "Axis"
+msgstr "軸"
+
+msgid "(Physical)"
+msgstr "（物理キー）"
+
+msgid "Set the shortcut"
+msgstr "ショートカットを設定"
+
+msgid "Press a key or a key combination to set the shortcut"
+msgstr "キーまたはキーの組み合わせを押してショートカットを設定します"
+
+msgid "Mouse Button Index:"
+msgstr "マウスボタン番号:"
+
+msgid "Joypad Button Index:"
+msgstr "ゲームパッドのボタン番号:"
+
+msgid "Joypad Axis Index:"
+msgstr "ゲームパッドの軸番号:"
+
+msgid "Already assigned to: %s"
+msgstr "すでに割り当てられています: %s"
+
+msgid "Left Button"
+msgstr "左ボタン"
+
+msgid "Right Button"
+msgstr "右ボタン"
+
+msgid "Middle Button"
+msgstr "中央ボタン"
+
+msgid "Wheel Up Button"
+msgstr "ホイール上"
+
+msgid "Wheel Down Button"
+msgstr "ホイール下"
+
+msgid "Wheel Left Button"
+msgstr "ホイール左"
+
+msgid "Wheel Right Button"
+msgstr "ホイール右"
+
+msgid "Mouse Thumb Button 1"
+msgstr "マウスのサイドボタン1"
+
+msgid "Mouse Thumb Button 2"
+msgstr "マウスのサイドボタン2"
+
+msgid "DualShock Cross, Xbox A, Nintendo B"
+msgstr "DualShock ×、Xbox A、Nintendo B"
+
+msgid "DualShock Circle, Xbox B, Nintendo A"
+msgstr "DualShock ○、Xbox B、Nintendo A"
+
+msgid "DualShock Square, Xbox X, Nintendo Y"
+msgstr "DualShock □、Xbox X、Nintendo Y"
+
+msgid "DualShock Triangle, Xbox Y, Nintendo X"
+msgstr "DualShock △、Xbox Y、Nintendo X"
+
+msgid "L, L1"
+msgstr "L / L1"
+
+msgid "R, R1"
+msgstr "R / R1"
+
+msgid "L2"
+msgstr "L2"
+
+msgid "R2"
+msgstr "R2"
+
+msgid "L3"
+msgstr "L3"
+
+msgid "R3"
+msgstr "R3"
+
+msgid "Select, DualShock Share, Nintendo -"
+msgstr "Select / DualShock Share / Nintendo −"
+
+msgid "Start, DualShock Options, Nintendo +"
+msgstr "Start / DualShock Options / Nintendo ＋"
+
+msgid "D-Pad Up"
+msgstr "十字キー上"
+
+msgid "D-Pad Down"
+msgstr "十字キー下"
+
+msgid "D-Pad Left"
+msgstr "十字キー左"
+
+msgid "D-Pad Right"
+msgstr "十字キー右"
+
+msgid "Home, DualShock PS, Guide"
+msgstr "Home / DualShock PS / Guide"
+
+msgid "Xbox Share, PS5 Microphone, Nintendo Capture"
+msgstr "Xbox Share / PS5 マイク / Nintendo キャプチャ"
+
+msgid "Xbox Paddle 1"
+msgstr "Xbox 背面ボタン1"
+
+msgid "Xbox Paddle 2"
+msgstr "Xbox 背面ボタン2"
+
+msgid "Xbox Paddle 3"
+msgstr "Xbox 背面ボタン3"
+
+msgid "Xbox Paddle 4"
+msgstr "Xbox 背面ボタン4"
+
+msgid "PS4/5 Touchpad"
+msgstr "PS4/5 タッチパッド"
+
+msgid "(Left Stick Left)"
+msgstr "（左スティック左）"
+
+msgid "(Left Stick Right)"
+msgstr "（左スティック右）"
+
+msgid "(Left Stick Up)"
+msgstr "（左スティック上）"
+
+msgid "(Left Stick Down)"
+msgstr "（左スティック下）"
+
+msgid "(Right Stick Left)"
+msgstr "（右スティック左）"
+
+msgid "(Right Stick Right)"
+msgstr "（右スティック右）"
+
+msgid "(Right Stick Up)"
+msgstr "（右スティック上）"
+
+msgid "(Right Stick Down)"
+msgstr "（右スティック下）"
+
+msgid "(L2)"
+msgstr "（L2）"
+
+msgid "(R2)"
+msgstr "（R2）"
+
+msgid "Filter by name"
+msgstr "名前で検索"
+
+msgid "Filter by shortcut"
+msgstr "ショートカットで検索"
+
+msgid "Clear all"
+msgstr "検索条件をクリア"
+
+msgid "Angle:"
+msgstr "角度:"
+
+msgid "Sensitivity:"
+msgstr "感度:"
+
+msgid "Command / Control (auto)"
+msgstr "Command / Ctrl（自動判定）"
+
+msgid "Canvas"
+msgstr "キャンバス"
+
+msgid "Cursor movement"
+msgstr "カーソル移動"
+
+msgid "Reference images"
+msgstr "参照画像"
+
+msgid "Timeline"
+msgstr "タイムライン"
+
+msgid "Global tool options"
+msgstr "共通ツール設定"
+
+msgid "Palettes"
+msgstr "パレット"
+
+msgid "Tools"
+msgstr "ツール"
+
+msgid "Left"
+msgstr "左ツール"
+
+msgid "Right"
+msgstr "右ツール"
+
+msgid "Quick tools"
+msgstr "一時切り替えツール"
+
+msgid "Menu"
+msgstr "メニュー"
+
+msgid "File menu"
+msgstr "ファイルメニュー"
+
+msgid "Edit menu"
+msgstr "編集メニュー"
+
+msgid "View menu"
+msgstr "表示メニュー"
+
+msgid "Select menu"
+msgstr "選択メニュー"
+
+msgid "Image menu"
+msgstr "画像メニュー"
+
+msgid "Effects menu"
+msgstr "エフェクトメニュー"
+
+msgid "Window menu"
+msgstr "ウィンドウメニュー"
+
+msgid "Help menu"
+msgstr "ヘルプメニュー"
+
+msgid "Tool modifiers"
+msgstr "ツール補助操作"
+
+msgid "Draw tools"
+msgstr "描画ツール"
+
+msgid "Shape tools"
+msgstr "図形ツール"
+
+msgid "Selection tools"
+msgstr "選択ツール"
+
+msgid "Transformation tools"
+msgstr "変形ツール"
+
+msgid "Tileset panel"
+msgstr "タイルセットパネル"
+
+msgid "Mouse drag"
+msgstr "マウスドラッグ"
+
+msgid "3D Shape Edit"
+msgstr "3D図形の編集"
+
+msgid "Crop"
+msgstr "切り抜き"
+
+msgid "Text"
+msgstr "テキスト"
+
+msgid "Ordered Dither"
+msgstr "規則ディザ"
+
+msgid "Tiles Property Painter"
+msgstr "タイル設定ペインター"
+
+msgid "Shortcut action: zoom_in"
+msgstr "拡大"
+
+msgid "Shortcut action: zoom_out"
+msgstr "縮小"
+
+msgid "Shortcut action: canvas_rotate_drag"
+msgstr "ドラッグでキャンバスを回転"
+
+msgid "Shortcut action: canvas_rotate_step_left"
+msgstr "キャンバスを左に一定角度回転"
+
+msgid "Shortcut action: canvas_rotate_step_right"
+msgstr "キャンバスを右に一定角度回転"
+
+msgid "Shortcut action: canvas_rotate_reset"
+msgstr "キャンバスの回転をリセット"
+
+msgid "Shortcut action: rotate_left"
+msgstr "左に回転"
+
+msgid "Shortcut action: rotate_right"
+msgstr "右に回転"
+
+msgid "Shortcut action: copy"
+msgstr "コピー"
+
+msgid "Shortcut action: cut"
+msgstr "切り取り"
+
+msgid "Shortcut action: paste"
+msgstr "貼り付け"
+
+msgid "Shortcut action: paste_in_place"
+msgstr "同じ位置に貼り付け"
+
+msgid "Shortcut action: paste_from_clipboard"
+msgstr "クリップボードから貼り付け"
+
+msgid "Shortcut action: delete"
+msgstr "削除"
+
+msgid "Shortcut action: toggle_fullscreen"
+msgstr "全画面表示の切り替え"
+
+msgid "Shortcut action: pan"
+msgstr "キャンバスの移動"
+
+msgid "Shortcut action: new_file"
+msgstr "新規ファイル"
+
+msgid "Shortcut action: open_file"
+msgstr "ファイルを開く"
+
+msgid "Shortcut action: close_project"
+msgstr "プロジェクトを閉じる"
+
+msgid "Shortcut action: save_file"
+msgstr "ファイルを保存"
+
+msgid "Shortcut action: save_file_as"
+msgstr "名前を付けて保存"
+
+msgid "Shortcut action: export_file"
+msgstr "エクスポート"
+
+msgid "Shortcut action: export_file_as"
+msgstr "名前を付けてエクスポート"
+
+msgid "Shortcut action: quit"
+msgstr "終了"
+
+msgid "Shortcut action: undo"
+msgstr "元に戻す"
+
+msgid "Shortcut action: redo"
+msgstr "やり直す"
+
+msgid "Shortcut action: show_grid"
+msgstr "グリッドを表示"
+
+msgid "Shortcut action: show_rulers"
+msgstr "ルーラーを表示"
+
+msgid "Shortcut action: show_guides"
+msgstr "ガイドを表示"
+
+msgid "Shortcut action: switch_colors"
+msgstr "描画色を入れ替える"
+
+msgid "Shortcut action: go_to_first_frame"
+msgstr "最初のフレームへ"
+
+msgid "Shortcut action: go_to_last_frame"
+msgstr "最後のフレームへ"
+
+msgid "Shortcut action: go_to_previous_frame"
+msgstr "前のフレームへ"
+
+msgid "Shortcut action: go_to_next_frame"
+msgstr "次のフレームへ"
+
+msgid "Shortcut action: play_backwards"
+msgstr "逆再生"
+
+msgid "Shortcut action: play_forward"
+msgstr "順再生"
+
+msgid "Shortcut action: zen_mode"
+msgstr "集中モード"
+
+msgid "Shortcut action: open_docs"
+msgstr "ドキュメントを開く"
+
+msgid "Shortcut action: mirror_view"
+msgstr "左右反転表示"
+
+msgid "Shortcut action: swap_tools"
+msgstr "左右のツールを入れ替える"
+
+msgid "Shortcut action: show_pixel_grid"
+msgstr "ピクセルグリッドを表示"
+
+msgid "Shortcut action: clear_selection"
+msgstr "選択解除"
+
+msgid "Shortcut action: select_cel_area"
+msgstr "セルの領域を選択"
+
+msgid "Shortcut action: select_all"
+msgstr "すべて選択"
+
+msgid "Shortcut action: invert_selection"
+msgstr "選択範囲を反転"
+
+msgid "Shortcut action: transformation_confirm"
+msgstr "変形を確定"
+
+msgid "Shortcut action: transformation_cancel"
+msgstr "変形をキャンセル"
+
+msgid "Shortcut action: new_brush"
+msgstr "新しいブラシを作成"
+
+msgid "Shortcut action: moveable_panels"
+msgstr "パネルの移動を切り替える"
+
+msgid "Shortcut action: change_tool_mode"
+msgstr "ツールモードを切り替える"
+
+msgid "Shortcut action: draw_create_line"
+msgstr "直線を描画"
+
+msgid "Shortcut action: draw_snap_angle"
+msgstr "描画角度をスナップ"
+
+msgid "Shortcut action: shape_perfect"
+msgstr "図形の縦横比を固定"
+
+msgid "Shortcut action: shape_center"
+msgstr "中心から図形を描画"
+
+msgid "Shortcut action: shape_displace"
+msgstr "図形の起点を移動"
+
+msgid "Shortcut action: selection_add"
+msgstr "選択範囲に追加"
+
+msgid "Shortcut action: selection_subtract"
+msgstr "選択範囲から除外"
+
+msgid "Shortcut action: selection_intersect"
+msgstr "選択範囲の共通部分を取る"
+
+msgid "Shortcut action: transform_snap_axis"
+msgstr "変形を軸にスナップ"
+
+msgid "Shortcut action: transform_snap_grid"
+msgstr "変形をグリッドにスナップ"
+
+msgid "Shortcut action: transform_move_selection_only"
+msgstr "選択範囲のみ移動"
+
+msgid "Shortcut action: transform_copy_selection_content"
+msgstr "選択内容を複製して変形"
+
+msgid "Shortcut action: camera_left"
+msgstr "カメラを左へ"
+
+msgid "Shortcut action: camera_right"
+msgstr "カメラを右へ"
+
+msgid "Shortcut action: camera_up"
+msgstr "カメラを上へ"
+
+msgid "Shortcut action: camera_down"
+msgstr "カメラを下へ"
+
+msgid "Shortcut action: move_mouse_left"
+msgstr "カーソルを左へ"
+
+msgid "Shortcut action: move_mouse_right"
+msgstr "カーソルを右へ"
+
+msgid "Shortcut action: move_mouse_up"
+msgstr "カーソルを上へ"
+
+msgid "Shortcut action: move_mouse_down"
+msgstr "カーソルを下へ"
+
+msgid "Shortcut action: activate_left_tool"
+msgstr "左ツールを使用"
+
+msgid "Shortcut action: activate_right_tool"
+msgstr "右ツールを使用"
+
+msgid "Shortcut action: open_last_project"
+msgstr "前回のプロジェクトを開く"
+
+msgid "Shortcut action: preferences"
+msgstr "設定を開く"
+
+msgid "Shortcut action: resize_canvas"
+msgstr "キャンバスサイズを変更"
+
+msgid "Shortcut action: reapply_last_effect"
+msgstr "直前のエフェクトを再適用"
+
+msgid "Shortcut action: offset_image"
+msgstr "画像をオフセット"
+
+msgid "Shortcut action: scale_image"
+msgstr "画像を拡大・縮小"
+
+msgid "Shortcut action: crop_to_selection"
+msgstr "選択範囲に合わせて切り抜く"
+
+msgid "Shortcut action: crop_to_content"
+msgstr "内容に合わせて切り抜く"
+
+msgid "Shortcut action: mirror_image"
+msgstr "画像を反転"
+
+msgid "Shortcut action: rotate_image"
+msgstr "画像を回転"
+
+msgid "Shortcut action: invert_colors"
+msgstr "色を反転"
+
+msgid "Shortcut action: desaturation"
+msgstr "彩度を除去"
+
+msgid "Shortcut action: outline"
+msgstr "輪郭線"
+
+msgid "Shortcut action: drop_shadow"
+msgstr "ドロップシャドウ"
+
+msgid "Shortcut action: adjust_hsv"
+msgstr "HSVを調整"
+
+msgid "Shortcut action: adjust_brightness_contrast"
+msgstr "明るさ・コントラストを調整"
+
+msgid "Shortcut action: color_curves"
+msgstr "カラーカーブ"
+
+msgid "Shortcut action: gradient"
+msgstr "グラデーション"
+
+msgid "Shortcut action: gradient_map"
+msgstr "グラデーションマップ"
+
+msgid "Shortcut action: posterize"
+msgstr "ポスタリゼーション"
+
+msgid "Shortcut action: display_layer_effects"
+msgstr "レイヤー効果を表示"
+
+msgid "Shortcut action: view_splash_screen"
+msgstr "起動画面を表示"
+
+msgid "Shortcut action: issue_tracker"
+msgstr "問題報告ページを開く"
+
+msgid "Shortcut action: open_editor_data_folder"
+msgstr "アプリのデータフォルダーを開く"
+
+msgid "Shortcut action: changelog"
+msgstr "更新履歴"
+
+msgid "Shortcut action: about_pixelorama"
+msgstr "Pixeloramaについて"
+
+msgid "Shortcut action: brush_size_increment"
+msgstr "ブラシサイズを大きくする"
+
+msgid "Shortcut action: brush_size_decrement"
+msgstr "ブラシサイズを小さくする"
+
+msgid "Shortcut action: rename_layer"
+msgstr "レイヤー名を変更"
+
+msgid "Shortcut action: new_layer"
+msgstr "新しいレイヤー"
+
+msgid "Shortcut action: remove_layer"
+msgstr "レイヤーを削除"
+
+msgid "Shortcut action: move_layer_up"
+msgstr "レイヤーを上へ移動"
+
+msgid "Shortcut action: move_layer_down"
+msgstr "レイヤーを下へ移動"
+
+msgid "Shortcut action: clone_layer"
+msgstr "レイヤーを複製"
+
+msgid "Shortcut action: merge_down_layer"
+msgstr "下のレイヤーと結合"
+
+msgid "Shortcut action: add_frame"
+msgstr "フレームを追加"
+
+msgid "Shortcut action: remove_frame"
+msgstr "フレームを削除"
+
+msgid "Shortcut action: clone_frame"
+msgstr "フレームを複製"
+
+msgid "Shortcut action: clone_cel"
+msgstr "セルを複製"
+
+msgid "Shortcut action: move_frame_left"
+msgstr "フレームを左へ移動"
+
+msgid "Shortcut action: move_frame_right"
+msgstr "フレームを右へ移動"
+
+msgid "Shortcut action: reset_colors_default"
+msgstr "描画色を初期値に戻す"
+
+msgid "Shortcut action: horizontal_mirror"
+msgstr "左右対称描画"
+
+msgid "Shortcut action: vertical_mirror"
+msgstr "上下対称描画"
+
+msgid "Shortcut action: pixel_perfect"
+msgstr "ピクセルパーフェクト"
+
+msgid "Shortcut action: new_palette"
+msgstr "パレットを作成"
+
+msgid "Shortcut action: edit_palette"
+msgstr "パレットを編集"
+
+msgid "Shortcut action: onion_skinning_toggle"
+msgstr "オニオンスキンの切り替え"
+
+msgid "Shortcut action: loop_toggle"
+msgstr "ループ再生の切り替え"
+
+msgid "Shortcut action: onion_skinning_settings"
+msgstr "オニオンスキン設定"
+
+msgid "Shortcut action: reference_rotate"
+msgstr "参照画像を回転"
+
+msgid "Shortcut action: reference_scale"
+msgstr "参照画像を拡大・縮小"
+
+msgid "Shortcut action: reference_quick_menu"
+msgstr "参照画像のクイックメニュー"
+
+msgid "Shortcut action: cancel_reference_transform"
+msgstr "参照画像の変形をキャンセル"
+
+msgid "Shortcut action: project_properties"
+msgstr "プロジェクトの設定"
+
+msgid "Shortcut action: palettize"
+msgstr "パレット化"
+
+msgid "Shortcut action: pixelize"
+msgstr "ピクセル化"
+
+msgid "Shortcut action: go_to_previous_frame_with_same_tag"
+msgstr "同じタグの前のフレームへ"
+
+msgid "Shortcut action: go_to_previous_layer"
+msgstr "前のレイヤーへ"
+
+msgid "Shortcut action: go_to_next_frame_with_same_tag"
+msgstr "同じタグの次のフレームへ"
+
+msgid "Shortcut action: go_to_next_layer"
+msgstr "次のレイヤーへ"
+
+msgid "Shortcut action: alpha_lock"
+msgstr "アルファロック"
+
+msgid "Shortcut action: change_layer_automatically"
+msgstr "レイヤーの自動切り替え"
+
+msgid "Shortcut action: gaussian_blur"
+msgstr "ガウスぼかし"
+
+msgid "Shortcut action: next_project"
+msgstr "次のプロジェクトへ"
+
+msgid "Shortcut action: previous_project"
+msgstr "前のプロジェクトへ"
+
+msgid "Shortcut action: center_canvas"
+msgstr "キャンバスを中央に表示"
+
+msgid "Shortcut action: show_pixel_indices"
+msgstr "ピクセル番号を表示"
+
+msgid "Shortcut action: toggle_draw_tiles_mode"
+msgstr "タイル描画モードを切り替える"
+
+msgid "Shortcut action: tile_edit_mode_manual"
+msgstr "タイル編集：手動"
+
+msgid "Shortcut action: tile_edit_mode_auto"
+msgstr "タイル編集：自動"
+
+msgid "Shortcut action: tile_edit_mode_stack"
+msgstr "タイル編集：積み重ね"
+
+msgid "Shortcut action: tile_rotate_left"
+msgstr "タイルを左に回転"
+
+msgid "Shortcut action: tile_rotate_right"
+msgstr "タイルを右に回転"
+
+msgid "Shortcut action: tile_flip_horizontal"
+msgstr "タイルを左右反転"
+
+msgid "Shortcut action: tile_flip_vertical"
+msgstr "タイルを上下反転"
+
+msgid "Shortcut action: show_reference_images"
+msgstr "参照画像を表示"
+
+msgid "Shortcut action: layer_visibility"
+msgstr "レイヤーの表示を切り替える"
+
+msgid "Shortcut action: layer_lock"
+msgstr "レイヤーのロックを切り替える"
+
+msgid "Shortcut action: diagonal_xy_mirror"
+msgstr "斜め対称描画（XY）"
+
+msgid "Shortcut action: diagonal_x_minus_y_mirror"
+msgstr "斜め対称描画（X−Y）"
+
+msgid "Shortcut action: undo_history"
+msgstr "操作履歴"
+
+msgid "Shortcut action: mm_change_brush_size"
+msgstr "マウス移動：ブラシサイズ変更"
+
+msgid "Shortcut action: mm_color_change_hue"
+msgstr "マウス移動：色相変更"
+
+msgid "Shortcut action: mm_color_change_saturation"
+msgstr "マウス移動：彩度変更"
+
+msgid "Shortcut action: mm_color_change_value"
+msgstr "マウス移動：明度変更"
+
+msgid "Shortcut action: mm_color_change_alpha"
+msgstr "マウス移動：透明度変更"
+
+msgid "Shortcut action: reselect"
+msgstr "再選択"
+
+msgid "Shortcut action: flat_to_isometric"
+msgstr "平面をアイソメトリックに変換"
+
+msgid "Shortcut action: lock_guides"
+msgstr "ガイドをロック"
