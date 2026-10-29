@@ -971,8 +971,8 @@ func _paint_native_translucent_dither(
 		var clipped := stamp.intersection(canvas_rect)
 		if not clipped.has_area():
 			continue
-		# This call populates _dither_mask_bytes for the current phase.
-		var dither_mask := _get_dither_mask(center)
+		# Ensure the cached alpha bytes for this phase are populated.
+		_get_dither_mask(center)
 		var phase := posmod(center.y, 4) * 4 + posmod(center.x, 4)
 		var phase_bytes: PackedByteArray = _dither_mask_bytes[phase]
 		_dither_novel_mask_bytes.fill(0)
