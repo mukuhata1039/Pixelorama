@@ -397,10 +397,10 @@ func _ready() -> void:
 		var tool_shortcut: String = tools[t].shortcut
 		var left_tool_shortcut := "left_%s_tool" % tool_shortcut
 		if InputMap.has_action(left_tool_shortcut):
-			Keychain.actions[left_tool_shortcut] = Keychain.InputAction.new("", "Left")
+			Keychain.actions[left_tool_shortcut] = Keychain.InputAction.new("", "Left", true, true)
 		var right_tool_shortcut := "right_%s_tool" % tool_shortcut
 		if InputMap.has_action(right_tool_shortcut):
-			Keychain.actions[right_tool_shortcut] = Keychain.InputAction.new("", "Right")
+			Keychain.actions[right_tool_shortcut] = Keychain.InputAction.new("", "Right", true, true)
 		var quick_tool_shortcut := "quick_%s_tool" % tool_shortcut
 		if InputMap.has_action(quick_tool_shortcut):
 			Keychain.actions[quick_tool_shortcut] = Keychain.InputAction.new("", "Quick tools")
