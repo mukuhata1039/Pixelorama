@@ -7,7 +7,7 @@ signal brush_removed(brush)
 enum { PIXEL, CIRCLE, FILLED_CIRCLE, FILE, RANDOM_FILE, CUSTOM, DITHER }
 
 # The same screen-anchored Bayer matrix is used for rendering and cursor previews.
-const BAYER_4X4 := [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]
+const BAYER_4X4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]
 
 var pixel_image := preload("res://assets/graphics/pixel_image.png")
 var circle_image := preload("res://assets/graphics/circle_9x9.png")
