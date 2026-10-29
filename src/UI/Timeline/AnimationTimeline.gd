@@ -1556,40 +1556,31 @@ func _on_project_switched() -> void:
 # Methods to update the UI in response to changes in the current project
 
 
-func _cel_switched() -> void:
-	# Unpress all buttons
-	for i in Global.current_project.frames.size():
-		var frame_button: BaseButton = frame_hbox.get_child(i)
-		frame_button.button_pressed = false  # Unpress all frame buttons
-		for cel_hbox in cel_vbox.get_children():
-			if i < cel_hbox.get_child_count():
-				cel_hbox.get_child(i).button_pressed = false  # Unpress all cel buttons
-
+## Update the active row/column and selected range independently. A selected
+## cel is not necessarily the active one, and selecting many cels must not
+## mark all their frame/layer headers as active.
+func _refresh_timeline_selection_appearance() -> void:
+	var project := Global.current_project
+	var selected: Dictionary[Vector2i, bool] = {}
+	for cel_index in project.selected_cels:
+		selected[Vector2i(cel_index[0], cel_index[1])] = true
+	for frame_button in frame_hbox.get_children():
+		frame_button.button_pressed = frame_button.frame == project.current_frame
+		frame_button.z_index = 1 if frame_button.button_pressed else 0
 	for layer_button in layer_vbox.get_children():
-		layer_button.button_pressed = false  # Unpress all layer buttons
+		layer_button.button_pressed = layer_button.layer_index == project.current_layer
+		layer_button.z_index = 1 if layer_button.button_pressed else 0
+	for cel_hbox in cel_vbox.get_children():
+		for cel_button in cel_hbox.get_children():
+			cel_button.button_pressed = selected.has(Vector2i(cel_button.frame, cel_button.layer))
+			cel_button.cel_switched()
 
+
+func _cel_switched() -> void:
+	_refresh_timeline_selection_appearance()
 	for connection in get_incoming_connections():
 		if connection.callable == _on_layer_keyframe_changed:
 			connection.signal.disconnect(_on_layer_keyframe_changed)
-
-	for cel in Global.current_project.selected_cels:  # Press selected buttons
-		var frame_index: int = cel[0]
-		var layer_index: int = cel[1]
-		if frame_index < frame_hbox.get_child_count():
-			var frame_button: BaseButton = frame_hbox.get_child(frame_index)
-			frame_button.button_pressed = true  # Press selected frame buttons
-
-		var layer_vbox_child_count: int = layer_vbox.get_child_count()
-		if layer_index < layer_vbox_child_count:
-			var layer_button = layer_vbox.get_child(layer_vbox_child_count - 1 - layer_index)
-			layer_button.button_pressed = true  # Press selected layer buttons
-
-		var cel_vbox_child_count: int = cel_vbox.get_child_count()
-		if layer_index < cel_vbox_child_count:
-			var cel_hbox: Container = cel_vbox.get_child(cel_vbox_child_count - 1 - layer_index)
-			if frame_index < cel_hbox.get_child_count():
-				var cel_button: BaseButton = cel_hbox.get_child(frame_index)
-				cel_button.button_pressed = true  # Press selected cel buttons
 	_toggle_frame_buttons()
 	_toggle_layer_buttons()
 	_fill_blend_modes_option_button()
@@ -1754,23 +1745,7 @@ func project_changed() -> void:
 		button.frame = f
 		frame_hbox.add_child(button)
 
-	# Press selected cel/frame/layer buttons
-	for cel_index in project.selected_cels:
-		var frame: int = cel_index[0]
-		var layer: int = cel_index[1]
-		if frame < frame_hbox.get_child_count():
-			var frame_button: BaseButton = frame_hbox.get_child(frame)
-			frame_button.button_pressed = true
-
-		var vbox_child_count: int = cel_vbox.get_child_count()
-		if layer < vbox_child_count:
-			var cel_hbox: HBoxContainer = cel_vbox.get_child(vbox_child_count - 1 - layer)
-			if frame < cel_hbox.get_child_count():
-				var cel_button := cel_hbox.get_child(frame)
-				cel_button.button_pressed = true
-
-			var layer_button := layer_vbox.get_child(vbox_child_count - 1 - layer)
-			layer_button.button_pressed = true
+	_refresh_timeline_selection_appearance()
 	# Because we are re-creating the nodes, we need to wait one frame in order to call
 	# ensure_control_visible. If waiting wasn't needed, this piece of code wouldn't be needed
 	# anyway, since _cel_switched already calls ensure_control_visible.
