@@ -3,7 +3,11 @@ extends Popup
 
 signal brush_selected(brush)
 signal brush_removed(brush)
-enum { PIXEL, CIRCLE, FILLED_CIRCLE, FILE, RANDOM_FILE, CUSTOM }
+# Append new values so existing saved brush-type IDs keep their meaning.
+enum { PIXEL, CIRCLE, FILLED_CIRCLE, FILE, RANDOM_FILE, CUSTOM, DITHER }
+
+# The same screen-anchored Bayer matrix is used for rendering and cursor previews.
+const BAYER_4X4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]
 
 var pixel_image := preload("res://assets/graphics/pixel_image.png")
 var circle_image := preload("res://assets/graphics/circle_9x9.png")
@@ -36,6 +40,25 @@ func _ready() -> void:
 	button.tooltip_text = "Filled circle brush"
 	container.add_child(button)
 	button.brush.index = button.get_index()
+
+
+
+## A radial fade rendered with one selected color, not blended gray pixels.
+## Local coordinates control the distance from the brush center; canvas
+## coordinates control the stable 4x4 Bayer pattern.
+static func ordered_dither_pixel_visible(
+	local_pos: Vector2i, canvas_pos: Vector2i, brush_size: int, density: int
+) -> bool:
+	if density <= 0 or brush_size <= 0:
+		return false
+	var midpoint := (float(brush_size) - 1.0) * 0.5
+	var dx := float(local_pos.x) - midpoint
+	var dy := float(local_pos.y) - midpoint
+	var radius := maxf(float(brush_size) * 0.5, 0.5)
+	var coverage := clampf(1.0 - sqrt(dx * dx + dy * dy) / radius, 0.0, 1.0)
+	coverage *= clampf(float(density) / 100.0, 0.0, 1.0)
+	var bayer_index := posmod(canvas_pos.y, 4) * 4 + posmod(canvas_pos.x, 4)
+	return coverage * 16.0 > float(BAYER_4X4[bayer_index]) + 0.5
 
 
 func select_brush(brush: Brush) -> void:
