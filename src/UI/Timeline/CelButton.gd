@@ -134,8 +134,16 @@ func cel_switched(_force_stylebox_change := false) -> void:
 ## is drawn separately in _draw() so it doesn't replace the internal grid.
 func _update_range_outline() -> void:
 	var project := Global.current_project
-	var displayed_cels: Array = Global.animation_timeline.get_displayed_selected_cels()
-	if not displayed_cels.has([frame, layer]):
+	# Preview membership is hashed so every mouse move does not scan the
+	# entire rectangular selection separately for every cel button.
+	var inside_selection: bool
+	if Global.animation_timeline.drag_range_preview_active:
+		inside_selection = Global.animation_timeline.drag_range_preview_lookup.has(
+			Vector2i(frame, layer)
+		)
+	else:
+		inside_selection = project.selected_cels.has([frame, layer])
+	if not inside_selection:
 		remove_theme_stylebox_override(&"pressed")
 		remove_theme_stylebox_override(&"hover_pressed")
 		return
