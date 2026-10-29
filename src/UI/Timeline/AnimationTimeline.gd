@@ -14,6 +14,13 @@ enum LoopType { NO, CYCLE, PINGPONG }
 
 const FRAME_BUTTON_TSCN := preload("res://src/UI/Timeline/FrameButton.tscn")
 const ANIMATION_TAG_TSCN := preload("res://src/UI/Timeline/AnimationTagUI.tscn")
+const ASEPRITE_COPY_CURSOR := preload("res://src/UI/Timeline/AsepriteCopyCursor.gd")
+const COPY_CURSOR_SHAPES := [
+	Input.CURSOR_ARROW,
+	Input.CURSOR_MOVE,
+	Input.CURSOR_DRAG,
+	Input.CURSOR_CAN_DROP,
+]
 ## Do not let [member min_cel_size] go below 22, as this is the size of the layer icons.
 const CEL_MIN_SIZE_HARD_LIMIT := 22
 const CEL_MIN_SIZE_OFFSET := 15
@@ -28,6 +35,8 @@ var first_frame := 0
 var animation_canon_frame: int = 0
 var last_frame := 0
 var is_mouse_hover := false
+var _copy_cursor_texture: Texture2D
+var _copy_cursor_active := false
 var cel_size := 36:
 	set = _cel_size_changed
 var compact_timeline := false
@@ -88,6 +97,7 @@ var global_layer_expand := true
 
 
 func _ready() -> void:
+	_copy_cursor_texture = ASEPRITE_COPY_CURSOR.create_copy_cursor()
 	var layer_properties_dialog := Global.control.find_child("LayerProperties")
 	layer_properties_dialog.layer_property_changed.connect(_update_layer_settings_ui)
 	layer_container.custom_minimum_size.x = layer_settings_container.size.x + 12
@@ -146,6 +156,54 @@ func _ready() -> void:
 	var layer := Global.current_project.layers[Global.current_project.current_layer]
 	layer.keyframe_set.connect(_on_layer_keyframe_changed)
 	layer.keyframe_unset.connect(_on_layer_keyframe_changed)
+
+
+## Keep Aseprite's actual copy cursor confined to timeline cel copy operations.
+## Polling is intentional: Ctrl/Alt can change without another mouse-motion event,
+## including while a Godot drag-and-drop operation is already in progress.
+func _process(_delta: float) -> void:
+	if not is_instance_valid(_copy_cursor_texture):
+		return
+	var copy_modifier := Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT)
+	var hovered := get_viewport().gui_get_hovered_control()
+	var copy_hover := false
+	if is_instance_valid(hovered) and is_ancestor_of(hovered):
+		if hovered.has_method("_is_drag_border"):
+			var coords := [int(hovered.get("frame")), int(hovered.get("layer"))]
+			var selected := Global.current_project.selected_cels.has(coords)
+			copy_hover = selected and copy_modifier
+			if copy_hover:
+				hovered.mouse_default_cursor_shape = Control.CURSOR_CAN_DROP
+			else:
+				var local_pos := hovered.get_local_mouse_position()
+				var move_hover := selected and bool(hovered.call("_is_drag_border", local_pos))
+				hovered.mouse_default_cursor_shape = (
+					Control.CURSOR_MOVE if move_hover else Control.CURSOR_POINTING_HAND
+				)
+	var drag_data: Variant = null
+	if get_viewport().gui_is_dragging():
+		drag_data = get_viewport().gui_get_drag_data()
+	var copy_drag := (
+		copy_modifier
+		and typeof(drag_data) == TYPE_ARRAY
+		and drag_data.size() > 0
+		and drag_data[0] == "Cel"
+	)
+	_set_copy_cursor_active(copy_hover or copy_drag)
+
+
+func _set_copy_cursor_active(active: bool) -> void:
+	if _copy_cursor_active == active:
+		return
+	_copy_cursor_active = active
+	for cursor_shape: int in COPY_CURSOR_SHAPES:
+		Input.set_custom_mouse_cursor(
+			_copy_cursor_texture if active else null, cursor_shape, Vector2.ZERO
+		)
+
+
+func _exit_tree() -> void:
+	_set_copy_cursor_active(false)
 
 
 func _notification(what: int) -> void:
