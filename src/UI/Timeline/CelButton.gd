@@ -384,7 +384,7 @@ static func _transfer_pixel_cels(indices: Array, paste_offset: Vector2i, copy: b
 	# Snapshot every source before touching destinations, including overlapping ranges.
 	for indices_pair in indices:
 		var source := Vector2i(int(indices_pair[0]), int(indices_pair[1]))
-		var cel: PixelCel = project.frames[source.x].cels[source.y]
+		var cel: PixelCel = project.frames[source.x].cels[source.y] as PixelCel
 		states[source] = _pixel_cel_state(cel, cel.copy_content())
 	for indices_pair in indices:
 		var source := Vector2i(int(indices_pair[0]), int(indices_pair[1]))
@@ -392,7 +392,7 @@ static func _transfer_pixel_cels(indices: Array, paste_offset: Vector2i, copy: b
 		max_target = maxi(max_target, target.x)
 		selected_destinations.append([target.x, target.y])
 		if not copy:
-			var cel: PixelCel = project.frames[source.x].cels[source.y]
+			var cel: PixelCel = project.frames[source.x].cels[source.y] as PixelCel
 			changes[source] = {
 				"content": cel.create_empty_content(),
 				"opacity": 1.0,
@@ -416,9 +416,9 @@ static func _transfer_pixel_cels(indices: Array, paste_offset: Vector2i, copy: b
 		var destination: PixelCel
 		var created_frame := new_frames.has(coord.x)
 		if created_frame:
-			destination = new_frames[coord.x].cels[coord.y]
+			destination = new_frames[coord.x].cels[coord.y] as PixelCel
 		else:
-			destination = project.frames[coord.x].cels[coord.y]
+			destination = project.frames[coord.x].cels[coord.y] as PixelCel
 		var before_content: Variant = destination.get_content()
 		var after_state: Dictionary = changes[coord]
 		project.undo_redo.add_do_method(destination.set_content.bind(after_state["content"]))
