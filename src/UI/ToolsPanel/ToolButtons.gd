@@ -82,8 +82,9 @@ func _assign_cycled_tool(event: InputEvent, button: MouseButton) -> void:
 	if matches.is_empty():
 		return
 	# Keyboard auto-repeat must not cycle a held key repeatedly.
-	if matches.size() > 1 and event is InputEventKey and event.echo:
-		return
+	if matches.size() > 1 and event is InputEventKey:
+		if (event as InputEventKey).echo:
+			return
 	var target := matches[0]
 	if matches.size() > 1:
 		var active_button := MOUSE_BUTTON_RIGHT if Global.single_tool_mode else button
