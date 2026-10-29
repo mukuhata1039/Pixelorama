@@ -451,6 +451,10 @@ func draw_end(pos: Vector2i) -> void:
 
 func cancel_tool() -> void:
 	super()
+	# A canceled stroke must not retain a full-canvas coverage image or
+	# copies of the original cel images until the next time a tool is used.
+	_dither_stroke_coverage = null
+	_dither_stroke_baselines.clear()
 	for data in _undo_data:
 		if data is Image:
 			var image_data = _undo_data[data]["data"]
@@ -675,6 +679,11 @@ func _native_brush_skip_reason() -> String:
 			return "画像形式"
 		if (image as ImageExtended).is_indexed:
 			return "インデックスカラー"
+		# Native blit/blend requires source and destination image formats to
+		# match. The prepared dither sources are RGBA8; use the original
+		# per-pixel path for any other color mode instead of risking no paint.
+		if image.get_format() != Image.FORMAT_RGBA8:
+			return "画像形式"
 		if _stroke_images[image] is not PixelCel:
 			return "レイヤー種類"
 	return ""
