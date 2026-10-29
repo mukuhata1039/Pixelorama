@@ -1694,7 +1694,12 @@ func _set_header_selection_style(
 		return
 	var theme := Global.control.theme
 	var source := theme.get_stylebox(&"pressed", &"LayerFrameButton")
-	var normal := theme.get_stylebox(&"normal", &"LayerFrameButton")
+	# LayerFrameButton only defines a pressed style of its own. Its normal
+	# style is inherited through CelButton by the Control theme-variation
+	# resolver; Theme.get_stylebox() does not resolve that inheritance. Read
+	# CelButton explicitly instead of silently failing and showing the
+	# lavender fallback pressed style from the regular Button theme.
+	var normal := theme.get_stylebox(&"normal", &"CelButton")
 	if not source is StyleBoxFlat or not normal is StyleBoxFlat:
 		return
 	var style := source.duplicate() as StyleBoxFlat
