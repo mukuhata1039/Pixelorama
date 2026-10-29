@@ -404,7 +404,8 @@ static func _transfer_pixel_cels(indices: Array, paste_offset: Vector2i, copy: b
 		var source := Vector2i(int(indices_pair[0]), int(indices_pair[1]))
 		changes[source + paste_offset] = states[source]
 
-	project.undo_redo.create_action("Copy Cels" if copy else "Move Cels")
+	# Global.undo_or_redo refreshes cel textures for the standard "Draw" action.
+	project.undo_redo.create_action("Draw")
 	var new_frames: Dictionary[int, Frame] = {}
 	if max_target >= project.frames.size():
 		var new_indices := PackedInt32Array()
