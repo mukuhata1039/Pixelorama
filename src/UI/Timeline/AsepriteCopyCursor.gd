@@ -11,23 +11,29 @@ const SCALE := 2
 ## Each entry is [x, y, width, height, hotspot_x, hotspot_y] from theme.xml.
 const CURSOR_DEFINITIONS := {
 	&"normal": Rect2i(80, 0, 16, 16),
+	&"crosshair": Rect2i(96, 32, 16, 16),
 	&"copy": Rect2i(80, 16, 16, 16),
 	&"forbidden": Rect2i(80, 32, 16, 16),
 	&"hand": Rect2i(80, 48, 16, 16),
 	&"scroll": Rect2i(80, 64, 16, 16),
 	&"move": Rect2i(80, 80, 16, 16),
 	&"size_ns": Rect2i(80, 112, 16, 16),
+	&"size_nw": Rect2i(80, 96, 16, 16),
+	&"size_ne": Rect2i(80, 128, 16, 16),
 	&"size_we": Rect2i(80, 144, 16, 16),
 }
 
 const CURSOR_HOTSPOTS := {
 	&"normal": Vector2.ZERO,
+	&"crosshair": Vector2(7, 7),
 	&"copy": Vector2.ZERO,
 	&"forbidden": Vector2.ZERO,
 	&"hand": Vector2(5, 3),
 	&"scroll": Vector2(8, 8),
 	&"move": Vector2.ZERO,
 	&"size_ns": Vector2(8, 8),
+	&"size_nw": Vector2(8, 8),
+	&"size_ne": Vector2(8, 8),
 	&"size_we": Vector2(8, 8),
 }
 
