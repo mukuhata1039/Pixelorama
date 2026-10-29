@@ -112,9 +112,9 @@ func _notification(what: int) -> void:
 func cel_switched(_force_stylebox_change := false) -> void:
 	var project := Global.current_project
 	z_index = 1 if button_pressed else 0
-	var on_guide_frame := Global.animation_timeline.range_guide_frames.has(frame)
-	var on_guide_layer := Global.animation_timeline.range_guide_layers.has(layer)
-	var in_active_guides := on_guide_frame or on_guide_layer
+	var on_guide_frame: bool = Global.animation_timeline.range_guide_frames.has(frame)
+	var on_guide_layer: bool = Global.animation_timeline.range_guide_layers.has(layer)
+	var in_active_guides: bool = on_guide_frame or on_guide_layer
 	for style_name: StringName in [&"normal", &"hover"]:
 		remove_theme_stylebox_override(style_name)
 		if in_active_guides:
