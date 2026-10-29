@@ -18,6 +18,7 @@ const ANIMATION_TAG_TSCN := preload("res://src/UI/Timeline/AnimationTagUI.tscn")
 const CEL_MIN_SIZE_HARD_LIMIT := 22
 const CEL_MIN_SIZE_OFFSET := 15
 const COMPACT_CEL_SIZE := 20
+const CEL_DROP_HIGHLIGHT_COLOR := Color(0.0, 0.741176, 1.0, 0.501961)
 
 var is_animation_running := false
 var animation_loop := LoopType.CYCLE
@@ -175,8 +176,8 @@ func clear_highlight() -> void:
 
 ## Manages frame highlighting during drag and drop.
 func set_frames_highlight(frame_indices: Array, offset: int) -> void:
-	if drag_highlight.draw.is_connected(_draw_highlight_frames):
-		drag_highlight.draw.disconnect(_draw_highlight_frames)
+	_clear_drop_preview_draw_connections()
+	drag_highlight.color = CEL_DROP_HIGHLIGHT_COLOR
 	drag_highlight.draw.connect(_draw_highlight_frames.bind(frame_indices, offset))
 	drag_highlight.queue_redraw()
 
@@ -190,15 +191,22 @@ func _draw_highlight_frames(frame_indices: Array, offset: int) -> void:
 			var frame_rect: Rect2i = frame_button.get_global_rect()
 			frame_rect.position -= Vector2i(drag_highlight.global_position)
 			drag_highlight.draw_rect(frame_rect, drag_highlight.color)
-	frame_indices.clear()
 
 
 ## Manages cel highlighting during drag and drop.
 func set_cels_highlight(cel_coords: Array, offset: Vector2i) -> void:
-	if drag_highlight.draw.is_connected(_draw_highlight_cels):
-		drag_highlight.draw.disconnect(_draw_highlight_cels)
+	_clear_drop_preview_draw_connections()
+	# Keep the overlay background transparent and draw only destination cels.
+	drag_highlight.color = Color.TRANSPARENT
 	drag_highlight.draw.connect(_draw_highlight_cels.bind(cel_coords, offset))
 	drag_highlight.queue_redraw()
+
+
+func _clear_drop_preview_draw_connections() -> void:
+	for connection: Dictionary in drag_highlight.draw.get_connections():
+		var callback: Callable = connection.get("callable", Callable())
+		if callback.is_valid():
+			drag_highlight.draw.disconnect(callback)
 
 
 ## Draws cel highlighting during drag and drop.
@@ -213,8 +221,7 @@ func _draw_highlight_cels(cel_coords: Array, offset: Vector2i) -> void:
 				var cel_button: BaseButton = cel_hbox.get_child(frame)
 				var cel_rect: Rect2i = cel_button.get_global_rect()
 				cel_rect.position -= Vector2i(drag_highlight.global_position)
-				drag_highlight.draw_rect(cel_rect, drag_highlight.color)
-	cel_coords.clear()
+				drag_highlight.draw_rect(cel_rect, CEL_DROP_HIGHLIGHT_COLOR)
 
 
 func _input(event: InputEvent) -> void:
