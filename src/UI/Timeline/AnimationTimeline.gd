@@ -145,6 +145,7 @@ func _ready() -> void:
 	Global.project_about_to_switch.connect(_on_project_about_to_switch)
 	Global.project_switched.connect(_on_project_switched)
 	Global.cel_switched.connect(_cel_switched)
+	Themes.theme_switched.connect(_refresh_timeline_selection_appearance)
 	# Makes sure that the frame and tag scroll bars are in the right place:
 	layer_vbox.emit_signal.call_deferred("resized")
 	drag_highlight.visibility_changed.connect(clear_highlight)
