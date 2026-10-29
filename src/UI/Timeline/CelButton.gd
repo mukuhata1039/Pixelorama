@@ -165,11 +165,15 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _is_drag_border(local_pos: Vector2) -> bool:
+	# Aseprite uses the outside of the selected range, not every inner cell edge.
+	var selected: Array = Global.current_project.selected_cels
+	if not selected.has([frame, layer]):
+		return false
 	return (
-		local_pos.x < CEL_DRAG_BORDER
-		or local_pos.x >= size.x - CEL_DRAG_BORDER
-		or local_pos.y < CEL_DRAG_BORDER
-		or local_pos.y >= size.y - CEL_DRAG_BORDER
+		(local_pos.x < CEL_DRAG_BORDER and not selected.has([frame - 1, layer]))
+		or (local_pos.x >= size.x - CEL_DRAG_BORDER and not selected.has([frame + 1, layer]))
+		or (local_pos.y < CEL_DRAG_BORDER and not selected.has([frame, layer + 1]))
+		or (local_pos.y >= size.y - CEL_DRAG_BORDER and not selected.has([frame, layer - 1]))
 	)
 
 
