@@ -179,13 +179,17 @@ func _process(_delta: float) -> void:
 	var next_mode := -1
 	if dragging_cels:
 		next_mode = 2 if copy_modifier else 1
-	if is_instance_valid(Global.control):
-		Global.control.set_timeline_cel_drag_cursor(next_mode)
+	if is_instance_valid(Global.control) and Global.control.has_method(
+		"set_timeline_cel_drag_cursor"
+	):
+		Global.control.call("set_timeline_cel_drag_cursor", next_mode)
 
 
 func _exit_tree() -> void:
-	if is_instance_valid(Global.control):
-		Global.control.set_timeline_cel_drag_cursor(-1)
+	if is_instance_valid(Global.control) and Global.control.has_method(
+		"set_timeline_cel_drag_cursor"
+	):
+		Global.control.call("set_timeline_cel_drag_cursor", -1)
 
 
 func _notification(what: int) -> void:
