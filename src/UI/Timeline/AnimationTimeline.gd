@@ -1674,7 +1674,7 @@ func update_drag_cel_range_preview(origin: Array, end_frame: int, end_layer: int
 		return
 	var next_cels: Array = []
 	for layer_index in range(mini(start.y, target.y), maxi(start.y, target.y) + 1):
-		var row_index := cel_vbox.get_child_count() - 1 - layer_index
+		var row_index: int = cel_vbox.get_child_count() - 1 - layer_index
 		if row_index < 0 or row_index >= cel_vbox.get_child_count():
 			continue
 		var row := cel_vbox.get_child(row_index) as Control
