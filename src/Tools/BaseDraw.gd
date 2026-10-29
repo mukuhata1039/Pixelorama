@@ -574,8 +574,8 @@ func _native_brush_skip_reason() -> String:
 		return "サイズ"
 	if _spacing_mode:
 		return "間隔モード"
-	if _brush_density != 100:
-		return "密度"
+	if _brush_density < 1 or _brush_density > 100:
+		return "密度範囲外"
 	if _is_eraser:
 		return "消しゴム"
 	if not _is_mask_size_zero:
@@ -686,11 +686,35 @@ func _get_native_brush_rects(centers: Array[Vector2i]) -> Array[Rect2i]:
 	return result
 
 
+## For sparse density, keep the existing chance to paint each distinct pixel,
+## but emit only the accepted horizontal runs. This avoids per-pixel color
+## conversion/blending/cel-resize work in GDScript.
+func _sample_density_rects(rects: Array[Rect2i]) -> Array[Rect2i]:
+	var sampled: Array[Rect2i] = []
+	for rect in rects:
+		for y in range(rect.position.y, rect.end.y):
+			var run_start := -1
+			for x in range(rect.position.x, rect.end.x):
+				if randi() % 100 < _brush_density:
+					if run_start == -1:
+						run_start = x
+				elif run_start != -1:
+					sampled.append(Rect2i(run_start, y, x - run_start, 1))
+					run_start = -1
+			if run_start != -1:
+				sampled.append(Rect2i(run_start, y, rect.end.x - run_start, 1))
+	return sampled
+
+
 func _paint_native_brush_rects(rects: Array[Rect2i]) -> void:
 	if rects.is_empty():
 		return
-	var bounds := rects[0]
-	for rect in rects:
+	# The 100%-density path stays exactly as before.
+	var paint_rects := rects if _brush_density == 100 else _sample_density_rects(rects)
+	if paint_rects.is_empty():
+		return
+	var bounds := paint_rects[0]
+	for rect in paint_rects:
 		bounds = bounds.merge(rect)
 	# Preserve the standard drawer's 8-bit color normalization.
 	var paint_color := Color(tool_slot.color.to_html())
@@ -698,7 +722,7 @@ func _paint_native_brush_rects(rects: Array[Rect2i]) -> void:
 		var cel := _stroke_images[image] as PixelCel
 		# Expand the cel at most once for the entire stroke segment.
 		cel.ensure_canvas_rect_in_bounds(bounds.position, bounds.size)
-		for rect in rects:
+		for rect in paint_rects:
 			image.fill_rect(Rect2i(rect.position - cel.offset, rect.size), paint_color)
 	_drawer.color_op.changed = true
 
