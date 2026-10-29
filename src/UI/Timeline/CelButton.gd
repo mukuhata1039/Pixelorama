@@ -164,6 +164,10 @@ func _update_range_outline() -> void:
 func _draw() -> void:
 	if not is_instance_valid(Global.current_project):
 		return
+	# While the rectangle is being dragged, only its moving outline is
+	# visible. Do not leave the old committed range's border underneath it.
+	if Global.animation_timeline.selection_drag_highlight.visible:
+		return
 	var selected := Global.current_project.selected_cels
 	if not selected.has([frame, layer]):
 		return
