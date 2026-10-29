@@ -50,6 +50,19 @@ var _dither_masks: Dictionary[int, Image] = {}
 var _dither_preview_textures: Dictionary[int, ImageTexture] = {}
 var _dither_cached_size := -1
 var _dither_cached_density := -1
+## Accumulated stroke coverage. Build the union of Bayer stamps using
+## native image blits rather than scanning all pixels in GDScript.
+var _dither_stroke_coverage: Image
+## Original image + canvas offset captured on the first translucent dab.
+## The originals let overlapping stamps composite only once per stroke.
+var _dither_stroke_baselines: Dictionary[Image, Dictionary] = {}
+var _dither_batch_source: Image
+var _dither_batch_source_color := Color(-1.0, -1.0, -1.0, -1.0)
+## The regular dither paint source is a single flat color. Keep its backing Image
+## across mouse-move events instead of allocating/filling size² pixels per dab.
+var _dither_paint_source: Image
+var _dither_paint_source_size := -1
+var _dither_paint_source_color := Color(-1.0, -1.0, -1.0, -1.0)
 var _circle_tool_shortcut: Array[Vector2i]
 var _mm_action: Keychain.MouseMovementInputAction
 
@@ -354,6 +367,8 @@ func draw_start(pos: Vector2i) -> void:
 	_profile_paint_us = 0
 	_profile_native_steps = 0
 	_profile_native_skip_reason = ""
+	_dither_stroke_coverage = null
+	_dither_stroke_baselines.clear()
 	Global.canvas.begin_brush_profile()
 
 
@@ -413,6 +428,8 @@ func draw_end(pos: Vector2i) -> void:
 			"ms/回 (", profile.layers_calls, "回)"
 		)
 	super.draw_end(pos)
+	_dither_stroke_coverage = null
+	_dither_stroke_baselines.clear()
 	_stroke_project = null
 	_stroke_images = {}
 	drawing_on_3d_node = null
@@ -434,6 +451,10 @@ func draw_end(pos: Vector2i) -> void:
 
 func cancel_tool() -> void:
 	super()
+	# A canceled stroke must not retain a full-canvas coverage image or
+	# copies of the original cel images until the next time a tool is used.
+	_dither_stroke_coverage = null
+	_dither_stroke_baselines.clear()
 	for data in _undo_data:
 		if data is Image:
 			var image_data = _undo_data[data]["data"]
@@ -480,13 +501,23 @@ func _prepare_tool() -> void:
 		_brush_size_dynamics = roundi(lerpf(_brush_size, max_increment, Tools.mouse_velocity))
 	_drawer.pixel_perfect = Tools.pixel_perfect if _brush_size == 1 else false
 	_drawer.color_op.strength = strength
-	var previous_preview_size := _indicator.get_size()
-	_indicator = _create_brush_indicator()
-	# Dynamics can rebuild the indicator every movement; only regenerate the
-	# preview texture when the brush footprint dimensions actually change.
-	if previous_preview_size != _indicator.get_size():
-		_color_preview_texture = null
-	_polylines = _create_polylines(_indicator)
+	# A dither brush has a plain square indicator; its Bayer pattern lives in
+	# separately cached 4x4-phase masks. Recreating the square BitMap and scanning
+	# every pixel to rebuild the outline on *every mouse movement* was expensive
+	# for large brushes despite the fast masked-blit painting path below.
+	# update_brush() already regenerates the indicator when its type/settings
+	# change, so during a stroke only a new dynamic size needs a rebuild.
+	var needs_indicator_rebuild := (
+		_brush.type != Brushes.DITHER
+		or _indicator.get_size() != Vector2i.ONE * _brush_size_dynamics
+	)
+	if needs_indicator_rebuild:
+		var previous_preview_size := _indicator.get_size()
+		_indicator = _create_brush_indicator()
+		# Only regenerate the preview texture if its dimensions changed.
+		if previous_preview_size != _indicator.get_size():
+			_color_preview_texture = null
+		_polylines = _create_polylines(_indicator)
 	# Memorize current project
 	_stroke_project = Global.current_project
 	# Memorize the frame/layer we are drawing on rather than fetching it on every pixel
@@ -623,13 +654,6 @@ func _native_brush_skip_reason() -> String:
 				return "透明度マスクなし"
 		elif not _is_mask_size_zero:
 			return "透明度マスク"
-	if _brush.type == Brushes.DITHER and not _is_eraser:
-		# The native mask-blit path is an exact overwrite for opaque colors.
-		# Use the normal color operation for translucent or transparent-alpha
-		# effects (other than fully transparent clearing).
-		var dither_alpha := Color(tool_slot.color.to_html()).a
-		if dither_alpha > 0.0 and dither_alpha < 1.0:
-			return "ディザ半透明の通常描画"
 	if Tools.alpha_locked:
 		return "アルファロック"
 	# Pixel Perfect affects drawing only for 1px pencils
@@ -655,6 +679,11 @@ func _native_brush_skip_reason() -> String:
 			return "画像形式"
 		if (image as ImageExtended).is_indexed:
 			return "インデックスカラー"
+		# Native blit/blend requires source and destination image formats to
+		# match. The prepared dither sources are RGBA8; use the original
+		# per-pixel path for any other color mode instead of risking no paint.
+		if image.get_format() != Image.FORMAT_RGBA8:
+			return "画像形式"
 		if _stroke_images[image] is not PixelCel:
 			return "レイヤー種類"
 	return ""
@@ -862,7 +891,7 @@ func _get_dither_preview_texture(center: Vector2i) -> ImageTexture:
 	return _dither_preview_textures[phase]
 
 
-## Slow-path geometry for selections, alpha lock, translucent colors,
+## Slow-path geometry for selections, alpha lock, dynamic opacity,
 ## and other special settings. Reuses exactly the same Bayer stamp masks.
 func _compute_draw_tool_dither(center: Vector2i) -> PackedVector2Array:
 	var result := PackedVector2Array()
@@ -876,9 +905,10 @@ func _compute_draw_tool_dither(center: Vector2i) -> PackedVector2Array:
 	return result
 
 
-## Fast path: native masked copying of a single-color source image.
-## This handles opaque paint and fully transparent clears while preserving
-## the exact screen-anchored dot pattern and the surrounding transparent gaps.
+## Reuse the original 4x4 Bayer masks for a native Image operation. Opaque
+## strokes overwrite pixels; translucent strokes use native alpha blending
+## exactly once per canvas pixel in a stroke, matching PencilOp's alpha mask.
+## This avoids a Python-like GDScript Color.blend/set_pixel call per output dot.
 func _paint_native_dither_stamps(centers: Array[Vector2i]) -> void:
 	if centers.is_empty():
 		return
@@ -900,24 +930,116 @@ func _paint_native_dither_stamps(centers: Array[Vector2i]) -> void:
 	if not has_bounds:
 		return
 	var paint_color := Color(tool_slot.color.to_html())
-	if _is_eraser or is_zero_approx(paint_color.a):
+	var clear_pixels := _is_eraser or is_zero_approx(paint_color.a)
+	if clear_pixels:
 		paint_color = Color.TRANSPARENT
-	var source := Image.create_empty(size, size, false, Image.FORMAT_RGBA8)
-	source.fill(paint_color)
+	var blend_translucent := (
+		not clear_pixels and paint_color.a < 1.0
+		and not bool(_drawer.color_op.get("overwrite"))
+	)
+	if not is_instance_valid(_dither_paint_source) or _dither_paint_source_size != size:
+		_dither_paint_source = Image.create_empty(size, size, false, Image.FORMAT_RGBA8)
+		_dither_paint_source_size = size
+		_dither_paint_source_color = Color(-1.0, -1.0, -1.0, -1.0)
+	if _dither_paint_source_color != paint_color:
+		_dither_paint_source.fill(paint_color)
+		_dither_paint_source_color = paint_color
+	# Reserve the union of all dabs only once per cel, not per pixel.
 	for image in _stroke_images:
 		var cel := _stroke_images[image] as PixelCel
 		cel.ensure_canvas_rect_in_bounds(bounds.position, bounds.size)
-		for center in centers:
-			var stamp := Rect2i(center - Vector2i.ONE * half, Vector2i.ONE * size)
-			var clipped := stamp.intersection(canvas_rect)
-			if not clipped.has_area():
-				continue
-			var src_rect := Rect2i(clipped.position - stamp.position, clipped.size)
-			image.blit_rect_mask(
-				source, _get_dither_mask(center), src_rect, clipped.position - cel.offset
-			)
+	if blend_translucent:
+		_paint_native_translucent_dither(
+			centers, size, half, canvas_rect, bounds, paint_color
+		)
+	else:
+		for image in _stroke_images:
+			var cel := _stroke_images[image] as PixelCel
+			for center in centers:
+				var stamp := Rect2i(center - Vector2i.ONE * half, Vector2i.ONE * size)
+				var clipped := stamp.intersection(canvas_rect)
+				if not clipped.has_area():
+					continue
+				var src_rect := Rect2i(clipped.position - stamp.position, clipped.size)
+				image.blit_rect_mask(
+					_dither_paint_source, _get_dither_mask(center), src_rect,
+					clipped.position - cel.offset
+				)
 	_drawer.color_op.changed = true
 
+
+## Alpha-composite the union of all Bayer dabs once per stroke. Previously
+## the translucent fast path still visited up to 10,000 GDScript pixels for
+## each 100px dab. Here all per-pixel work happens in Godot's native Image API:
+## 1. Build an accumulated RGBA coverage mask using blit_rect_mask.
+## 2. Restore the original pixels for the affected bounds.
+## 3. Alpha-blend the solid source only once, masked by accumulated coverage.
+## Restoring original pixels matters: just blend_rect_mask on every dab would
+## darken overlapping semi-transparent dots during the same mouse stroke.
+func _paint_native_translucent_dither(
+	centers: Array[Vector2i],
+	size: int,
+	half: int,
+	canvas_rect: Rect2i,
+	bounds: Rect2i,
+	paint_color: Color
+) -> void:
+	if not is_instance_valid(_dither_stroke_coverage):
+		_dither_stroke_coverage = Image.create_empty(
+			_stroke_project.size.x, _stroke_project.size.y, false, Image.FORMAT_RGBA8
+		)
+		_dither_stroke_coverage.fill(Color.TRANSPARENT)
+		# Save each cel before this stroke's first paint; later resized cels may
+		# have moved their offsets, but the original pixels must stay unchanged.
+		for image in _stroke_images:
+			var cel := _stroke_images[image] as PixelCel
+			_dither_stroke_baselines[image] = {
+				"image": image.duplicate(),
+				"offset": cel.offset,
+			}
+	# A coverage image is a union of masked native blits. Reading from the
+	# same Bayer image as source and mask is safe: both are read-only here.
+	for center in centers:
+		var stamp := Rect2i(center - Vector2i.ONE * half, Vector2i.ONE * size)
+		var clipped := stamp.intersection(canvas_rect)
+		if not clipped.has_area():
+			continue
+		var dither_mask := _get_dither_mask(center)
+		var src_rect := Rect2i(clipped.position - stamp.position, clipped.size)
+		_dither_stroke_coverage.blit_rect_mask(
+			dither_mask, dither_mask, src_rect, clipped.position
+		)
+	# A single mask extraction / native blend handles every dab of this event.
+	var union_mask := _dither_stroke_coverage.get_region(bounds)
+	if not is_instance_valid(_dither_batch_source) or _dither_batch_source.get_size() != bounds.size:
+		_dither_batch_source = Image.create_empty(
+			bounds.size.x, bounds.size.y, false, Image.FORMAT_RGBA8
+		)
+		_dither_batch_source_color = Color(-1.0, -1.0, -1.0, -1.0)
+	if _dither_batch_source_color != paint_color:
+		_dither_batch_source.fill(paint_color)
+		_dither_batch_source_color = paint_color
+	var local_src_rect := Rect2i(Vector2i.ZERO, bounds.size)
+	for image in _stroke_images:
+		var cel := _stroke_images[image] as PixelCel
+		var saved: Dictionary = _dither_stroke_baselines[image]
+		var original: Image = saved["image"]
+		var original_offset: Vector2i = saved["offset"]
+		var local_dst := bounds.position - cel.offset
+		# Restore to the beginning-of-stroke state before applying the union.
+		# Areas outside the original image must be transparent.
+		image.fill_rect(Rect2i(local_dst, bounds.size), Color.TRANSPARENT)
+		var original_bounds := Rect2i(original_offset, original.get_size())
+		var overlap := bounds.intersection(original_bounds)
+		if overlap.has_area():
+			image.blit_rect(
+				original,
+				Rect2i(overlap.position - original_offset, overlap.size),
+				overlap.position - cel.offset
+			)
+		image.blend_rect_mask(
+			_dither_batch_source, union_mask, local_src_rect, local_dst
+		)
 
 func get_coords_to_draw(points: Array[Vector2i], draw_brush := true) -> PackedVector2Array:
 	if _brush_size_dynamics == 1 and not _spacing_mode and not is_image_brush():
