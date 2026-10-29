@@ -326,6 +326,129 @@ func _on_PopupMenu_id_pressed(id: int) -> void:
 			_clone_cel_content(_get_cel_indices())
 
 
+## Aseprite moves/copies the contents of cels to the destination instead of
+## reordering the timeline. Use this path for ordinary, unlinked image cels.
+## Linked/procedural cels keep the older Pixelorama implementation for safety.
+static func _can_transfer_pixel_cels(indices: Array, paste_offset: Vector2i) -> bool:
+	var project := Global.current_project
+	if indices.is_empty() or paste_offset == Vector2i.ZERO:
+		return false
+	for indices_pair in indices:
+		var source := Vector2i(int(indices_pair[0]), int(indices_pair[1]))
+		var target := source + paste_offset
+		if (
+			source.x < 0
+			or source.x >= project.frames.size()
+			or source.y < 0
+			or source.y >= project.layers.size()
+			or target.x < 0
+			or target.y < 0
+			or target.y >= project.layers.size()
+		):
+			return false
+		var source_cel: BaseCel = project.frames[source.x].cels[source.y]
+		if source_cel is not PixelCel or source_cel.link_set != null:
+			return false
+		if project.layers[source.y].get_script() != project.layers[target.y].get_script():
+			return false
+		if target.x < project.frames.size():
+			var target_cel: BaseCel = project.frames[target.x].cels[target.y]
+			if target_cel is not PixelCel or target_cel.link_set != null:
+				return false
+		elif project.layers[target.y].new_cels_linked:
+			return false
+	return true
+
+
+static func _pixel_cel_state(cel: PixelCel, content: Variant) -> Dictionary:
+	return {
+		"content": content,
+		"opacity": cel.opacity,
+		"z_index": cel.z_index,
+		"user_data": cel.user_data,
+		"ui_color": cel.ui_color,
+	}
+
+
+static func _transfer_pixel_cels(indices: Array, paste_offset: Vector2i, copy: bool) -> bool:
+	if not _can_transfer_pixel_cels(indices, paste_offset):
+		return false
+	var project := Global.current_project
+	var old_selection := project.selected_cels.duplicate(true)
+	var old_frame := project.current_frame
+	var old_layer := project.current_layer
+	var max_target := project.frames.size() - 1
+	var states := {}
+	var changes := {}
+	var selected_destinations := []
+	# Snapshot every source before touching destinations, including overlapping ranges.
+	for indices_pair in indices:
+		var source := Vector2i(int(indices_pair[0]), int(indices_pair[1]))
+		var cel: PixelCel = project.frames[source.x].cels[source.y]
+		states[source] = _pixel_cel_state(cel, cel.copy_content())
+	for indices_pair in indices:
+		var source := Vector2i(int(indices_pair[0]), int(indices_pair[1]))
+		var target := source + paste_offset
+		max_target = maxi(max_target, target.x)
+		selected_destinations.append([target.x, target.y])
+		if not copy:
+			var cel: PixelCel = project.frames[source.x].cels[source.y]
+			changes[source] = {
+				"content": cel.create_empty_content(),
+				"opacity": 1.0,
+				"z_index": 0,
+				"user_data": "",
+				"ui_color": Color.TRANSPARENT,
+			}
+	for indices_pair in indices:
+		var source := Vector2i(int(indices_pair[0]), int(indices_pair[1]))
+		changes[source + paste_offset] = states[source]
+
+	project.undo_redo.create_action("Copy Cels" if copy else "Move Cels")
+	var new_frames: Dictionary[int, Frame] = {}
+	if max_target >= project.frames.size():
+		var new_indices := PackedInt32Array()
+		for i in range(project.frames.size(), max_target + 1):
+			new_indices.append(i)
+		new_frames = Global.animation_timeline.undo_redo_add_frames(new_indices)
+
+	for coord: Vector2i in changes:
+		var destination: PixelCel
+		var created_frame := new_frames.has(coord.x)
+		if created_frame:
+			destination = new_frames[coord.x].cels[coord.y]
+		else:
+			destination = project.frames[coord.x].cels[coord.y]
+		var before_content: Variant = destination.get_content()
+		var after_state: Dictionary = changes[coord]
+		project.undo_redo.add_do_method(destination.set_content.bind(after_state["content"]))
+		if not created_frame:
+			project.undo_redo.add_undo_method(destination.set_content.bind(before_content))
+		for property_name: String in ["opacity", "z_index", "user_data", "ui_color"]:
+			project.undo_redo.add_do_property(
+				destination, property_name, after_state[property_name]
+			)
+			if not created_frame:
+				project.undo_redo.add_undo_property(
+					destination, property_name, destination.get(property_name)
+				)
+		project.undo_redo.add_do_method(
+			Global.undo_or_redo.bind(false, coord.x, coord.y, project)
+		)
+		if not created_frame:
+			project.undo_redo.add_undo_method(
+				Global.undo_or_redo.bind(true, coord.x, coord.y, project)
+			)
+	project.undo_redo.add_do_property(project, "selected_cels", selected_destinations)
+	project.undo_redo.add_do_method(
+		project.change_cel.bind(selected_destinations[0][0], selected_destinations[0][1])
+	)
+	project.undo_redo.add_undo_property(project, "selected_cels", old_selection)
+	project.undo_redo.add_undo_method(project.change_cel.bind(old_frame, old_layer))
+	project.undo_redo.commit_action()
+	return true
+
+
 ## Clones the cel content only (skips other properties like duration, opacity etc...)
 static func _clone_cel_content(indices: Array, paste_offset := Vector2i.RIGHT) -> void:
 	var project := Global.current_project
@@ -542,7 +665,8 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 		if l != layer:
 			different_layers = true
 	var copy_drag := Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT)
-	var is_swapping_or_cloning := copy_drag or different_layers
+	var pixel_transfer := _can_transfer_pixel_cels(drop_cels, offset)
+	var is_swapping_or_cloning := pixel_transfer or copy_drag or different_layers
 
 	if is_swapping_or_cloning:
 		for cel_idx in drop_cels:
@@ -551,11 +675,11 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 			if dest_frame < 0 or dest_layer < 0 or dest_layer >= project.layers.size():
 				Global.animation_timeline.drag_highlight.visible = false
 				return false
-			if not copy_drag and dest_frame >= project.frames.size():
+			if not (copy_drag or pixel_transfer) and dest_frame >= project.frames.size():
 				Global.animation_timeline.drag_highlight.visible = false
 				return false
 			# Can't move to the same cel
-			if not copy_drag and drop_cels.has([cel_idx[0] + offset.x, cel_idx[1] + offset.y]):
+			if not (copy_drag or pixel_transfer) and drop_cels.has([cel_idx[0] + offset.x, cel_idx[1] + offset.y]):
 				Global.animation_timeline.drag_highlight.visible = false
 				return false
 			# Can't move different types of layers between them
@@ -632,9 +756,12 @@ func _drop_data(_pos: Vector2, data) -> void:
 		offset.x = frame - drag_anchor[0]
 		offset.y = layer - drag_anchor[1]
 	var project := Global.current_project
-	# Aseprite treats Ctrl and Alt as the same copy modifier.
-	# Ctrl+click without a drag still selects pixels in _on_CelButton_pressed().
-	if Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT):
+	# Aseprite moves/copies the cel content, rather than reordering frame slots.
+	var copy_drag := Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT)
+	if _transfer_pixel_cels(drop_cels, offset, copy_drag):
+		return
+	# Fallback for linked, group, or other non-pixel cels.
+	if copy_drag:
 		if offset != Vector2i.ZERO:
 			_clone_cel_content(drop_cels, offset)
 		return
