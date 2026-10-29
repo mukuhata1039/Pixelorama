@@ -38,6 +38,7 @@ func _ready() -> void:
 	for selected in Global.current_project.selected_cels:
 		if selected[1] == layer and selected[0] == frame:
 			button_pressed = true
+	_update_range_outline()
 	popup_menu.add_item("Properties", MenuOptions.PROPERTIES)
 	if cel is AudioCel:
 		popup_menu.add_item("Play audio here", MenuOptions.PLAY_AUDIO)
@@ -105,6 +106,7 @@ func _notification(what: int) -> void:
 
 func cel_switched(force_stylebox_change := false) -> void:
 	z_index = 1 if button_pressed else 0
+	_update_range_outline()
 	var current_theme := Global.control.theme
 	var is_guide := false
 	for selected in Global.current_project.selected_cels:
@@ -121,6 +123,32 @@ func cel_switched(force_stylebox_change := false) -> void:
 			var normal_stylebox := current_theme.get_stylebox("normal", "CelButton")
 			add_theme_stylebox_override("normal", normal_stylebox)
 			_is_guide_stylebox = false
+
+
+## Aseprite renders one outline around a timeline range, not a separate
+## four-sided outline around every selected cel. Only the outside edges of
+## the selected cels get borders; the focused editing cel is distinguished
+## by a slightly darker fill inside the range.
+func _update_range_outline() -> void:
+	if not button_pressed:
+		remove_theme_stylebox_override(&"pressed")
+		remove_theme_stylebox_override(&"hover_pressed")
+		return
+	var project := Global.current_project
+	var selection := project.selected_cels
+	var source := Global.control.theme.get_stylebox(&"pressed", &"CelButton") as StyleBoxFlat
+	if not is_instance_valid(source):
+		return
+	var style := source.duplicate() as StyleBoxFlat
+	style.border_width_left = 0 if selection.has([frame - 1, layer]) else 1
+	style.border_width_right = 0 if selection.has([frame + 1, layer]) else 1
+	style.border_width_top = 0 if selection.has([frame, layer + 1]) else 1
+	style.border_width_bottom = 0 if selection.has([frame, layer - 1]) else 1
+	if selection.size() > 1 and frame == project.current_frame and layer == project.current_layer:
+		style.bg_color = source.bg_color.darkened(0.25)
+	add_theme_stylebox_override(&"pressed", style)
+	# A hovered selected cel must not re-introduce an inner border.
+	add_theme_stylebox_override(&"hover_pressed", style)
 
 
 func button_setup() -> void:
