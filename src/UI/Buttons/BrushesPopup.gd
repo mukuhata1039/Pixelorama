@@ -41,20 +41,6 @@ func _ready() -> void:
 	container.add_child(button)
 	button.brush.index = button.get_index()
 
-	# Procedural icon: solid at the center, ordered sparse dots toward the edge.
-	var dither_icon := Image.create_empty(16, 16, false, Image.FORMAT_RGBA8)
-	dither_icon.fill(Color.TRANSPARENT)
-	for y in 16:
-		for x in 16:
-			var pixel := Vector2i(x, y)
-			if ordered_dither_pixel_visible(pixel, pixel, 16, 100):
-				dither_icon.set_pixel(x, y, Color(0.2, 0.5, 0.9))
-	button = Brushes.create_button(dither_icon)
-	button.brush.type = DITHER
-	button.brush.image = dither_icon
-	button.tooltip_text = "Ordered dither brush (4x4 Bayer, center to edge)"
-	container.add_child(button)
-	button.brush.index = button.get_index()
 
 
 ## A radial fade rendered with one selected color, not blended gray pixels.
