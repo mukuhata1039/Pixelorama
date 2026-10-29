@@ -40,6 +40,7 @@ mouse_filter = 2
 color = Color(0, 0, 0, 0)
 
 [node name="Linked" type="ColorRect" parent="." unique_id=274019792]
+mouse_filter = 2
 visible = false
 custom_minimum_size = Vector2(0, 16)
 layout_mode = 1
@@ -56,6 +57,7 @@ grow_vertical = 2
 color = Color(0.4, 1, 0.4, 1)
 
 [node name="CelTexture" type="TextureRect" parent="." unique_id=2135915997]
+mouse_filter = 2
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -72,6 +74,7 @@ expand_mode = 1
 stretch_mode = 5
 
 [node name="TransparentChecker" parent="CelTexture" unique_id=329876372 instance=ExtResource("2_mi8wp")]
+mouse_filter = 2
 show_behind_parent = true
 material = SubResource("1")
 layout_mode = 1
@@ -82,6 +85,7 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="ZIndexIndicator" type="TextureRect" parent="." unique_id=657643632]
+mouse_filter = 2
 visible = false
 layout_mode = 1
 anchors_preset = 3
