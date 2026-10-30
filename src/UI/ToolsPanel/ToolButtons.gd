@@ -95,7 +95,7 @@ func _assign_cycled_tool(event: InputEvent, button: MouseButton) -> void:
 				var action: StringName = prefix + Tools.tools[tool_name].shortcut + "_tool"
 				for binding in InputMap.action_get_events(action):
 					if binding is InputEventKey and event.is_match(binding):
-						shortcut_id = Tools.cycle_shortcut_id(binding, button)
+						shortcut_id = Tools.cycle_shortcut_id(binding as InputEventKey, button)
 						break
 				if not shortcut_id.is_empty():
 					break

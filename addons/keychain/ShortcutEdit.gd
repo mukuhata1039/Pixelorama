@@ -468,7 +468,7 @@ func _on_shortcut_tree_button_clicked(item: TreeItem, _column: int, id: int, _mb
 			_open_cycle_dialog(parent_action, action)
 
 
-func _shared_cycle_tool_names(action: StringName, event: InputEventKey) -> Array[String]:
+func _shared_cycle_tool_names(action: StringName, event: InputEvent) -> Array[String]:
 	var matches: Array[String] = []
 	if not Keychain.actions.has(action):
 		return matches
@@ -503,27 +503,29 @@ func _ensure_cycle_dialog() -> void:
 	column.add_theme_constant_override("separation", 10)
 	cycle_dialog.add_child(column)
 	var explanation := Label.new()
-	explanation.text = tr("Which tool should be selected when coming from another tool?")
+	explanation.text = tr("Choose the first tool when switching back:")
+	explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(explanation)
 	cycle_mode = OptionButton.new()
 	cycle_mode.add_item(tr("Fixed order (first tool below)"), 0)
 	cycle_mode.add_item(tr("Most recently used tool first"), 1)
 	column.add_child(cycle_mode)
 	var order_label := Label.new()
-	order_label.text = tr("Cycle order (also used when repeating the shortcut):")
+	order_label.text = tr("Cycle order (use the arrows to change it):")
+	order_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(order_label)
 	cycle_list = VBoxContainer.new()
 	column.add_child(cycle_list)
 	cycle_dialog.confirmed.connect(_save_cycle_preferences)
 
 
-func _open_cycle_dialog(action: StringName, event: InputEventKey) -> void:
+func _open_cycle_dialog(action: StringName, event: InputEvent) -> void:
 	cycle_tool_names = _shared_cycle_tool_names(action, event)
 	if cycle_tool_names.size() < 2:
 		return
 	_ensure_cycle_dialog()
 	var button := MOUSE_BUTTON_RIGHT if Keychain.actions[action].group == "Right" else MOUSE_BUTTON_LEFT
-	cycle_key = Tools.cycle_shortcut_id(event, button)
+	cycle_key = Tools.cycle_shortcut_id(event as InputEventKey, button)
 	var preferences := Tools.get_cycle_preferences(cycle_key)
 	cycle_order = Tools.get_ordered_cycle_tools(cycle_tool_names, preferences)
 	cycle_mode.select(clampi(int(preferences.get("mode", 0)), 0, 1))

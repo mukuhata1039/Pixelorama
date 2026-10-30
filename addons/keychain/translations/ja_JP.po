@@ -817,3 +817,30 @@ msgstr "平面をアイソメトリックに変換"
 
 msgid "Shortcut action: lock_guides"
 msgstr "ガイドをロック"
+
+msgid "Tool cycle order / priority"
+msgstr "切り替え順と優先ツールを設定"
+
+msgid "Shared shortcut tool order"
+msgstr "重複ショートカットのツール順"
+
+msgid "Choose the first tool when switching back:"
+msgstr "別のツールから戻るときに最初に選ぶツール:"
+
+msgid "Fixed order (first tool below)"
+msgstr "固定順序（下の先頭を優先）"
+
+msgid "Most recently used tool first"
+msgstr "直近で使ったツールを優先"
+
+msgid "Cycle order (use the arrows to change it):"
+msgstr "キーを連続で押したときの巡回順（矢印で変更）:"
+
+msgid "Move up"
+msgstr "上へ移動"
+
+msgid "Move down"
+msgstr "下へ移動"
+
+msgid "Tool cycle: %s"
+msgstr "ツール切り替え: %s"
