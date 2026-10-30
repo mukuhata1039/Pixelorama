@@ -4232,3 +4232,9 @@ msgstr "確率:"
 #. The shortcut editor allows the same keyboard shortcut on multiple left/right tools.
 msgid "Shared tool shortcut: %s"
 msgstr "共有ショートカット: %s（押すたびにツールを切り替え）"
+
+msgid "Drag speed:"
+msgstr "ドラッグ速度:"
+
+msgid "Zoom drag sensitivity"
+msgstr "ドラッグによる拡大・縮小の速さ"

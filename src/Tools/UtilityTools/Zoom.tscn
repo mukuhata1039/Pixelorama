@@ -21,23 +21,51 @@ popup/item_0/id = 0
 popup/item_1/text = "Zoom in"
 popup/item_1/id = 1
 
-[node name="Options" type="Label" parent="." index="4" unique_id=1324144552]
+[node name="DragSpeed" type="VBoxContainer" parent="." index="4"]
+layout_mode = 2
+
+[node name="SpeedLabel" type="Label" parent="DragSpeed"]
+layout_mode = 2
+text = "Drag speed:"
+
+[node name="SpeedControl" type="HBoxContainer" parent="DragSpeed"]
+layout_mode = 2
+
+[node name="Slider" type="HSlider" parent="DragSpeed/SpeedControl"]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Zoom drag sensitivity"
+mouse_default_cursor_shape = 2
+min_value = 0.1
+max_value = 3.0
+step = 0.1
+value = 1.0
+
+[node name="SpeedValue" type="Label" parent="DragSpeed/SpeedControl"]
+custom_minimum_size = Vector2(40, 0)
+layout_mode = 2
+text = "100%"
+horizontal_alignment = 2
+
+[node name="Options" type="Label" parent="." index="5" unique_id=1324144552]
 layout_mode = 2
 mouse_default_cursor_shape = 2
 text = "Options:"
 
-[node name="FitToFrame" type="Button" parent="." index="5" unique_id=1652046134]
+[node name="FitToFrame" type="Button" parent="." index="6" unique_id=1652046134]
 custom_minimum_size = Vector2(92, 0)
 layout_mode = 2
 mouse_default_cursor_shape = 2
 text = "Fit to frame"
 
-[node name="100%" type="Button" parent="." index="6" unique_id=746701739]
+[node name="100%" type="Button" parent="." index="7" unique_id=746701739]
 custom_minimum_size = Vector2(92, 0)
 layout_mode = 2
 mouse_default_cursor_shape = 2
 text = "100% Zoom"
 
 [connection signal="item_selected" from="ModeOptions" to="." method="_on_ModeOptions_item_selected"]
+[connection signal="value_changed" from="DragSpeed/SpeedControl/Slider" to="." method="_on_DragSpeed_value_changed"]
 [connection signal="pressed" from="FitToFrame" to="." method="_on_FitToFrame_pressed"]
 [connection signal="pressed" from="100%" to="." method="_on_100_pressed"]
