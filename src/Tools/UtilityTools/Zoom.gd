@@ -7,6 +7,20 @@ var _prev_mode := ZoomMode.ZOOM_OUT
 var _zoom_mode := ZoomMode.ZOOM_OUT
 
 
+func _ready() -> void:
+	super._ready()
+	Tools.zoom_drag_speed_changed.connect(_sync_drag_speed_ui)
+
+
+func _sync_drag_speed_ui(speed: float) -> void:
+	$DragSpeed/SpeedControl/Slider.set_value_no_signal(speed)
+	$DragSpeed/SpeedControl/SpeedValue.text = "%d%%" % roundi(speed * 100.0)
+
+
+func _on_DragSpeed_value_changed(value: float) -> void:
+	Tools.set_zoom_drag_speed(value)
+
+
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		_relative = event.relative
@@ -47,6 +61,7 @@ func set_config(config: Dictionary) -> void:
 
 func update_config() -> void:
 	$ModeOptions.selected = _zoom_mode
+	_sync_drag_speed_ui(Tools.get_zoom_drag_speed())
 
 
 func draw_start(pos: Vector2i) -> void:
@@ -66,7 +81,7 @@ func draw_move(pos: Vector2i) -> void:
 		var viewport_container := camera.get_viewport().get_parent() as SubViewportContainer
 		var viewport_rect := Rect2(viewport_container.global_position, viewport_container.size)
 		if viewport_rect.has_point(mouse_pos):
-			camera.zoom_camera(-_relative.x / 3)
+			camera.zoom_camera(-_relative.x * Tools.get_zoom_drag_speed() / 3.0)
 
 
 func draw_end(pos: Vector2i) -> void:

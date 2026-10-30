@@ -127,7 +127,11 @@ func _input(event: InputEvent) -> void:
 				if Input.is_key_pressed(KEY_ALT):
 					# Use immediate updates for continuous dragging so separate
 					# smooth-zoom tweens do not compete for camera position.
-					zoom_camera(event.relative.x / 3.0, _quick_zoom_anchor, true)
+					zoom_camera(
+						event.relative.x * Tools.get_zoom_drag_speed() / 3.0,
+						_quick_zoom_anchor,
+						true
+					)
 				else:
 					offset = offset - event.relative.rotated(camera_angle) / zoom
 					update_transparent_checker_offset()
