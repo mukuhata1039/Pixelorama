@@ -19,21 +19,6 @@ const MIN_ZOOM_DRAG_SPEED := 0.1
 const MAX_ZOOM_DRAG_SPEED := 3.0
 
 
-## A shared persistent drag sensitivity for both the normal and quick Zoom tools.
-## The quick tool is frequently instantiated and freed, so the preference
-## must not be owned by an individual tool node or mouse-button slot.
-func get_zoom_drag_speed() -> float:
-	var stored_speed: float = Global.config_cache.get_value("tools", "zoom_drag_speed", 1.0)
-	return clampf(stored_speed, MIN_ZOOM_DRAG_SPEED, MAX_ZOOM_DRAG_SPEED)
-
-
-func set_zoom_drag_speed(value: float) -> void:
-	var speed := snappedf(clampf(value, MIN_ZOOM_DRAG_SPEED, MAX_ZOOM_DRAG_SPEED), 0.1)
-	if is_equal_approx(speed, get_zoom_drag_speed()):
-		return
-	Global.config_cache.set_value("tools", "zoom_drag_speed", speed)
-	zoom_drag_speed_changed.emit(speed)
-
 var active_multi_state_tools := 0:
 	set(value):
 		active_multi_state_tools = clamp(value, 0, 2)
@@ -473,6 +458,21 @@ class Slot:
 		name = slot_name
 		kname = name.replace(" ", "_").to_lower()
 
+
+## A shared persistent drag sensitivity for both the normal and quick Zoom tools.
+## The quick tool is frequently instantiated and freed, so the preference
+## must not be owned by an individual tool node or mouse-button slot.
+func get_zoom_drag_speed() -> float:
+	var stored_speed: float = Global.config_cache.get_value("tools", "zoom_drag_speed", 1.0)
+	return clampf(stored_speed, MIN_ZOOM_DRAG_SPEED, MAX_ZOOM_DRAG_SPEED)
+
+
+func set_zoom_drag_speed(value: float) -> void:
+	var speed := snappedf(clampf(value, MIN_ZOOM_DRAG_SPEED, MAX_ZOOM_DRAG_SPEED), 0.1)
+	if is_equal_approx(speed, get_zoom_drag_speed()):
+		return
+	Global.config_cache.set_value("tools", "zoom_drag_speed", speed)
+	zoom_drag_speed_changed.emit(speed)
 
 func _ready() -> void:
 	options_reset.connect(reset_options)
