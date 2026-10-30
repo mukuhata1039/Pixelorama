@@ -69,6 +69,13 @@ var is_editing := false
 var current_name_filter := ""
 var current_event_filter: InputEvent
 var filter_by_shortcut_line_edit_has_focus := false
+## One settings dialog for each selected shared keyboard shortcut.
+var cycle_dialog: ConfirmationDialog
+var cycle_mode: OptionButton
+var cycle_list: VBoxContainer
+var cycle_key := ""
+var cycle_order: Array[String] = []
+var cycle_tool_names: Array[String] = []
 # Textures taken from Godot https://github.com/godotengine/godot/tree/master/editor/icons
 var add_tex: Texture2D = preload("assets/add.svg")
 var edit_tex: Texture2D = preload("assets/edit.svg")
@@ -309,6 +316,12 @@ func add_event_tree_item(event: InputEvent, action_tree_item: TreeItem) -> void:
 			event_tree_item.set_icon(0, joy_axis_tex)
 	event_tree_item.add_button(0, edit_tex, 0, buttons_disabled, tr("Edit"))
 	event_tree_item.add_button(0, delete_tex, 1, buttons_disabled, tr("Delete"))
+	if event is InputEventKey:
+		var parent_action = action_tree_item.get_metadata(0)
+		if parent_action is StringName and _shared_cycle_tool_names(parent_action, event).size() > 1:
+			event_tree_item.add_button(
+				0, shortcut_tex, 2, buttons_disabled, tr("Tool cycle order / priority")
+			)
 
 
 func event_to_str(event: InputEvent) -> String:
@@ -430,8 +443,8 @@ func _on_shortcut_tree_button_clicked(item: TreeItem, _column: int, id: int, _mb
 		elif id == 1:  # Delete
 			Keychain.action_erase_events(action)
 			Keychain.change_action(action)
-			for child in item.get_children():
-				child.free()
+			_reconstruct_tree()
+			apply_search_filters()
 
 	elif action is InputEvent:
 		var parent_action = item.get_parent().get_metadata(0)
@@ -449,7 +462,118 @@ func _on_shortcut_tree_button_clicked(item: TreeItem, _column: int, id: int, _mb
 				return
 			Keychain.action_erase_event(parent_action, action)
 			Keychain.change_action(parent_action)
-			item.free()
+			_reconstruct_tree()
+			apply_search_filters()
+		elif id == 2 and action is InputEventKey and parent_action is StringName:
+			_open_cycle_dialog(parent_action, action)
+
+
+func _shared_cycle_tool_names(action: StringName, event: InputEventKey) -> Array[String]:
+	var matches: Array[String] = []
+	if not Keychain.actions.has(action):
+		return matches
+	var input_action: Keychain.InputAction = Keychain.actions[action]
+	if not input_action.cycle_shared_shortcuts:
+		return matches
+	var prefix := ""
+	if input_action.group == "Left":
+		prefix = "left_"
+	elif input_action.group == "Right":
+		prefix = "right_"
+	else:
+		return matches
+	for tool_name in Tools.tools:
+		var tool_action: StringName = prefix + Tools.tools[tool_name].shortcut + "_tool"
+		if not InputMap.has_action(tool_action):
+			continue
+		for binding in InputMap.action_get_events(tool_action):
+			if binding is InputEventKey and event.is_match(binding):
+				matches.append(tool_name)
+				break
+	return matches
+
+
+func _ensure_cycle_dialog() -> void:
+	if is_instance_valid(cycle_dialog):
+		return
+	cycle_dialog = ConfirmationDialog.new()
+	cycle_dialog.title = tr("Shared shortcut tool order")
+	add_child(cycle_dialog)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 10)
+	cycle_dialog.add_child(column)
+	var explanation := Label.new()
+	explanation.text = tr("Which tool should be selected when coming from another tool?")
+	column.add_child(explanation)
+	cycle_mode = OptionButton.new()
+	cycle_mode.add_item(tr("Fixed order (first tool below)"), 0)
+	cycle_mode.add_item(tr("Most recently used tool first"), 1)
+	column.add_child(cycle_mode)
+	var order_label := Label.new()
+	order_label.text = tr("Cycle order (also used when repeating the shortcut):")
+	column.add_child(order_label)
+	cycle_list = VBoxContainer.new()
+	column.add_child(cycle_list)
+	cycle_dialog.confirmed.connect(_save_cycle_preferences)
+
+
+func _open_cycle_dialog(action: StringName, event: InputEventKey) -> void:
+	cycle_tool_names = _shared_cycle_tool_names(action, event)
+	if cycle_tool_names.size() < 2:
+		return
+	_ensure_cycle_dialog()
+	var button := MOUSE_BUTTON_RIGHT if Keychain.actions[action].group == "Right" else MOUSE_BUTTON_LEFT
+	cycle_key = Tools.cycle_shortcut_id(event, button)
+	var preferences := Tools.get_cycle_preferences(cycle_key)
+	cycle_order = Tools.get_ordered_cycle_tools(cycle_tool_names, preferences)
+	cycle_mode.select(clampi(int(preferences.get("mode", 0)), 0, 1))
+	cycle_dialog.title = tr("Tool cycle: %s") % event_to_str(event)
+	_rebuild_cycle_list()
+	cycle_dialog.popup_centered(Vector2i(460, 280))
+
+
+func _rebuild_cycle_list() -> void:
+	for child in cycle_list.get_children():
+		cycle_list.remove_child(child)
+		child.queue_free()
+	for i in cycle_order.size():
+		var row := HBoxContainer.new()
+		cycle_list.add_child(row)
+		var name_label := Label.new()
+		name_label.text = tr(Tools.tools[cycle_order[i]].display_name)
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(name_label)
+		var up := Button.new()
+		up.text = "↑"
+		up.disabled = i == 0
+		up.tooltip_text = tr("Move up")
+		row.add_child(up)
+		up.pressed.connect(_move_cycle_tool.bind(i, -1))
+		var down := Button.new()
+		down.text = "↓"
+		down.disabled = i == cycle_order.size() - 1
+		down.tooltip_text = tr("Move down")
+		row.add_child(down)
+		down.pressed.connect(_move_cycle_tool.bind(i, 1))
+
+
+func _move_cycle_tool(index: int, direction: int) -> void:
+	var other := index + direction
+	if other < 0 or other >= cycle_order.size():
+		return
+	var tool_name := cycle_order[index]
+	cycle_order[index] = cycle_order[other]
+	cycle_order[other] = tool_name
+	_rebuild_cycle_list()
+
+
+func _save_cycle_preferences() -> void:
+	if not Keychain.selected_profile.customizable:
+		return
+	Keychain.selected_profile.tool_cycle_preferences[cycle_key] = {
+		"mode": cycle_mode.selected, "order": cycle_order.duplicate()
+	}
+	Keychain.selected_profile.save()
 
 
 func _on_shortcut_tree_item_selected() -> void:

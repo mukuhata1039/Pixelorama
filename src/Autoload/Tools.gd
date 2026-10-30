@@ -30,6 +30,59 @@ var prev_tool_names: Dictionary[int, String] = {
 	MOUSE_BUTTON_LEFT: "",
 	MOUSE_BUTTON_RIGHT: "",
 }
+## Most recently selected permanent tools, by mouse button. Quick hold tools don't count.
+var recent_tool_names: Dictionary[int, Array] = {
+	MOUSE_BUTTON_LEFT: [],
+	MOUSE_BUTTON_RIGHT: [],
+}
+
+
+## Stable identity of an assigned key and the left/right slot it controls.
+## Unlike action names, this stays shared by every tool bound to that key.
+func cycle_shortcut_id(key_event: InputEventKey, button: int) -> String:
+	return "%d:%d:%d:%d:%d:%d:%d:%d:%d" % [
+		button,
+		key_event.keycode,
+		key_event.physical_keycode,
+		key_event.key_label,
+		int(key_event.shift_pressed),
+		int(key_event.ctrl_pressed),
+		int(key_event.alt_pressed),
+		int(key_event.meta_pressed),
+		int(key_event.command_or_control_autoremap),
+	]
+
+
+## Cycle order and priority are stored in the selected shortcut profile.
+func get_cycle_preferences(shortcut_id: String) -> Dictionary:
+	if not is_instance_valid(Keychain.selected_profile):
+		return {}
+	return Keychain.selected_profile.tool_cycle_preferences.get(shortcut_id, {})
+
+
+func get_ordered_cycle_tools(matches: Array[String], preferences: Dictionary) -> Array[String]:
+	var ordered: Array[String] = []
+	var saved_order: Array = preferences.get("order", [])
+	for tool_name in saved_order:
+		if tool_name in matches and not tool_name in ordered:
+			ordered.append(tool_name)
+	for tool_name in matches:
+		if not tool_name in ordered:
+			ordered.append(tool_name)
+	return ordered
+
+
+func most_recent_matching_tool(matches: Array[String], button: int) -> String:
+	for tool_name in recent_tool_names.get(button, []):
+		if tool_name in matches:
+			return tool_name
+	return ""
+
+
+func remember_selected_tool(tool_name: String, button: int) -> void:
+	var recent: Array = recent_tool_names[button]
+	recent.erase(tool_name)
+	recent.push_front(tool_name)
 
 # Dynamics
 var stabilizer_enabled := false
@@ -580,6 +633,10 @@ func assign_tool(tool_name: String, button: int, allow_refresh := false) -> void
 		slot.tool_node.queue_free()
 
 	set_tool(tool_name, button)
+	# Temporary hold-to-switch tools (Pan/Zoom/Picker) and their restoration
+	# must not displace the actual previously used drawing tool.
+	if prev_tool_names[button].is_empty():
+		remember_selected_tool(tool_name, button)
 	update_tool_buttons()
 	update_tool_cursors()
 	Global.config_cache.set_value(slot.kname, "tool", tool_name)

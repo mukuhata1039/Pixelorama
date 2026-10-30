@@ -90,6 +90,10 @@ func _apply_shortcut_change(input_event: InputEvent) -> void:
 		if !changed:
 			return
 		root.add_event_tree_item(input_event, root.currently_editing_tree_item)
+	# A changed binding may create or remove a shared shortcut. Refresh all
+	# shortcut-row priority buttons immediately instead of requiring a reopen.
+	root._reconstruct_tree()
+	root.apply_search_filters()
 
 
 func _set_shortcut(action: StringName, old_event: InputEvent, new_event: InputEvent) -> bool:

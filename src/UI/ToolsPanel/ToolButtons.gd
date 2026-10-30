@@ -87,11 +87,33 @@ func _assign_cycled_tool(event: InputEvent, button: MouseButton) -> void:
 			return
 	var target := matches[0]
 	if matches.size() > 1:
+		var shortcut_id := ""
+		if event is InputEventKey:
+			# Use the saved binding, not the transient keyboard event, so physical
+			# and logical keycodes retain their own per-shortcut preferences.
+			for tool_name in matches:
+				var action: StringName = prefix + Tools.tools[tool_name].shortcut + "_tool"
+				for binding in InputMap.action_get_events(action):
+					if binding is InputEventKey and event.is_match(binding):
+						shortcut_id = Tools.cycle_shortcut_id(binding, button)
+						break
+				if not shortcut_id.is_empty():
+					break
+		var preferences := Tools.get_cycle_preferences(shortcut_id)
+		var ordered := Tools.get_ordered_cycle_tools(matches, preferences)
+		target = ordered[0]
 		var active_button := MOUSE_BUTTON_RIGHT if Global.single_tool_mode else button
 		var current_tool := Tools.get_tool(active_button).tool_node.name
-		var current_index := matches.find(current_tool)
+		var current_index := ordered.find(current_tool)
 		if current_index >= 0:
-			target = matches[(current_index + 1) % matches.size()]
+			# Repeated presses always cycle, regardless of the priority mode.
+			target = ordered[(current_index + 1) % ordered.size()]
+		elif preferences.get("mode", 0) == 1:
+			# Coming back from another tool: restore the most recently selected
+			# member of this shortcut group before resuming the normal cycle.
+			var recent := Tools.most_recent_matching_tool(ordered, active_button)
+			if not recent.is_empty():
+				target = recent
 	Tools.assign_tool(target, button)
 	Tools.prev_tool_names[button] = ""
 

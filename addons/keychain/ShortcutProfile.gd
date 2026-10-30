@@ -5,6 +5,8 @@ extends Resource
 @export var customizable := true
 @export var bindings: Dictionary[StringName, Array] = {}
 @export var mouse_movement_options: Dictionary[StringName, Dictionary] = {}
+## For each shared key + left/right slot: {"mode": 0/1, "order": [tool names]}.
+@export var tool_cycle_preferences: Dictionary[String, Dictionary] = {}
 
 
 func _init() -> void:
@@ -27,6 +29,7 @@ func fill_bindings(should_save := true) -> void:
 func copy_bindings_from(other_profile: ShortcutProfile) -> void:
 	bindings = other_profile.bindings.duplicate(true)
 	mouse_movement_options = other_profile.mouse_movement_options.duplicate(true)
+	tool_cycle_preferences = other_profile.tool_cycle_preferences.duplicate(true)
 	save()
 
 
