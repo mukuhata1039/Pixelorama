@@ -104,7 +104,7 @@ func _input(event: InputEvent) -> void:
 	# built-in Pan action. Give the configured rotation chord priority so
 	# a keyboard event or pre-click mouse movement cannot start a Pan drag.
 	# This also handles customized chords that overlap another navigation key.
-	if Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag", true):
+	if Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag"):
 		drag = false
 		_quick_navigation_drag = false
 		return
@@ -240,7 +240,7 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 			return false
 		var held_key_and_left_button := (
 			mouse_event.button_index == MOUSE_BUTTON_LEFT
-			and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag", true)
+			and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
 		)
 		var bound_mouse_button := event.is_action_pressed(&"canvas_rotate_drag", false, true)
 		if not held_key_and_left_button and not bound_mouse_button:
@@ -274,7 +274,7 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 			return true
 		if (
 			_clipstudio_rotate_mouse_shortcut
-			or Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag", true)
+			or Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
 		):
 			_update_clipstudio_rotation_snap()
 			var center := viewport_container.size * 0.5
@@ -304,9 +304,8 @@ func _update_clipstudio_rotation_snap() -> void:
 		and not _clipstudio_rotate_mouse_uses_shift
 		and (
 			_clipstudio_rotate_mouse_shortcut
-			or Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag", true)
+			or _is_rotation_keyboard_shortcut_without_shift_held()
 		)
-		and not Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
 	)
 	if snap == _clipstudio_rotate_snap_active:
 		return
@@ -316,6 +315,27 @@ func _update_clipstudio_rotation_snap() -> void:
 	_clipstudio_rotate_snap_active = snap
 	if snap:
 		camera_angle = snappedf(_clipstudio_rotate_raw_angle, ROTATION_SNAP_ANGLE)
+
+
+## Only an extra Shift snaps rotation. Shift that is part of the configured
+## rotation shortcut (for example Shift+Space) remains an activation modifier.
+func _is_rotation_keyboard_shortcut_without_shift_held() -> bool:
+	for shortcut in InputMap.action_get_events(&"canvas_rotate_drag"):
+		if not shortcut is InputEventKey:
+			continue
+		var binding := shortcut as InputEventKey
+		if binding.shift_pressed:
+			continue
+		var key := binding.physical_keycode if binding.physical_keycode != 0 else binding.keycode
+		if key == 0 or not Input.is_key_pressed(key):
+			continue
+		if (
+			binding.alt_pressed == Input.is_key_pressed(KEY_ALT)
+			and binding.ctrl_pressed == Input.is_key_pressed(KEY_CTRL)
+			and binding.meta_pressed == Input.is_key_pressed(KEY_META)
+		):
+			return true
+	return false
 
 
 ## Restore the unrotated, unmirrored view without modifying any image data.
