@@ -114,9 +114,9 @@ func _change_preview_frame(direction: int) -> void:
 		return
 	var target_frame := wrapi(_project.current_frame + direction, 0, _project.frames.size())
 	_project.change_cel(target_frame, _project.current_layer)
-	# The affected cells are intentionally frozen until the scope changes.
-	Global.canvas.update_all_layers = true
-	Global.canvas.queue_redraw()
+	# Preview the newly active cel in single-cel mode, or retain the
+	# selected-layer targets in the other two modes.
+	_refresh_preview()
 
 
 func _apply() -> void:
@@ -198,5 +198,5 @@ func _on_visibility_changed() -> void:
 		return
 	_stop_preview()
 	Global.dialog_open(false)
-	_project = null
-	_targets.clear()
+	# Keep the snapshot here: ConfirmationDialog can hide before emitting
+	# confirmed, and _apply() must still be able to access its targets.
