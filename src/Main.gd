@@ -32,6 +32,7 @@ var is_writing_text := false
 var changed_projects_on_quit: Array[Project]
 var cursor_image := preload("res://assets/graphics/cursor.png")
 var _rotate_view_cursor_active := false
+var _layer_pick_cursor_active := false
 var _aseprite_cursors := {}
 ## -1 = no cel drag; 1 = move cels; 2 = copy cels.
 var _cel_drag_cursor_mode := -1
@@ -288,20 +289,36 @@ func _process(_delta: float) -> void:
 				and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
 			)
 		)
-	if is_rotating_view == _rotate_view_cursor_active:
+	# The same shortcut predicate is used by the layer-pick brush suppression.
+	# Keep the standard cursor, hiding only the left tool's floating icon.
+	var is_layer_picking := (
+		Global.can_draw
+		and not is_writing_text
+		and is_instance_valid(Global.main_viewport)
+		and Global.main_viewport.get_global_rect().has_point(get_global_mouse_position())
+		and Tools.active_button == -1
+		and Input.is_action_pressed(&"change_layer_automatically", true)
+		and Tools.get_tool(MOUSE_BUTTON_LEFT).tool_node is not BaseSelectionTool
+	)
+	if (
+		is_rotating_view == _rotate_view_cursor_active
+		and is_layer_picking == _layer_pick_cursor_active
+	):
 		return
 	_rotate_view_cursor_active = is_rotating_view
+	_layer_pick_cursor_active = is_layer_picking
 
-	# Temporarily hide normal left/right tool icons and brush previews
-	# while Rotate View is active, just like the quick Pan tool.
-	# Keep the saved cursor preferences intact so they are restored
-	# immediately on releasing the rotation shortcut.
+	# Preserve the saved tool-icon preferences. Rotation hides both icons,
+	# while layer picking hides just the left brush tool icon.
 	var over_main_canvas := (
 		is_instance_valid(Global.main_viewport)
 		and Global.main_viewport.get_global_rect().has_point(get_global_mouse_position())
 	)
 	left_cursor.visible = (
-		not is_rotating_view and over_main_canvas and Global.show_left_tool_icon
+		not is_rotating_view
+		and not is_layer_picking
+		and over_main_canvas
+		and Global.show_left_tool_icon
 	)
 	right_cursor.visible = (
 		not is_rotating_view
