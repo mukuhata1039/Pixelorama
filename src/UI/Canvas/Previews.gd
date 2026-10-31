@@ -28,7 +28,7 @@ func _draw() -> void:
 			Global.camera._clipstudio_rotate_drag
 			or (
 				Tools.active_button == -1
-				and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+				and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag", true)
 			)
 		):
 			return
