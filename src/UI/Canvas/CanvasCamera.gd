@@ -8,6 +8,7 @@ signal offset_changed
 enum Cameras { MAIN, SECOND, SMALL }
 
 const CAMERA_SPEED_RATE := 15.0
+const ROTATION_SNAP_ANGLE := PI / 12.0  # 15 degrees
 
 @export var index := 0
 
@@ -44,7 +45,10 @@ var _quick_zoom_anchor := Vector2.ZERO
 var _clipstudio_rotate_drag := false
 var _clipstudio_rotate_button := MOUSE_BUTTON_LEFT
 var _clipstudio_rotate_mouse_shortcut := false
+var _clipstudio_rotate_mouse_uses_shift := false
 var _clipstudio_rotate_previous_mouse := Vector2.ZERO
+var _clipstudio_rotate_raw_angle := 0.0
+var _clipstudio_rotate_snap_active := false
 var rotation_slider: ValueSlider
 var zoom_slider: ValueSlider
 var should_tween := true
@@ -77,6 +81,8 @@ func cancel_navigation_drag() -> void:
 	_quick_navigation_drag = false
 	_clipstudio_rotate_drag = false
 	_clipstudio_rotate_mouse_shortcut = false
+	_clipstudio_rotate_mouse_uses_shift = false
+	_clipstudio_rotate_snap_active = false
 
 
 func _notification(what: int) -> void:
@@ -98,7 +104,7 @@ func _input(event: InputEvent) -> void:
 	# built-in Pan action. Give the configured rotation chord priority so
 	# a keyboard event or pre-click mouse movement cannot start a Pan drag.
 	# This also handles customized chords that overlap another navigation key.
-	if Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag"):
+	if Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag", true):
 		drag = false
 		_quick_navigation_drag = false
 		return
@@ -193,6 +199,15 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 		viewport_container.get_global_mouse_position()
 	)
 
+	# Switch snapping immediately when Shift is pressed or released during a
+	# rotation drag. On release, keep the currently displayed snapped angle.
+	if _clipstudio_rotate_drag and event is InputEventKey:
+		var key_event := event as InputEventKey
+		if key_event.keycode == KEY_SHIFT or key_event.physical_keycode == KEY_SHIFT:
+			_update_clipstudio_rotation_snap()
+			get_viewport().set_input_as_handled()
+			return true
+
 	# Reset the complete viewing orientation via a single remappable shortcut.
 	# Use the view menu's normal mirror handler to keep its checkmark,
 	# selection outline and canvas redraw synchronized.
@@ -217,13 +232,15 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 			if not mouse_event.pressed:
 				_clipstudio_rotate_drag = false
 				_clipstudio_rotate_mouse_shortcut = false
+				_clipstudio_rotate_mouse_uses_shift = false
+				_clipstudio_rotate_snap_active = false
 				get_viewport().set_input_as_handled()
 				return true
 		if not mouse_event.pressed or not in_canvas or Tools.active_button != -1:
 			return false
 		var held_key_and_left_button := (
 			mouse_event.button_index == MOUSE_BUTTON_LEFT
-			and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+			and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag", true)
 		)
 		var bound_mouse_button := event.is_action_pressed(&"canvas_rotate_drag", false, true)
 		if not held_key_and_left_button and not bound_mouse_button:
@@ -231,11 +248,20 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 		_clipstudio_rotate_drag = true
 		_clipstudio_rotate_button = mouse_event.button_index
 		_clipstudio_rotate_mouse_shortcut = bound_mouse_button and not held_key_and_left_button
+		# A mouse shortcut such as Shift+Middle must keep using Shift to rotate;
+		# do not interpret that required modifier as an angle-snap request.
+		_clipstudio_rotate_mouse_uses_shift = (
+			_clipstudio_rotate_mouse_shortcut and mouse_event.shift_pressed
+		)
 		_clipstudio_rotate_previous_mouse = mouse_pos
+		_clipstudio_rotate_raw_angle = camera_angle
+		_clipstudio_rotate_snap_active = false
+		_update_clipstudio_rotation_snap()
 		drag = false
 		_quick_navigation_drag = false
 		if mouse_event.double_click:
 			reset_canvas_orientation()
+			_clipstudio_rotate_raw_angle = camera_angle
 		get_viewport().set_input_as_handled()
 		return true
 
@@ -243,21 +269,54 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 		if not Input.is_mouse_button_pressed(_clipstudio_rotate_button):
 			_clipstudio_rotate_drag = false
 			_clipstudio_rotate_mouse_shortcut = false
+			_clipstudio_rotate_mouse_uses_shift = false
+			_clipstudio_rotate_snap_active = false
 			return true
 		if (
 			_clipstudio_rotate_mouse_shortcut
-			or Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+			or Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag", true)
 		):
+			_update_clipstudio_rotation_snap()
 			var center := viewport_container.size * 0.5
 			var previous := _clipstudio_rotate_previous_mouse - center
 			var current := mouse_pos - center
 			# Avoid angular jumps when a drag passes through the pivot.
 			if previous.length_squared() > 256.0 and current.length_squared() > 256.0:
-				camera_angle -= previous.angle_to(current)
+				_clipstudio_rotate_raw_angle -= previous.angle_to(current)
+				camera_angle = (
+					snappedf(_clipstudio_rotate_raw_angle, ROTATION_SNAP_ANGLE)
+					if _clipstudio_rotate_snap_active
+					else _clipstudio_rotate_raw_angle
+				)
 		_clipstudio_rotate_previous_mouse = mouse_pos
 		get_viewport().set_input_as_handled()
 		return true
 	return false
+
+
+## Shift is a snapping modifier only if the active rotation shortcut itself
+## does not require Shift. This preserves the built-in Shift+Space shortcut.
+func _update_clipstudio_rotation_snap() -> void:
+	if not _clipstudio_rotate_drag:
+		return
+	var snap := (
+		Input.is_key_pressed(KEY_SHIFT)
+		and not _clipstudio_rotate_mouse_uses_shift
+		and (
+			_clipstudio_rotate_mouse_shortcut
+			or Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag", true)
+		)
+		and not Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
+	)
+	if snap == _clipstudio_rotate_snap_active:
+		return
+	# Reset the raw accumulator at both transitions. Shift release must
+	# continue smoothly from the visible snapped angle, without jumping.
+	_clipstudio_rotate_raw_angle = camera_angle
+	_clipstudio_rotate_snap_active = snap
+	if snap:
+		camera_angle = snappedf(_clipstudio_rotate_raw_angle, ROTATION_SNAP_ANGLE)
+
 
 ## Restore the unrotated, unmirrored view without modifying any image data.
 ## Deliberately retain the user's current zoom and pan offset.
