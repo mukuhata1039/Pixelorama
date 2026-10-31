@@ -290,6 +290,7 @@ func display_effects(cel: BaseCel, animate_params := true, image_override: Image
 		else:
 			image.copy_from_custom(project.crop_image_to_project_size(cel_image, cel.offset))
 	if not effects_enabled:
+		_apply_live_recolor_preview(image, cel)
 		return image
 	var image_size := image.get_size()
 	var frame := cel.get_frame(project)
@@ -326,7 +327,19 @@ func display_effects(cel: BaseCel, animate_params := true, image_override: Image
 			effect_params["PXO_layer_index"] = index
 			var shader_image_effect := ShaderImageEffect.new()
 			shader_image_effect.generate_image(image, effect.shader, effect_params, image_size)
+	_apply_live_recolor_preview(image, cel)
 	return image
+
+
+## Recolor at the last display stage, including pixels composited inside groups.
+func _apply_live_recolor_preview(image: Image, cel: BaseCel) -> void:
+	if not self is PixelLayer or not cel is PixelCel or cel is CelTileMap:
+		return
+	if not is_instance_valid(Global.canvas):
+		return
+	var frame_index := project.frames.find(cel.get_frame(project))
+	if frame_index >= 0:
+		Global.canvas.apply_live_recolor_preview(image, index, frame_index, project)
 
 
 func add_effect(effect: LayerEffect, effect_position := -1) -> void:

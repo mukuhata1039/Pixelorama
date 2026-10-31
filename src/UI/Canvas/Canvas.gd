@@ -2,6 +2,7 @@ class_name Canvas
 extends Node2D
 
 const CURSOR_SPEED_RATE := 6.0
+const LIVE_RECOLOR_SHADER := preload("res://src/Shaders/LiveRecolor.gdshader")
 
 var current_pixel := Vector2.ZERO
 var _quick_navigation_captured_left_mouse := false
@@ -24,6 +25,11 @@ var move_preview_location := Vector2i.ZERO
 var layer_texture_array := Texture2DArray.new()
 var layer_metadata_image := Image.new()
 var layer_metadata_texture := ImageTexture.new()
+## Temporary draw-only color replacement. Never writes to PixelCel.image until Apply.
+var live_recolor_project: Project
+var live_recolor_targets: Dictionary = {}
+var live_recolor_color := Color.BLACK
+var live_recolor_enabled := false
 
 @onready var currently_visible_frame := $CurrentlyVisibleFrame as SubViewport
 @onready var current_frame_drawer := $CurrentlyVisibleFrame/CurrentFrameDrawer as Node2D
@@ -308,6 +314,44 @@ func camera_zoom(project := Global.current_project) -> void:
 	Global.transparent_checker.update_rect()
 
 
+## Update only rendered images; original cel pixel data stays untouched.
+func set_live_recolor_preview(project: Project, targets: Array, color: Color) -> void:
+	live_recolor_project = project
+	live_recolor_targets.clear()
+	for target in targets:
+		live_recolor_targets[Vector2i(target[0], target[1])] = true
+	live_recolor_color = color
+	live_recolor_enabled = not live_recolor_targets.is_empty()
+	update_all_layers = true
+	queue_redraw()
+
+
+func clear_live_recolor_preview() -> void:
+	if not live_recolor_enabled:
+		return
+	live_recolor_enabled = false
+	live_recolor_targets.clear()
+	live_recolor_project = null
+	update_all_layers = true
+	queue_redraw()
+
+
+func apply_live_recolor_preview(
+	image: Image, layer_index: int, frame_index: int, project: Project
+) -> void:
+	if (
+		not live_recolor_enabled
+		or project != live_recolor_project
+		or not live_recolor_targets.has(Vector2i(frame_index, layer_index))
+		or image.is_empty()
+	):
+		return
+	var generator := ShaderImageEffect.new()
+	generator.generate_image(
+		image, LIVE_RECOLOR_SHADER, {"target_color": live_recolor_color}, image.get_size()
+	)
+
+
 static func get_canvas_cel_image(cel: BaseCel, layer: BaseLayer, image: Image) -> void:
 	var project := layer.project
 	if layer.is_blender():
@@ -321,6 +365,11 @@ static func get_canvas_cel_image(cel: BaseCel, layer: BaseLayer, image: Image) -
 				image.copy_from(project.crop_image_to_project_size(image, cel.offset))
 		else:
 			image.copy_from(project.crop_image_to_project_size(cel.get_image(), cel.offset))
+			# Display effects may be disabled without disabling recolor preview.
+			if layer is PixelLayer and cel is PixelCel and not cel is CelTileMap:
+				Global.canvas.apply_live_recolor_preview(
+					image, layer.index, project.current_frame, project
+				)
 
 
 func update_texture(

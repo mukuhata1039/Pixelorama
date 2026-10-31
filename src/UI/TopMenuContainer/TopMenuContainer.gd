@@ -34,6 +34,8 @@ var new_image_dialog := Dialog.new("res://src/UI/Dialogs/CreateNewImage.tscn")
 var project_properties_dialog := Dialog.new("res://src/UI/Dialogs/ProjectProperties.tscn")
 var preferences_dialog := Dialog.new("res://src/Preferences/PreferencesDialog.tscn")
 var modify_selection := Dialog.new("res://src/UI/Dialogs/ModifySelection.tscn")
+const RECOLOR_MENU_ID := 10001
+var recolor_cels_dialog := Dialog.new("res://src/UI/Dialogs/RecolorCelsDialog.tscn")
 var offset_image_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/OffsetScaleImage.tscn")
 var scale_image_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/ScaleImage.tscn")
 var resize_canvas_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/ResizeCanvas.tscn")
@@ -330,6 +332,8 @@ func _setup_edit_menu() -> void:
 		i += 1
 
 	edit_menu.set_item_disabled(Global.EditMenu.NEW_BRUSH, true)
+	edit_menu.add_separator()
+	edit_menu.add_item("Recolor drawn pixels...", RECOLOR_MENU_ID)
 	edit_menu.id_pressed.connect(edit_menu_id_pressed)
 
 
@@ -830,6 +834,8 @@ func edit_menu_id_pressed(id: int) -> void:
 			Global.canvas.selection.new_brush()
 		Global.EditMenu.PREFERENCES:
 			preferences_dialog.popup()
+		RECOLOR_MENU_ID:
+			recolor_cels_dialog.popup()
 		_:
 			_handle_metadata(id, edit_menu)
 
