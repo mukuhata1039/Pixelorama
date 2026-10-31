@@ -674,7 +674,9 @@ func has_space_alt_quick_navigation() -> bool:
 ## order in which the modifier and main key were pressed. The InputMap
 ## action_pressed state alone does not handle e.g. Space-then-Shift for a
 ## Shift+Space shortcut. Read the current shortcut profile from InputMap.
-func is_keyboard_shortcut_held(action: StringName) -> bool:
+## Extra Shift is optionally allowed for canvas rotation angle snapping;
+## shortcuts that require Shift still require it.
+func is_keyboard_shortcut_held(action: StringName, allow_extra_shift := false) -> bool:
 	if not InputMap.has_action(action):
 		return false
 	for shortcut in InputMap.action_get_events(action):
@@ -685,7 +687,10 @@ func is_keyboard_shortcut_held(action: StringName) -> bool:
 		if key == 0 or not Input.is_key_pressed(key):
 			continue
 		if (
-			binding.shift_pressed == Input.is_key_pressed(KEY_SHIFT)
+			(
+				binding.shift_pressed == Input.is_key_pressed(KEY_SHIFT)
+				or (allow_extra_shift and not binding.shift_pressed and Input.is_key_pressed(KEY_SHIFT))
+			)
 			and binding.alt_pressed == Input.is_key_pressed(KEY_ALT)
 			and binding.ctrl_pressed == Input.is_key_pressed(KEY_CTRL)
 			and binding.meta_pressed == Input.is_key_pressed(KEY_META)
