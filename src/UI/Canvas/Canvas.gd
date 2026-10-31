@@ -185,7 +185,7 @@ func _input(event: InputEvent) -> void:
 		or (
 			Tools.active_button == -1
 			and (
-				Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag", true)
+				Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
 				or (
 					event is InputEventMouseButton
 					and event.is_action_pressed(&"canvas_rotate_drag", false, true)
