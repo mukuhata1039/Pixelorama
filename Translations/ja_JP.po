@@ -4238,3 +4238,33 @@ msgstr "ドラッグ速度:"
 
 msgid "Zoom drag sensitivity"
 msgstr "ドラッグによる拡大・縮小の速さ"
+
+msgid "Recolor drawn pixels..."
+msgstr "描画色を一括変更..."
+
+msgid "Recolor drawn pixels"
+msgstr "描画色を一括変更"
+
+msgid "Replace every nontransparent pixel with the chosen color."
+msgstr "透明でないピクセルをすべて指定色に置き換えます。"
+
+msgid "Replacement color:"
+msgstr "変更後の色:"
+
+msgid "Apply to:"
+msgstr "処理対象:"
+
+msgid "All frames in current layer"
+msgstr "現在のレイヤーの全フレーム"
+
+msgid "Previous frame"
+msgstr "前のフレーム"
+
+msgid "Next frame"
+msgstr "次のフレーム"
+
+msgid "Affected cels: %d"
+msgstr "対象セル: %d"
+
+msgid "Indexed-color projects are not supported."
+msgstr "インデックスカラープロジェクトには未対応です。"
