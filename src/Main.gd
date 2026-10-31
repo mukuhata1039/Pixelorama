@@ -286,7 +286,7 @@ func _process(_delta: float) -> void:
 			Global.camera._clipstudio_rotate_drag
 			or (
 				Tools.active_button == -1
-				and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag", true)
+				and Tools.is_keyboard_shortcut_held(&"canvas_rotate_drag")
 			)
 		)
 	# The same shortcut predicate is used by the layer-pick brush suppression.
