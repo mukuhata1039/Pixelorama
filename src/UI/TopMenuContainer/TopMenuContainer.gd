@@ -16,6 +16,12 @@ var recent_projects := []
 var selected_layout := 0
 var zen_mode := false
 var can_save := true
+## Restore the window as it was immediately before entering fullscreen.
+var _window_mode_before_fullscreen := Window.MODE_WINDOWED
+var _window_rect_before_fullscreen := Rect2i()
+var _window_screen_before_fullscreen := -1
+var _has_window_state_before_fullscreen := false
+var _fullscreen_toggle_id := 0
 var tile_mode_submenu := PopupMenu.new()
 var selection_modify_submenu := PopupMenu.new()
 var color_mode_submenu := PopupMenu.new()
@@ -1164,14 +1170,59 @@ func _toggle_zen_mode() -> void:
 
 
 func _toggle_fullscreen() -> void:
+	var window := get_window()
 	var is_fullscreen := (
-		(get_window().mode == Window.MODE_EXCLUSIVE_FULLSCREEN)
-		or (get_window().mode == Window.MODE_FULLSCREEN)
+		(window.mode == Window.MODE_EXCLUSIVE_FULLSCREEN)
+		or (window.mode == Window.MODE_FULLSCREEN)
 	)
-	get_window().mode = Window.MODE_EXCLUSIVE_FULLSCREEN if !is_fullscreen else Window.MODE_WINDOWED
+	_fullscreen_toggle_id += 1
+	if not is_fullscreen:
+		# Fullscreen changes the window dimensions to the monitor dimensions.
+		# Capture the normal geometry and the maximized/windowed state first.
+		_window_mode_before_fullscreen = window.mode
+		_window_rect_before_fullscreen = Rect2i(window.position, window.size)
+		_window_screen_before_fullscreen = window.current_screen
+		_has_window_state_before_fullscreen = true
+		window.mode = Window.MODE_EXCLUSIVE_FULLSCREEN
+	else:
+		var restore_mode := (
+			_window_mode_before_fullscreen
+			if _has_window_state_before_fullscreen
+			else Window.MODE_WINDOWED
+		)
+		window.mode = restore_mode
+		if _has_window_state_before_fullscreen:
+			if (
+				_window_screen_before_fullscreen >= 0
+				and _window_screen_before_fullscreen < DisplayServer.get_screen_count()
+			):
+				window.current_screen = _window_screen_before_fullscreen
+			if restore_mode == Window.MODE_WINDOWED:
+				window.position = _window_rect_before_fullscreen.position
+				window.size = _window_rect_before_fullscreen.size
+				# The OS can update the bounds during the fullscreen transition.
+				# Reapply once on the next idle pass, unless F12 was toggled again.
+				_finish_windowed_fullscreen_restore.call_deferred(
+					_fullscreen_toggle_id,
+					_window_rect_before_fullscreen.position,
+					_window_rect_before_fullscreen.size
+				)
+		_has_window_state_before_fullscreen = false
 	is_fullscreen = not is_fullscreen
 	window_menu.set_item_checked(Global.WindowMenu.FULLSCREEN_MODE, is_fullscreen)
 	get_tree().current_scene.set_mobile_fullscreen_safe_area()
+
+
+func _finish_windowed_fullscreen_restore(
+	toggle_id: int, saved_position: Vector2i, saved_size: Vector2i
+) -> void:
+	if toggle_id != _fullscreen_toggle_id:
+		return
+	var window := get_window()
+	if window.mode != Window.MODE_WINDOWED:
+		return
+	window.position = saved_position
+	window.size = saved_size
 
 
 func project_menu_id_pressed(id: int) -> void:
