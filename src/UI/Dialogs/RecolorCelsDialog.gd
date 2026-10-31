@@ -1,4 +1,6 @@
 extends ConfirmationDialog
+
+const RECOLOR_SHADER := preload("res://src/Shaders/LiveRecolor.gdshader")
 ## Replace all nontransparent pixels in the chosen cels with a single RGBA color.
 ## Preview is rendered through Canvas/BaseLayer, so Cancel never modifies image data.
 
@@ -31,7 +33,7 @@ func _prepare() -> void:
 	_project = Global.current_project
 	if _project == null:
 		return
-	var base_color := Global.left_tool_color
+	var base_color := Tools.get_assigned_color(MOUSE_BUTTON_LEFT)
 	base_color.a = 1.0
 	color_button.color = base_color
 	alpha_slider.set_value_no_signal(100.0)
@@ -151,7 +153,7 @@ func _apply() -> void:
 			replacement = ImageExtended.create_from_image(old_image)
 			var generator := ShaderImageEffect.new()
 			generator.generate_image(
-				replacement, Canvas.LIVE_RECOLOR_SHADER,
+				replacement, RECOLOR_SHADER,
 				{"target_color": color_button.color}, replacement.get_size()
 			)
 			if not split_link:
