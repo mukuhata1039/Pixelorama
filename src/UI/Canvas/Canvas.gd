@@ -117,6 +117,8 @@ func _draw() -> void:
 		and bool(timeline.get("is_animation_running"))
 		and not bool(timeline.get("benchmark_baseline_mode"))
 		and not live_recolor_enabled
+		and not update_all_layers
+		and mandatory_update_layers.is_empty()
 	)
 	_playback_cache_eligible = false
 	if not use_playback_cache:
@@ -406,6 +408,11 @@ func _store_playback_frame_images(frame_index: int, images: Array[Image], metada
 	}
 	_playback_frame_lru.append(frame_index)
 	_playback_frame_cache_bytes += bytes
+
+
+func reset_playback_cache_counters() -> void:
+	_playback_cache_hits = 0
+	_playback_cache_misses = 0
 
 
 func get_playback_frame_cache_stats() -> Dictionary:
