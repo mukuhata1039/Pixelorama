@@ -671,12 +671,12 @@ func select_cel_rect() -> void:
 	commit_undo("Select", undo_data_tmp)
 
 
-func select_cel_pixels(layer: BaseLayer, frame: Frame) -> void:
+## Select the pixels drawn in one cel. Optionally combine them with the
+## existing canvas selection without selecting additional timeline cels.
+func select_cel_pixels(layer: BaseLayer, frame: Frame, add_to_selection := false) -> void:
 	transform_content_confirm()
 	var project := Global.current_project
 	var undo_data_tmp := get_undo_data(false)
-	project.selection_map.crop(project.size.x, project.size.y)
-	project.selection_map.clear()
 	var current_cel := frame.cels[layer.index]
 	var cel_image: Image
 	if current_cel is GroupCel:
@@ -684,10 +684,28 @@ func select_cel_pixels(layer: BaseLayer, frame: Frame) -> void:
 	else:
 		cel_image = project.crop_image_to_project_size(current_cel.get_image(), current_cel.offset)
 	var selection_format := project.selection_map.get_format()
-	project.selection_map.copy_from(cel_image)
-	project.selection_map.convert(selection_format)
+	if add_to_selection and project.has_selection:
+		# The selection map may extend outside the canvas with a negative
+		# selection_offset. Keep those pixels and map the cel's origin into
+		# the existing selection coordinates instead of cropping the selection.
+		cel_image.convert(selection_format)
+		var destination := -project.selection_offset
+		project.selection_map.crop(
+			maxi(project.selection_map.get_width(), project.size.x + destination.x),
+			maxi(project.selection_map.get_height(), project.size.y + destination.y)
+		)
+		# Alpha compositing is a union here: previously selected pixels
+		# remain selected, and new nontransparent cel pixels are added.
+		project.selection_map.blend_rect(
+			cel_image, Rect2i(Vector2i.ZERO, cel_image.get_size()), destination
+		)
+	else:
+		project.selection_map.crop(project.size.x, project.size.y)
+		project.selection_map.clear()
+		project.selection_map.copy_from(cel_image)
+		project.selection_map.convert(selection_format)
+		project.selection_offset = Vector2i.ZERO
 	project.selection_map_changed()
-	project.selection_offset = Vector2.ZERO
 	commit_undo("Select", undo_data_tmp)
 
 
