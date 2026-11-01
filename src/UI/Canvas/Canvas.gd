@@ -109,7 +109,14 @@ func _draw() -> void:
 	)
 	# Any redraw not caused by the animation timer could change the image.
 	# A drag/edit, effects change, visibility change or other UI redraw
-	# must never reuse an older prepared frame.
+	# must never reuse an older prepared frame. Animated 3D cel textures can
+	# also change independently of the 2D frame, so never cache 3D projects.
+	var contains_3d_layers := false
+	if _playback_cache_eligible:
+		for layer in project.layers:
+			if layer is Layer3D:
+				contains_3d_layers = true
+				break
 	var timeline := Global.animation_timeline
 	var use_playback_cache := (
 		_playback_cache_eligible
@@ -117,6 +124,7 @@ func _draw() -> void:
 		and bool(timeline.get("is_animation_running"))
 		and not bool(timeline.get("benchmark_baseline_mode"))
 		and not live_recolor_enabled
+		and not contains_3d_layers
 		and not update_all_layers
 		and mandatory_update_layers.is_empty()
 	)
