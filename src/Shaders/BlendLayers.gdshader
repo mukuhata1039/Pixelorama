@@ -5,9 +5,10 @@ const float HCV_EPSILON = 1e-10;
 const float HSL_EPSILON = 1e-10;
 
 uniform sampler2DArray layers : filter_nearest;
-// Nx4 texture, where N is the number of layers and the first row are the blend modes,
-// the second are the opacities, the third are the origins and the fourth are the
-// clipping mask booleans.
+// Nx4 metadata texture (one column per layer):
+// row 0 = blend mode, row 1 = opacity, row 2 = clipping/skip flag.
+// row 2: 0.0 = unclipped base, 1.0 = clipped layer,
+//        0.2 = child already composited into a non-pass-through group.
 uniform sampler2D metadata : filter_nearest;
 
 // Conversion functions from
@@ -185,12 +186,12 @@ float border_trim(vec4 color, vec2 uv) {
 }
 
 
-int find_previous_opaque_layer(int index) {
+// Find the first non-clipped layer below the current layer. Consecutive
+// clipping layers share that same base; internal group children are skipped.
+int find_clipping_base_layer(int index) {
 	for (int i = index - 1; i > 0; i--) {
-		float clipping_mask = texelFetch(metadata, ivec2(i, 3), 0).r;
-		// If the red value is ~0.2, it means that it should be skipped.
-		// Otherwise, return the index.
-		if (clipping_mask > 0.25 || clipping_mask < 0.15) {
+		float clip_state = texelFetch(metadata, ivec2(i, 2), 0).r;
+		if (clip_state < 0.1) {
 			return i;
 		}
 	}
@@ -210,14 +211,18 @@ void fragment() {
 		// Blend modes are being stored as integers divided by 255, so convert them back to
 		// their integer form
 		int current_blend_mode = int(floor(blend_mode_float * 255.0));
-		// get origin of previous layer (used for clipping masks to work correctly)
-		int clipping_i = find_previous_opaque_layer(i);
 		float current_opacity = texelFetch(metadata, ivec2(i, 1), 0).r;
 		vec2 uv = UV;
 		vec4 layer_color = texture(layers, vec3(uv, float(i)));
-		vec4 prev_layer_color = texture(layers, vec3(UV, float(clipping_i)));
 		float clipping_mask = texelFetch(metadata, ivec2(i, 2), 0).r;
-		layer_color.a *= prev_layer_color.a * step(0.5, clipping_mask) + 1.0 * step(clipping_mask, 0.5);
+		if (clipping_mask > 0.5) {
+			int base_i = find_clipping_base_layer(i);
+			float base_opacity = texelFetch(metadata, ivec2(base_i, 1), 0).r;
+			vec4 base_color = texture(layers, vec3(UV, float(base_i)));
+			// Use the base's visible alpha, including its layer/cel opacity.
+			// An invisible base has zero opacity and hides its clipped layers.
+			layer_color.a *= base_color.a * base_opacity;
+		}
 		layer_color.a = border_trim(layer_color, uv);
 		result_color = blend(current_blend_mode, layer_color, result_color, current_opacity);
 	}
