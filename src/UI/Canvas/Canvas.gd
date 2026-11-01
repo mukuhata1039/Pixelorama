@@ -653,8 +653,13 @@ func draw_layers(force_recreate := false, allow_playback_cache := false) -> void
 		if _benchmark_canvas_sample_active:
 			_benchmark_metadata_us += Time.get_ticks_usec() - metadata_started_us
 	else:  # Update the TextureArray
-		# In-place updates mean the image was dirtied by an edit or effect.
-		clear_playback_frame_cache()
+		# Camera/selection-overlay redraws also pass through this branch.
+		# Only explicit layer data updates invalidate prepared playback images.
+		# Pixel edits independently invalidate in update_texture() and
+		# update_selected_cels_textures(), and project mutations invalidate
+		# through the project signals or a full texture recreation.
+		if update_all_layers or not mandatory_update_layers.is_empty():
+			clear_playback_frame_cache()
 		if layer_texture_array.get_layers() > 0:
 			var update_started_us := (
 				Time.get_ticks_usec() if _benchmark_canvas_sample_active else 0
