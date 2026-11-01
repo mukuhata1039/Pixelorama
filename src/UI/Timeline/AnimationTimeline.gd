@@ -55,6 +55,24 @@ var _rendered_project: Project
 var _rendered_frame_count := -1
 var _rendered_layer_count := -1
 var _timeline_selection_cache_valid := false
+## Ctrl+Shift+F9 in debug builds runs an automatic old/new playback A/B test.
+## Baseline preserves the old full timeline refresh and texture-array recreation.
+const BENCHMARK_WARMUP_USEC := 1_500_000
+const BENCHMARK_SAMPLE_USEC := 5_000_000
+var benchmark_baseline_mode := false
+var benchmark_recording := false
+var _benchmark_active := false
+var _benchmark_stage := 0
+var _benchmark_stage_started_us := 0
+var _benchmark_project: Project
+var _benchmark_results: Array[Dictionary] = []
+var _benchmark_process_ms_sum := 0.0
+var _benchmark_process_samples := 0
+var _benchmark_timeline_us := 0
+var _benchmark_timeline_samples := 0
+var _benchmark_canvas_us := 0
+var _benchmark_canvas_samples := 0
+var _benchmark_playback_ticks := 0
 var is_animation_running := false
 var animation_loop := LoopType.CYCLE
 var animation_forward := true
@@ -204,6 +222,8 @@ func _ready() -> void:
 ## The complete cursor skin is installed once, application-wide, by Main.gd.
 ## This script only changes the selected shape and active drag mode.
 func _process(_delta: float) -> void:
+	if _benchmark_active:
+		_advance_animation_benchmark()
 	var copy_modifier: bool = Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT)
 	var hovered: Control = get_viewport().gui_get_hovered_control()
 	if is_instance_valid(hovered) and is_ancestor_of(hovered):
@@ -269,6 +289,120 @@ func _process(_delta: float) -> void:
 		"set_timeline_cel_drag_cursor"
 	):
 		Global.control.call("set_timeline_cel_drag_cursor", next_mode)
+
+
+## Diagnostic benchmark uses the same open project and playback state for
+## both phases. It does not measure total Windows CPU/GPU utilization.
+func _begin_animation_benchmark() -> void:
+	if _benchmark_active:
+		return
+	if not is_animation_running:
+		OS.alert("Start animation playback, then press Ctrl+Shift+F9 again.", "Animation benchmark")
+		return
+	_benchmark_project = Global.current_project
+	_benchmark_results.clear()
+	_benchmark_stage = 0
+	_benchmark_active = true
+	benchmark_recording = false
+	benchmark_baseline_mode = true
+	_benchmark_stage_started_us = Time.get_ticks_usec()
+	Global.canvas.project_changed = true
+	Global.canvas.queue_redraw()
+	print("[AnimationBenchmark] Started. Baseline warm-up then baseline sample, optimized warm-up and optimized sample.")
+
+
+func _reset_animation_benchmark_sample() -> void:
+	_benchmark_process_ms_sum = 0.0
+	_benchmark_process_samples = 0
+	_benchmark_timeline_us = 0
+	_benchmark_timeline_samples = 0
+	_benchmark_canvas_us = 0
+	_benchmark_canvas_samples = 0
+	_benchmark_playback_ticks = 0
+
+
+func record_animation_benchmark_canvas(elapsed_us: int) -> void:
+	if benchmark_recording:
+		_benchmark_canvas_us += elapsed_us
+		_benchmark_canvas_samples += 1
+
+
+func _advance_animation_benchmark() -> void:
+	if not is_animation_running or Global.current_project != _benchmark_project:
+		_benchmark_active = false
+		benchmark_recording = false
+		benchmark_baseline_mode = false
+		print("[AnimationBenchmark] Canceled: animation stopped or project changed.")
+		return
+	var now := Time.get_ticks_usec()
+	if _benchmark_stage == 1 or _benchmark_stage == 3:
+		_benchmark_process_ms_sum += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+		_benchmark_process_samples += 1
+	var elapsed := now - _benchmark_stage_started_us
+	if _benchmark_stage % 2 == 0:
+		if elapsed < BENCHMARK_WARMUP_USEC:
+			return
+		_benchmark_stage += 1
+		_benchmark_stage_started_us = now
+		_reset_animation_benchmark_sample()
+		benchmark_recording = true
+		print("[AnimationBenchmark] Sampling ", "baseline" if benchmark_baseline_mode else "optimized", " ...")
+		return
+	if elapsed < BENCHMARK_SAMPLE_USEC:
+		return
+	benchmark_recording = false
+	var result := {
+		"label": "baseline" if benchmark_baseline_mode else "optimized",
+		"process_ms": _benchmark_process_ms_sum / maxi(1, _benchmark_process_samples),
+		"timeline_ms": float(_benchmark_timeline_us) / maxi(1, _benchmark_timeline_samples) / 1000.0,
+		"canvas_ms": float(_benchmark_canvas_us) / maxi(1, _benchmark_canvas_samples) / 1000.0,
+		"timeline_calls": _benchmark_timeline_samples,
+		"canvas_calls": _benchmark_canvas_samples,
+		"ticks": _benchmark_playback_ticks,
+	}
+	_benchmark_results.append(result)
+	if _benchmark_stage == 1:
+		_benchmark_stage = 2
+		_benchmark_stage_started_us = now
+		benchmark_baseline_mode = false
+		Global.canvas.update_all_layers = true
+		Global.canvas.queue_redraw()
+		print("[AnimationBenchmark] Baseline done. Optimized warm-up ...")
+		return
+
+	_benchmark_active = false
+	benchmark_baseline_mode = false
+	var before: Dictionary = _benchmark_results[0]
+	var after: Dictionary = _benchmark_results[1]
+	var baseline_process := float(before["process_ms"])
+	var optimized_process := float(after["process_ms"])
+	var baseline_timeline := float(before["timeline_ms"])
+	var optimized_timeline := float(after["timeline_ms"])
+	var baseline_canvas := float(before["canvas_ms"])
+	var optimized_canvas := float(after["canvas_ms"])
+	var report := (
+		"Animation A/B benchmark (same project, 5 seconds per mode)\\n"
+		+ "Baseline = original full update / Optimized = PR #46\\n\\n"
+		+ "Godot CPU process/frame: %.3f -> %.3f ms (%.1f%% faster)\\n"
+		% [baseline_process, optimized_process, _benchmark_reduction(baseline_process, optimized_process)]
+		+ "Timeline switch: %.3f -> %.3f ms (%.1f%% faster)\\n"
+		% [baseline_timeline, optimized_timeline, _benchmark_reduction(baseline_timeline, optimized_timeline)]
+		+ "Canvas layer redraw: %.3f -> %.3f ms (%.1f%% faster)\\n"
+		% [baseline_canvas, optimized_canvas, _benchmark_reduction(baseline_canvas, optimized_canvas)]
+		+ "\\nSamples: timeline %d/%d, canvas %d/%d, timer ticks %d/%d\\n"
+		% [int(before["timeline_calls"]), int(after["timeline_calls"]),
+			int(before["canvas_calls"]), int(after["canvas_calls"]),
+			int(before["ticks"]), int(after["ticks"])]
+		+ "\\nCPU timings only. Not a GPU utilization measurement."
+	)
+	print("[AnimationBenchmark] ", report)
+	OS.alert(report, "Pixelorama animation benchmark")
+
+
+func _benchmark_reduction(before: float, after: float) -> float:
+	if before <= 0.0:
+		return 0.0
+	return (before - after) / before * 100.0
 
 
 func _exit_tree() -> void:
@@ -425,6 +559,14 @@ func _draw_highlight_cels(cel_coords: Array, offset: Vector2i) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if (
+		OS.is_debug_build() and event is InputEventKey
+		and event.pressed and not event.echo and event.keycode == KEY_F9
+		and event.ctrl_pressed and event.shift_pressed
+	):
+		_begin_animation_benchmark()
+		get_viewport().set_input_as_handled()
+		return
 	var project := Global.current_project
 	if event.is_action_pressed(&"go_to_previous_layer"):
 		Global.transform_content_confirmed.emit()
@@ -1165,6 +1307,8 @@ func _on_PlayBackwards_toggled(button_pressed: bool) -> void:
 
 ## Called on each frame of the animation
 func _on_AnimationTimer_timeout() -> void:
+	if benchmark_recording:
+		_benchmark_playback_ticks += 1
 	if first_frame == last_frame:
 		play_forward.button_pressed = false
 		play_backwards.button_pressed = false
@@ -2284,7 +2428,8 @@ func _set_header_selection_style(
 	button.add_theme_stylebox_override(&"hover_pressed", style)
 
 func _cel_switched() -> void:
-	if is_animation_running:
+	var benchmark_start_us := Time.get_ticks_usec() if benchmark_recording else 0
+	if is_animation_running and not benchmark_baseline_mode:
 		_refresh_timeline_playback_appearance()
 	else:
 		_refresh_timeline_selection_appearance()
@@ -2302,6 +2447,9 @@ func _cel_switched() -> void:
 	var layer := project.layers[project.current_layer]
 	layer.keyframe_set.connect(_on_layer_keyframe_changed)
 	layer.keyframe_unset.connect(_on_layer_keyframe_changed)
+	if benchmark_recording:
+		_benchmark_timeline_us += Time.get_ticks_usec() - benchmark_start_us
+		_benchmark_timeline_samples += 1
 
 
 func _update_layer_settings_ui(animate_opacity := false) -> void:
