@@ -447,6 +447,9 @@ func _start_target_visibility_hold(event: InputEvent) -> void:
 	if _target_visibility_hold_state.is_empty():
 		return
 	_target_visibility_hold_project = project
+	# A .pxo save during the hold must retain the actual visibility settings.
+	if not project.serialized.is_connected(_preserve_saved_target_visibility):
+		project.serialized.connect(_preserve_saved_target_visibility)
 	if event is InputEventWithModifiers:
 		_target_hold_ctrl = event.ctrl_pressed
 		_target_hold_shift = event.shift_pressed
@@ -466,12 +469,31 @@ func _target_visibility_hold_modifiers_pressed() -> bool:
 	)
 
 
+## Project.serialize() emits after building its dictionary, before writing.
+## Correct just the saved data; leave the live transient preview untouched.
+func _preserve_saved_target_visibility(project_data: Dictionary) -> void:
+	if not is_instance_valid(_target_visibility_hold_project):
+		return
+	var saved_layers: Array = project_data.get("layers", [])
+	for layer in _target_visibility_hold_state:
+		if not is_instance_valid(layer):
+			continue
+		var layer_index := _target_visibility_hold_project.layers.find(layer)
+		if layer_index < 0 or layer_index >= saved_layers.size():
+			continue
+		var saved_layer: Dictionary = saved_layers[layer_index]
+		saved_layer["visible"] = _target_visibility_hold_state[layer]
+
+
 func _restore_target_visibility_hold() -> void:
 	if _target_visibility_hold_state.is_empty():
 		return
 	for layer in _target_visibility_hold_state:
 		if is_instance_valid(layer):
 			layer.visible = _target_visibility_hold_state[layer]
+	if is_instance_valid(_target_visibility_hold_project):
+		if _target_visibility_hold_project.serialized.is_connected(_preserve_saved_target_visibility):
+			_target_visibility_hold_project.serialized.disconnect(_preserve_saved_target_visibility)
 	_target_visibility_hold_state.clear()
 	_target_visibility_hold_project = null
 	_target_hold_ctrl = false
