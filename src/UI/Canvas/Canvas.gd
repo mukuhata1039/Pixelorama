@@ -294,7 +294,10 @@ func finish_brush_profile() -> Dictionary:
 
 
 func queue_redraw_all_layers() -> void:
-	project_changed = true
+	# A frame switch changes the images, not the texture-array shape. Refresh
+	# every layer in place; recreate the array only when its dimensions or
+	# layer count change (or when another caller explicitly requests it).
+	update_all_layers = true
 	var project := Global.current_project
 	var current_cel := project.get_current_cel()
 	if current_cel is Cel3D:
