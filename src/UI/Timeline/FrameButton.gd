@@ -189,6 +189,7 @@ func _drop_data(_pos: Vector2, data) -> void:
 	if Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT):
 		var insert_before := _get_region_rect(0, 0.5).has_point(get_global_mouse_position())
 		var insertion_index := frame if insert_before else frame + 1
+		Global.animation_timeline.drag_highlight.hide()
 		Global.animation_timeline.copy_frames(drop_frames, insertion_index, true, null, true)
 		return
 

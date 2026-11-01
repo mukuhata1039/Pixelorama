@@ -147,6 +147,7 @@ func _drop_data(pos: Vector2, data) -> void:
 				if curr_layer.has_children() else layer_index
 			)
 			to_parent = curr_layer.parent
+		Global.animation_timeline.drag_highlight.hide()
 		Global.animation_timeline.copy_layers_at(drop_from_indices, to_index, to_parent)
 		return
 
