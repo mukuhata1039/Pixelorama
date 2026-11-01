@@ -647,9 +647,8 @@ func _apply_aseprite_cursor_shape(
 	Input.set_custom_mouse_cursor(texture, cursor_shape, ASEPRITE_CURSOR_ATLAS.get_hotspot(name))
 
 
-## Aseprite's timeline has two exceptions to its global cursor styles:
-## while moving a cel, generic arrow/move cursors show the move sprite;
-## while Ctrl/Alt-copying a cel, they show the copy (double-arrow) sprite.
+## Timeline cels and layer/frame headers use the same Aseprite drag cursors:
+## moving shows the move sprite, Ctrl/Alt-copying shows the double arrow.
 ## Everything outside the drag reverts to the normal global Aseprite styles.
 func set_timeline_cel_drag_cursor(mode: int) -> void:
 	if mode == _cel_drag_cursor_mode:

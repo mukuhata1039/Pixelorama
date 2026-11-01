@@ -162,29 +162,21 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 			frame_container.get_child(get_index() - 1)
 		)
 
-	var is_swapping := Global.is_ctrl_or_cmd_pressed()
+
+	var is_copy := Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT)
 	var drop_frames: PackedInt32Array = data[1]
-	# Get offset
-	var offset: int = 0
-	if drop_frames.size() > 0:
-		offset = frame - Array(drop_frames).min()
-	# Can't move to same frame
-	for drop_frame in drop_frames:
-		var is_not_valid = (
-			drop_frames.has(drop_frame + offset) if is_swapping else drop_frames.has(frame)
-		)
-		if is_not_valid:
-			Global.animation_timeline.drag_highlight.visible = false
-			return false
-	var region: Rect2
-	if is_swapping:  # Swap frames
-		var copy_drop_frames := drop_frames.duplicate()  # to prevent overriting original array.
-		Global.animation_timeline.set_frames_highlight(copy_drop_frames, offset)
-	else:  # Move frames
-		if _get_region_rect(0, 0.5).has_point(get_global_mouse_position()):
-			region = _get_region_rect(-0.125, 0.125)
-		else:
-			region = _get_region_rect(0.875, 1.125)
+	if drop_frames.is_empty():
+		Global.animation_timeline.drag_highlight.visible = false
+		return false
+	# A copy may be dropped beside the original frame; a move may not.
+	if not is_copy and drop_frames.has(frame):
+		Global.animation_timeline.drag_highlight.visible = false
+		return false
+	var region: Rect2 = (
+		_get_region_rect(-0.125, 0.125)
+		if pos.x < size.x / 2.0
+		else _get_region_rect(0.875, 1.125)
+	)
 	Global.animation_timeline.drag_highlight.global_position = region.position
 	Global.animation_timeline.drag_highlight.size = region.size
 	Global.animation_timeline.drag_highlight.visible = true
@@ -194,68 +186,59 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 func _drop_data(_pos: Vector2, data) -> void:
 	var drop_frames: PackedInt32Array = data[1]
 	var project := Global.current_project
+	# The frame header duplicates entire frames, including every layer's cel.
+	if Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT):
+		var insert_before := _get_region_rect(0, 0.5).has_point(get_global_mouse_position())
+		var insertion_index := frame if insert_before else frame + 1
+		Global.animation_timeline.copy_frames(drop_frames, insertion_index - 1)
+		return
+
 	project.undo_redo.create_action("Change Frame Order")
-	if Global.is_ctrl_or_cmd_pressed():  # Swap frames
-		var swap_frame_positions := []
-		# Get offset
-		var offset: int = 0
-		if drop_frames.size() > 0:
-			offset = frame - Array(drop_frames).min()
-		for drop_frame in drop_frames:
-			var drop_point: int = drop_frame + offset
-			# If Swapping is done with currently non-existing frames, ignore those
-			if drop_point < 0 or drop_point >= project.frames.size():
-				continue
-			swap_frame_positions.append([drop_point, project.current_layer])
-			project.undo_redo.add_do_method(project.swap_frame.bind(drop_point, drop_frame))
-			project.undo_redo.add_undo_method(project.swap_frame.bind(drop_point, drop_frame))
-		project.undo_redo.add_do_property(project, "selected_cels", swap_frame_positions)
-	else:  # Move frames
-		var to_frame: int
-		if _get_region_rect(0, 0.5).has_point(get_global_mouse_position()):  # Left
-			to_frame = frame
-		else:  # Right
-			to_frame = frame + 1
-		for drop_frame in drop_frames:
-			if drop_frame < frame:
-				to_frame -= 1
-		var to_frames := PackedInt32Array(range(to_frame, to_frame + drop_frames.size()))
-		if drop_frames != to_frames:
-			# Code to RECALCULATE tags due to frame movement
-			var new_animation_tags := project.animation_tags.duplicate()
-			# Loop through the tags to create new classes for them, so that they won't be the same
-			# as Global.current_project.animation_tags's classes.
-			# Needed for undo/redo to work properly.
-			for i in new_animation_tags.size():
-				new_animation_tags[i] = new_animation_tags[i].duplicate()
-			for tag: AnimationTag in new_animation_tags:
-				if tag.from - 1 in drop_frames:  # check if the calculation is needed
-					# move tag if all it's frames are moved
-					if tag.frames_array().all(func(element): return element in drop_frames):
-						tag.from += to_frames[0] - drop_frames[0]
-						tag.to += to_frames[0] - drop_frames[0]
-						continue
-				var new_from := tag.from
-				var new_to := tag.to
-				for i in drop_frames:  # calculation of new tag positions (frames are taken away)
-					if tag.has_frame(i):
-						new_to -= 1
-					elif i < tag.to - 1:
-						new_from -= 1
-						new_to -= 1
-				tag.from = new_from
-				tag.to = new_to
-				# calculation of new tag positions (frames are added back)
-				for i in to_frames:
-					if tag.has_frame(i) or i == tag.to:
-						tag.to += 1
-					elif i < tag.from - 1:
-						tag.from += 1
-						tag.to += 1
-			project.undo_redo.add_do_property(project, "animation_tags", new_animation_tags)
-			project.undo_redo.add_undo_property(project, "animation_tags", project.animation_tags)
-		project.undo_redo.add_do_method(project.move_frames.bind(drop_frames, to_frames))
-		project.undo_redo.add_undo_method(project.move_frames.bind(to_frames, drop_frames))
+	var to_frame: int
+	if _get_region_rect(0, 0.5).has_point(get_global_mouse_position()):  # Left
+		to_frame = frame
+	else:  # Right
+		to_frame = frame + 1
+	for drop_frame in drop_frames:
+		if drop_frame < frame:
+			to_frame -= 1
+	var to_frames := PackedInt32Array(range(to_frame, to_frame + drop_frames.size()))
+	if drop_frames != to_frames:
+		# Code to RECALCULATE tags due to frame movement
+		var new_animation_tags := project.animation_tags.duplicate()
+		# Loop through the tags to create new classes for them, so that they won't be the same
+		# as Global.current_project.animation_tags's classes.
+		# Needed for undo/redo to work properly.
+		for i in new_animation_tags.size():
+			new_animation_tags[i] = new_animation_tags[i].duplicate()
+		for tag: AnimationTag in new_animation_tags:
+			if tag.from - 1 in drop_frames:  # check if the calculation is needed
+				# move tag if all it's frames are moved
+				if tag.frames_array().all(func(element): return element in drop_frames):
+					tag.from += to_frames[0] - drop_frames[0]
+					tag.to += to_frames[0] - drop_frames[0]
+					continue
+			var new_from := tag.from
+			var new_to := tag.to
+			for i in drop_frames:  # calculation of new tag positions (frames are taken away)
+				if tag.has_frame(i):
+					new_to -= 1
+				elif i < tag.to - 1:
+					new_from -= 1
+					new_to -= 1
+			tag.from = new_from
+			tag.to = new_to
+			# calculation of new tag positions (frames are added back)
+			for i in to_frames:
+				if tag.has_frame(i) or i == tag.to:
+					tag.to += 1
+				elif i < tag.from - 1:
+					tag.from += 1
+					tag.to += 1
+		project.undo_redo.add_do_property(project, "animation_tags", new_animation_tags)
+		project.undo_redo.add_undo_property(project, "animation_tags", project.animation_tags)
+	project.undo_redo.add_do_method(project.move_frames.bind(drop_frames, to_frames))
+	project.undo_redo.add_undo_method(project.move_frames.bind(to_frames, drop_frames))
 
 	if project.current_frame in drop_frames:
 		project.undo_redo.add_do_method(project.change_cel.bind(frame))
