@@ -356,6 +356,8 @@ func _advance_animation_benchmark() -> void:
 		_benchmark_stage += 1
 		_benchmark_stage_started_us = now
 		_reset_animation_benchmark_sample()
+		if not benchmark_baseline_mode:
+			Global.canvas.reset_playback_cache_counters()
 		benchmark_recording = true
 		print("[AnimationBenchmark] Sampling ", "baseline" if benchmark_baseline_mode else "optimized", " ...")
 		return
@@ -373,6 +375,7 @@ func _advance_animation_benchmark() -> void:
 		"timeline_calls": _benchmark_timeline_samples,
 		"canvas_calls": _benchmark_canvas_samples,
 		"ticks": _benchmark_playback_ticks,
+		"cache": Global.canvas.get_playback_frame_cache_stats(),
 	}
 	_benchmark_results.append(result)
 	if _benchmark_stage == 1:
@@ -395,8 +398,9 @@ func _advance_animation_benchmark() -> void:
 	var baseline_canvas := float(before["canvas_ms"])
 	var optimized_canvas := float(after["canvas_ms"])
 	var report := "Animation A/B benchmark (same project, 5 seconds per mode)\n"
-	report += "Baseline = old timeline / Optimized = changed-cel timeline\n"
-	report += "Canvas batch draw is identical in both modes (regression reverted).\n\n"
+	report += "Baseline = old timeline, uncached frame preparation\n"
+	report += "Optimized = diff timeline + cached frame preparation\n"
+	report += "Both use the same batch GPU texture upload.\n\n"
 	report += "Godot CPU process/frame: %.3f -> %.3f ms (%.1f%% improvement)\n" % [
 		baseline_process, optimized_process, _benchmark_reduction(baseline_process, optimized_process)
 	]
@@ -415,6 +419,12 @@ func _advance_animation_benchmark() -> void:
 		optimized_canvas - float(after["prepare_ms"]) - float(after["upload_ms"])
 		- float(after["metadata_ms"])
 	)
+	var cache: Dictionary = after["cache"]
+	report += "\nFrame image cache: %d hits / %d misses, %d stored (%.1f MiB)\n" % [
+		int(cache["hits"]), int(cache["misses"]), int(cache["frames"]),
+		float(cache["megabytes"])
+	]
+	report += "Cache warms after frames have been played once.\n"
 	report += "\nSamples: timeline %d/%d, canvas %d/%d, timer ticks %d/%d\n" % [
 		int(before["timeline_calls"]), int(after["timeline_calls"]),
 		int(before["canvas_calls"]), int(after["canvas_calls"]),
@@ -1333,6 +1343,13 @@ func _on_PlayBackwards_toggled(button_pressed: bool) -> void:
 
 
 ## Called on each frame of the animation
+## Mark only timer-driven frame advances as safe to reuse cached rendered
+## images. Manual scrubbing, edits and other frame changes invalidate the cache.
+func _playback_change_cel(frame_index: int, layer_index: int) -> void:
+	Global.canvas.prepare_playback_frame_change()
+	Global.current_project.change_cel(frame_index, layer_index)
+
+
 func _on_AnimationTimer_timeout() -> void:
 	if benchmark_recording:
 		_benchmark_playback_ticks += 1
@@ -1352,7 +1369,7 @@ func _on_AnimationTimer_timeout() -> void:
 		project.current_frame < first_frame or project.current_frame > last_frame
 	):
 		project.selected_cels.clear()
-		project.change_cel(first_frame if animation_forward else last_frame, -1)
+		_playback_change_cel(first_frame if animation_forward else last_frame, -1)
 		animation_canon_frame = project.current_frame
 		animation_timer.wait_time = project.frames[project.current_frame].get_duration_in_seconds(fps)
 		animation_timer.start()
@@ -1360,7 +1377,7 @@ func _on_AnimationTimer_timeout() -> void:
 	if animation_forward:
 		if project.current_frame < last_frame:
 			project.selected_cels.clear()
-			project.change_cel(project.current_frame + 1, -1)
+			_playback_change_cel(project.current_frame + 1, -1)
 			animation_timer.wait_time = (
 				project.frames[project.current_frame].get_duration_in_seconds(fps)
 			)
@@ -1375,7 +1392,7 @@ func _on_AnimationTimer_timeout() -> void:
 					is_animation_running = false
 				LoopType.CYCLE:
 					project.selected_cels.clear()
-					project.change_cel(first_frame, -1)
+					_playback_change_cel(first_frame, -1)
 					animation_timer.wait_time = (
 						project.frames[project.current_frame].get_duration_in_seconds(fps)
 					)
@@ -1389,7 +1406,7 @@ func _on_AnimationTimer_timeout() -> void:
 	else:
 		if project.current_frame > first_frame:
 			project.selected_cels.clear()
-			project.change_cel(project.current_frame - 1, -1)
+			_playback_change_cel(project.current_frame - 1, -1)
 			animation_timer.wait_time = (
 				project.frames[project.current_frame].get_duration_in_seconds(fps)
 			)
@@ -1404,7 +1421,7 @@ func _on_AnimationTimer_timeout() -> void:
 					is_animation_running = false
 				LoopType.CYCLE:
 					project.selected_cels.clear()
-					project.change_cel(last_frame, -1)
+					_playback_change_cel(last_frame, -1)
 					animation_timer.wait_time = (
 						project.frames[project.current_frame].get_duration_in_seconds(fps)
 					)
@@ -1458,6 +1475,9 @@ func play_animation(play: bool, forward_dir: bool) -> void:
 		play_forward.toggled.connect(_on_PlayForward_toggled)
 
 	if play:
+		# A new playback session must never inherit images cached from previous
+		# edits, different frame ranges, or a different project.
+		Global.canvas.clear_playback_frame_cache()
 		# Starting outside a manual range must not play out-of-range frames.
 		if project.playback_range_enabled and (
 			project.current_frame < first_frame or project.current_frame > last_frame
@@ -1473,6 +1493,7 @@ func play_animation(play: bool, forward_dir: bool) -> void:
 		animation_started.emit(forward_dir)
 	else:
 		animation_timer.stop()
+		Global.canvas.clear_playback_frame_cache()
 		animation_finished.emit()
 
 	is_animation_running = play
