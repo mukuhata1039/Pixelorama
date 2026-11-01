@@ -41,7 +41,8 @@ var project_properties_dialog := Dialog.new("res://src/UI/Dialogs/ProjectPropert
 var preferences_dialog := Dialog.new("res://src/Preferences/PreferencesDialog.tscn")
 var modify_selection := Dialog.new("res://src/UI/Dialogs/ModifySelection.tscn")
 const RECOLOR_MENU_ID := 10001
-var recolor_cels_dialog := Dialog.new("res://src/UI/Dialogs/RecolorCelsDialog.tscn")
+# Live canvas recolor previews must remain at their actual brightness.
+var recolor_cels_dialog := Dialog.new("res://src/UI/Dialogs/RecolorCelsDialog.tscn", false)
 var offset_image_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/OffsetScaleImage.tscn")
 var scale_image_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/ScaleImage.tscn")
 var resize_canvas_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/ResizeCanvas.tscn")
@@ -97,16 +98,19 @@ class Dialog:
 	## scene when it's actually needed.
 	var scene_path := ""
 	var node: Window
+	var dim_background := true
 
-	func _init(_scene_path: String) -> void:
+	func _init(_scene_path: String, _dim_background := true) -> void:
 		scene_path = _scene_path
+		dim_background = _dim_background
 
 	func popup(dialog_size := Vector2i.ZERO) -> void:
 		if not is_instance_valid(node):
 			instantiate_scene()
 		node.popup_centered_clamped(dialog_size)
-		var is_file_dialog := node is FileDialog
-		Global.dialog_open(true, is_file_dialog)
+		if dim_background:
+			var is_file_dialog := node is FileDialog
+			Global.dialog_open(true, is_file_dialog)
 
 	func instantiate_scene() -> void:
 		var scene := load(scene_path)
