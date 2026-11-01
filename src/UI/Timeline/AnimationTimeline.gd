@@ -40,6 +40,7 @@ var drag_range_preview_target := Vector2i(-1, -1)
 ## Header drags use the same preview engine as cel-range drags, with an
 ## independent selection-source type for row/column-only highlighting.
 var drag_range_preview_source := RangeSelectionSource.CELLS
+var drag_range_preview_additive := false
 var drag_range_preview_cels: Array = []
 ## Fast membership tests are important while a large rectangle changes.
 var drag_range_preview_lookup: Dictionary[Vector2i, bool] = {}
@@ -1737,14 +1738,29 @@ func is_frame_header_range(frame_index: int) -> bool:
 ## STATE_SELECTING_CELS -> handleRangeMouseMove() on each mouse move.
 ## Keep the changing rectangle as a *visual* preview while Godot's drag
 ## runs, so only the final drop writes Project.selected_cels.
-func update_drag_cel_range_preview(origin: Array, end_frame: int, end_layer: int) -> void:
+func update_drag_cel_range_preview(
+	origin: Array, end_frame: int, end_layer: int, additive := false, base_cels: Array = []
+) -> void:
 	if origin.size() != 2:
 		return
 	var start := Vector2i(int(origin[0]), int(origin[1]))
 	var target := Vector2i(end_frame, end_layer)
-	if drag_range_preview_active and start == drag_range_preview_origin and target == drag_range_preview_target:
+	if (
+		drag_range_preview_active
+		and drag_range_preview_source == RangeSelectionSource.CELLS
+		and drag_range_preview_additive == additive
+		and start == drag_range_preview_origin
+		and target == drag_range_preview_target
+	):
 		return
 	var next_cels: Array = []
+	var seen: Dictionary[Vector2i, bool] = {}
+	if additive:
+		for selected_cel in base_cels:
+			var key := Vector2i(int(selected_cel[0]), int(selected_cel[1]))
+			if not seen.has(key):
+				seen[key] = true
+				next_cels.append([key.x, key.y])
 	for layer_index in range(mini(start.y, target.y), maxi(start.y, target.y) + 1):
 		var row_index: int = cel_vbox.get_child_count() - 1 - layer_index
 		if row_index < 0 or row_index >= cel_vbox.get_child_count():
@@ -1754,12 +1770,16 @@ func update_drag_cel_range_preview(origin: Array, end_frame: int, end_layer: int
 			continue
 		for frame_index in range(mini(start.x, target.x), maxi(start.x, target.x) + 1):
 			if frame_index >= 0 and frame_index < row.get_child_count():
-				next_cels.append([frame_index, layer_index])
+				var key := Vector2i(frame_index, layer_index)
+				if not seen.has(key):
+					seen[key] = true
+					next_cels.append([frame_index, layer_index])
 	if next_cels.is_empty():
 		return
 	drag_range_preview_origin = start
 	drag_range_preview_target = target
 	drag_range_preview_source = RangeSelectionSource.CELLS
+	drag_range_preview_additive = additive
 	drag_range_preview_cels = next_cels
 	drag_range_preview_lookup.clear()
 	for cel_index in next_cels:
@@ -1846,6 +1866,7 @@ func clear_drag_cel_range_preview() -> void:
 	drag_range_preview_origin = Vector2i(-1, -1)
 	drag_range_preview_target = Vector2i(-1, -1)
 	drag_range_preview_source = RangeSelectionSource.CELLS
+	drag_range_preview_additive = false
 	_refresh_timeline_selection_appearance()
 
 

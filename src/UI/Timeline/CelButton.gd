@@ -13,6 +13,10 @@ var layer := 0
 var cel: BaseCel
 
 var _drag_started_on_selected_border := false
+## A Shift-range drag extends the original selection, not the preview from
+## the previous mouse position. Snapshot it when the mouse button goes down.
+var _range_drag_additive := false
+var _range_drag_base_cels: Array = []
 
 @onready var popup_menu: PopupMenu = $PopupMenu
 @onready var ui_color_rect: ColorRect = $UIColorRect
@@ -223,8 +227,17 @@ func button_setup() -> void:
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			_range_drag_additive = (
+				Input.is_action_pressed(&"shift")
+				and not Global.is_ctrl_or_cmd_pressed()
+				and not Input.is_key_pressed(KEY_ALT)
+			)
+			_range_drag_base_cels = (
+				Global.current_project.selected_cels.duplicate(true) if _range_drag_additive else []
+			)
 			_drag_started_on_selected_border = (
-				Global.current_project.selected_cels.has([frame, layer])
+				not _range_drag_additive
+				and Global.current_project.selected_cels.has([frame, layer])
 				and (
 					_is_drag_border(event.position)
 					or Global.is_ctrl_or_cmd_pressed()
@@ -241,10 +254,9 @@ func _gui_input(event: InputEvent) -> void:
 				and not DisplayServer.is_touchscreen_available()
 				and not Global.is_ctrl_or_cmd_pressed()
 				and not Input.is_key_pressed(KEY_ALT)
-				and not Input.is_action_pressed(&"shift")
 			):
 				Global.animation_timeline.update_drag_cel_range_preview(
-					[frame, layer], frame, layer
+					[frame, layer], frame, layer, _range_drag_additive, _range_drag_base_cels
 				)
 		elif event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 			# A simple click never starts a Godot drag. Discard its temporary
@@ -256,8 +268,14 @@ func _gui_input(event: InputEvent) -> void:
 			):
 				Global.animation_timeline.clear_drag_cel_range_preview()
 	elif event is InputEventMouseMotion:
+		var shift_range_selection := (
+			Input.is_action_pressed(&"shift")
+			and not Global.is_ctrl_or_cmd_pressed()
+			and not Input.is_key_pressed(KEY_ALT)
+		)
 		var moving_selected_cels := (
-			Global.current_project.selected_cels.has([frame, layer])
+			not shift_range_selection
+			and Global.current_project.selected_cels.has([frame, layer])
 			and (
 				_is_drag_border(event.position)
 				or Global.is_ctrl_or_cmd_pressed()
@@ -265,7 +283,8 @@ func _gui_input(event: InputEvent) -> void:
 			)
 		)
 		var copying_selected_cels := (
-			Global.current_project.selected_cels.has([frame, layer])
+			not shift_range_selection
+			and Global.current_project.selected_cels.has([frame, layer])
 			and (Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT))
 		)
 		mouse_default_cursor_shape = (
@@ -679,8 +698,8 @@ func _get_drag_data(_position: Vector2) -> Variant:
 	if not _drag_started_on_selected_border and not DisplayServer.is_touchscreen_available():
 		# Start updating the visual range immediately, not only after the
 		# cursor enters a second cel. The committed range stays untouched.
-		_preview_cel_rectangle([frame, layer])
-		return ["CelRectangle", [frame, layer]]
+		_preview_cel_rectangle([frame, layer], _range_drag_additive, _range_drag_base_cels)
+		return ["CelRectangle", [frame, layer], _range_drag_additive, _range_drag_base_cels]
 	var button := Button.new()
 	button.size = size
 	button.theme = Global.control.theme
@@ -695,7 +714,9 @@ func _get_drag_data(_position: Vector2) -> Variant:
 	return ["Cel", _get_cel_indices(), [frame, layer]]
 
 
-func _preview_cel_rectangle(origin: Array) -> bool:
+func _preview_cel_rectangle(
+	origin: Array, additive := false, base_cels: Array = []
+) -> bool:
 	if origin.size() != 2:
 		return false
 	var timeline := Global.animation_timeline
@@ -708,9 +729,14 @@ func _preview_cel_rectangle(origin: Array) -> bool:
 		return false
 	var first_cel: Control = row.get_child(origin[0])
 	var rect := first_cel.get_global_rect().merge(get_global_rect())
-	# Aseprite updates its range on every mouse movement. Match that by
-	# refreshing the transient cels and their row/column guides whenever
-	# the hovered drag target changes, without committing Project.selected_cels.
+	# A Shift drag must show the union of the old selection and the new
+	# rectangle. Let each cel render its own perimeter so disjoint regions
+	# keep separate outlines instead of a single rectangle around both.
+	if additive:
+		timeline.selection_drag_highlight.hide()
+		timeline.update_drag_cel_range_preview(origin, frame, layer, true, base_cels)
+		return true
+	# Preview ordinary rectangle selection without committing it yet.
 	timeline.update_drag_cel_range_preview(origin, frame, layer)
 	# Do not paint the selection preview over layer names or outside the timeline.
 	rect = rect.intersection(timeline.frame_scroll_container.get_global_rect())
@@ -724,18 +750,24 @@ func _preview_cel_rectangle(origin: Array) -> bool:
 	return true
 
 
-func _select_cel_rectangle(origin: Array) -> void:
+func _select_cel_rectangle(origin: Array, additive := false, base_cels: Array = []) -> void:
 	if origin.size() != 2:
 		return
 	var project := Global.current_project
-	var new_selected_cels := []
+	var new_selected_cels: Array = base_cels.duplicate(true) if additive else []
+	var selected_lookup: Dictionary[Vector2i, bool] = {}
+	for selected_cel in new_selected_cels:
+		selected_lookup[Vector2i(int(selected_cel[0]), int(selected_cel[1]))] = true
 	var cel_vbox: VBoxContainer = Global.animation_timeline.cel_vbox
 	for l in range(mini(origin[1], layer), maxi(origin[1], layer) + 1):
 		var row: Control = cel_vbox.get_child(cel_vbox.get_child_count() - 1 - l)
 		if not row.visible:
 			continue
 		for f in range(mini(origin[0], frame), maxi(origin[0], frame) + 1):
-			new_selected_cels.append([f, l])
+			var key := Vector2i(f, l)
+			if not selected_lookup.has(key):
+				new_selected_cels.append([f, l])
+				selected_lookup[key] = true
 	if new_selected_cels.is_empty():
 		return
 	Global.animation_timeline.select_cel_range_source()
@@ -749,7 +781,10 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 		return false
 	if data[0] == "CelRectangle":
 		Global.animation_timeline.drag_highlight.visible = false
-		return _preview_cel_rectangle(data[1])
+		return _preview_cel_rectangle(
+			data[1], bool(data[2]) if data.size() > 2 else false,
+			data[3] if data.size() > 3 else []
+		)
 	if data[0] != "Cel":
 		Global.animation_timeline.drag_highlight.visible = false
 		return false
@@ -870,7 +905,10 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 
 func _drop_data(_pos: Vector2, data) -> void:
 	if data[0] == "CelRectangle":
-		_select_cel_rectangle(data[1])
+		_select_cel_rectangle(
+			data[1], bool(data[2]) if data.size() > 2 else false,
+			data[3] if data.size() > 3 else []
+		)
 		Global.animation_timeline.selection_drag_highlight.hide()
 		return
 	var drop_cels: Array = data[1].duplicate(true)
