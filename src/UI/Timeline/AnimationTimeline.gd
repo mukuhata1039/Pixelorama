@@ -76,6 +76,12 @@ var global_layer_expand := true
 @onready var layer_container := %LayerContainer as VBoxContainer
 @onready var layer_vbox := %LayerVBox as VBoxContainer  ## Contains the layer buttons.
 @onready var frame_hbox := %FrameHBox as HBoxContainer  ## Contains the frame buttons.
+@onready var playback_range_scroll := %PlaybackRangeScroll as ScrollContainer
+@onready var playback_range_spacer := %PlaybackRangeSpacer as Control
+@onready var playback_range_bar := %PlaybackRangeBar as Control
+@onready var playback_range_enabled_box := %PlaybackRangeEnabled as CheckBox
+@onready var playback_range_start_spin := %PlaybackRangeStart as SpinBox
+@onready var playback_range_end_spin := %PlaybackRangeEnd as SpinBox
 ## Contains HBoxContainers, which contain cel buttons.
 @onready var cel_vbox := %CelVBox as VBoxContainer
 @onready var layer_header_container := %LayerHeaderContainer as HBoxContainer
@@ -127,6 +133,11 @@ func _ready() -> void:
 		_on_compact_timeline_toggled(true)
 	add_layer_list.get_popup().id_pressed.connect(on_add_layer_list_id_pressed)
 	frame_scroll_bar.value_changed.connect(_frame_scroll_changed)
+	playback_range_enabled_box.toggled.connect(_on_playback_range_enabled_toggled)
+	playback_range_start_spin.value_changed.connect(_on_playback_range_start_changed)
+	playback_range_end_spin.value_changed.connect(_on_playback_range_end_changed)
+	frame_hbox.resized.connect(_refresh_playback_range_geometry)
+	_refresh_playback_range_controls()
 	animation_timer.wait_time = 1 / Global.current_project.fps
 	fps_spinbox.value = Global.current_project.fps
 	_fill_blend_modes_option_button()
@@ -477,7 +488,7 @@ func _get_minimum_size() -> Vector2:
 	# Y targets enough to see 1 layer
 	if not is_instance_valid(layer_vbox) or not cel_vbox.is_visible_in_tree():
 		return Vector2.ZERO
-	return Vector2(layer_vbox.size.x + cel_size + 26, cel_size + 105)
+	return Vector2(layer_vbox.size.x + cel_size + 26, cel_size + 127)
 
 
 func _frame_scroll_changed(_value: float) -> void:
@@ -500,6 +511,92 @@ func adjust_scroll_container() -> void:
 	tag_scroll_container.get_child(0).custom_minimum_size.x = frame_hbox.size.x
 	tag_container.custom_minimum_size = frame_hbox.size
 	tag_scroll_container.scroll_horizontal = frame_scroll_bar.value
+	_refresh_playback_range_geometry()
+
+
+## The ruler occupies a row below the tag row and shares the same horizontal
+## offset/scroll as the frame-header grid, even with a resizable layer panel.
+func _refresh_playback_range_geometry() -> void:
+	if not is_instance_valid(playback_range_bar) or not is_instance_valid(frame_hbox):
+		return
+	playback_range_spacer.custom_minimum_size.x = maxf(
+		0.0, frame_scroll_container.global_position.x - playback_range_scroll.global_position.x
+	)
+	playback_range_bar.custom_minimum_size.x = frame_hbox.size.x
+	playback_range_scroll.scroll_horizontal = int(frame_scroll_bar.value)
+	playback_range_bar.queue_redraw()
+
+
+## Convert zero-based stored endpoints to one-based values for the inspector.
+## Updating the numeric widgets must not write to the project again.
+func _refresh_playback_range_controls() -> void:
+	if not is_instance_valid(playback_range_start_spin):
+		return
+	var project := Global.current_project
+	if not is_instance_valid(project):
+		return
+	var count: int = maxi(1, project.frames.size())
+	var last: int = count - 1
+	var start: int = clampi(project.playback_range_start, 0, last)
+	var finish: int = (
+		last if project.playback_range_end < 0
+		else clampi(project.playback_range_end, start, last)
+	)
+	playback_range_start_spin.max_value = float(count)
+	playback_range_end_spin.max_value = float(count)
+	playback_range_enabled_box.set_pressed_no_signal(project.playback_range_enabled)
+	playback_range_start_spin.editable = project.playback_range_enabled
+	playback_range_end_spin.editable = project.playback_range_enabled
+	playback_range_start_spin.set_value_no_signal(float(start + 1))
+	playback_range_end_spin.set_value_no_signal(float(finish + 1))
+	playback_range_bar.queue_redraw()
+
+
+func set_manual_playback_range(start_index: int, end_index: int) -> void:
+	var project := Global.current_project
+	if project.frames.is_empty():
+		return
+	var last: int = project.frames.size() - 1
+	var start: int = clampi(start_index, 0, last)
+	var finish: int = clampi(end_index, start, last)
+	if (
+		project.playback_range_enabled
+		and project.playback_range_start == start
+		and project.playback_range_end == finish
+	):
+		return
+	project.playback_range_enabled = true
+	project.playback_range_start = start
+	project.playback_range_end = finish
+	project.has_changed = true
+	calculate_start_end(project)
+	_refresh_playback_range_controls()
+
+
+func _on_playback_range_enabled_toggled(enabled: bool) -> void:
+	var project := Global.current_project
+	if project.playback_range_enabled == enabled:
+		return
+	project.playback_range_enabled = enabled
+	project.has_changed = true
+	calculate_start_end(project)
+	_refresh_playback_range_controls()
+
+
+func _on_playback_range_start_changed(value: float) -> void:
+	var project := Global.current_project
+	var new_start: int = int(value) - 1
+	var end: int = (
+		project.frames.size() - 1 if project.playback_range_end < 0
+		else project.playback_range_end
+	)
+	set_manual_playback_range(new_start, maxi(new_start, end))
+
+
+func _on_playback_range_end_changed(value: float) -> void:
+	var project := Global.current_project
+	var new_end: int = int(value) - 1
+	set_manual_playback_range(mini(new_end, project.playback_range_start), new_end)
 
 
 func _on_LayerFrameSplitContainer_gui_input(event: InputEvent) -> void:
@@ -1069,6 +1166,15 @@ func _on_AnimationTimer_timeout() -> void:
 	# Recalculate start and end points if user deliberately changed the frame.
 	if project.current_frame != animation_canon_frame:
 		calculate_start_end(project)
+	if project.playback_range_enabled and (
+		project.current_frame < first_frame or project.current_frame > last_frame
+	):
+		project.selected_cels.clear()
+		project.change_cel(first_frame if animation_forward else last_frame, -1)
+		animation_canon_frame = project.current_frame
+		animation_timer.wait_time = project.frames[project.current_frame].get_duration_in_seconds(fps)
+		animation_timer.start()
+		return
 	if animation_forward:
 		if project.current_frame < last_frame:
 			project.selected_cels.clear()
@@ -1131,7 +1237,15 @@ func _on_AnimationTimer_timeout() -> void:
 
 func calculate_start_end(project: Project) -> void:
 	first_frame = 0
-	last_frame = project.frames.size() - 1
+	last_frame = maxi(0, project.frames.size() - 1)
+	# Manual playback is independent of and takes priority over animation tags.
+	if project.playback_range_enabled:
+		first_frame = clampi(project.playback_range_start, 0, last_frame)
+		last_frame = (
+			last_frame if project.playback_range_end < 0
+			else clampi(project.playback_range_end, first_frame, last_frame)
+		)
+		return
 	if Global.play_only_tags:
 		for tag in project.animation_tags:
 			if project.current_frame + 1 >= tag.from && project.current_frame + 1 <= tag.to:
@@ -1143,7 +1257,7 @@ func play_animation(play: bool, forward_dir: bool) -> void:
 	var project := Global.current_project
 	calculate_start_end(project)
 
-	if first_frame == last_frame:
+	if play and first_frame == last_frame:
 		if forward_dir:
 			play_forward.button_pressed = false
 		else:
@@ -1162,6 +1276,12 @@ func play_animation(play: bool, forward_dir: bool) -> void:
 		play_forward.toggled.connect(_on_PlayForward_toggled)
 
 	if play:
+		# Starting outside a manual range must not play out-of-range frames.
+		if project.playback_range_enabled and (
+			project.current_frame < first_frame or project.current_frame > last_frame
+		):
+			project.selected_cels.clear()
+			project.change_cel(first_frame if forward_dir else last_frame, -1)
 		animation_timer.set_one_shot(true)  # wait_time can't change correctly if it's playing
 		var frame := project.frames[project.current_frame]
 		animation_canon_frame = project.current_frame
@@ -2116,14 +2236,8 @@ func _on_animation_tags_changed() -> void:
 ## otherwise, this code is useless in this context, since these values are being set
 ## when the play buttons get pressed anyway
 func set_timeline_first_and_last_frames() -> void:
-	var project := Global.current_project
-	first_frame = 0
-	last_frame = project.frames.size() - 1
-	if Global.play_only_tags:
-		for tag in project.animation_tags:
-			if project.current_frame + 1 >= tag.from && project.current_frame + 1 <= tag.to:
-				first_frame = tag.from - 1
-				last_frame = mini(project.frames.size() - 1, tag.to - 1)
+	calculate_start_end(Global.current_project)
+	_refresh_playback_range_controls()
 
 
 func _toggle_frame_buttons() -> void:
@@ -2191,6 +2305,9 @@ func project_changed() -> void:
 		frame_hbox.add_child(button)
 
 	_refresh_timeline_selection_appearance()
+	calculate_start_end(project)
+	_refresh_playback_range_controls()
+	_refresh_playback_range_geometry()
 	# Because we are re-creating the nodes, we need to wait one frame in order to call
 	# ensure_control_visible. If waiting wasn't needed, this piece of code wouldn't be needed
 	# anyway, since _cel_switched already calls ensure_control_visible.
@@ -2218,6 +2335,7 @@ func project_frame_added(frame: int) -> void:
 		cel_hbox.move_child(cel_button, frame)
 		layer -= 1
 	_refresh_timeline_selection_appearance()
+	set_timeline_first_and_last_frames()
 	await get_tree().process_frame
 	frame_scroll_container.ensure_control_visible(button)
 
@@ -2227,6 +2345,7 @@ func project_frame_removed(frame: int) -> void:
 	frame_hbox.remove_child(frame_hbox.get_child(frame))
 	for cel_hbox in cel_vbox.get_children():
 		cel_hbox.get_child(frame).free()
+	set_timeline_first_and_last_frames()
 
 
 func project_layer_added(layer_index: int) -> void:
@@ -2418,6 +2537,7 @@ func _on_keyframe_timeline_button_pressed() -> void:
 	var keyframe_timeline_enabled := not keyframe_timeline.visible
 	keyframe_timeline.visible = keyframe_timeline_enabled
 	tag_scroll_container.visible = not keyframe_timeline_enabled
+	playback_range_scroll.visible = not keyframe_timeline_enabled
 	layer_frame_header_h_split.get_parent().visible = not keyframe_timeline_enabled
 	frame_scroll_container.get_parent().visible = not keyframe_timeline_enabled
 	var texture_button: TextureRect = keyframe_timeline_button.get_child(0)

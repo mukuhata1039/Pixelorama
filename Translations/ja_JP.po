@@ -4275,3 +4275,19 @@ msgstr "ターゲットレイヤーの表示切替"
 
 msgid "Shortcut action: target_layer_visibility_hold"
 msgstr "ターゲットレイヤーを一時的に非表示（ホールド）"
+
+# Manual playback range controls.
+msgid "Custom playback range"
+msgstr "再生範囲を指定"
+
+msgid "From"
+msgstr "開始"
+
+msgid "To"
+msgstr "終了"
+
+msgid "Play only frames between the two markers, overriding animation tags."
+msgstr "2つのマーカーの間だけ再生します。アニメーションタグより優先されます。"
+
+msgid "Drag the playback range markers. This range overrides animation tags when enabled."
+msgstr "マーカーをドラッグして再生範囲を指定します。有効にするとアニメーションタグより優先されます。"

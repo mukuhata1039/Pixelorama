@@ -12,6 +12,7 @@
 [ext_resource type="Texture2D" uid="uid://ct8wn8m6x4m54" path="res://assets/graphics/misc/value_arrow.svg" id="10"]
 [ext_resource type="Texture2D" uid="uid://dyrkhxxg3kum1" path="res://assets/graphics/timeline/cel_based_timeline_button.png" id="10_wrt62"]
 [ext_resource type="Script" uid="uid://ckaphkalax7bh" path="res://src/UI/Timeline/FrameScrollContainer.gd" id="11"]
+[ext_resource type="Script" path="res://src/UI/Timeline/PlaybackRangeBar.gd" id="playback_range_bar"]
 [ext_resource type="Texture2D" uid="uid://d1urikaf1lxwl" path="res://assets/graphics/timeline/new_frame.png" id="19"]
 [ext_resource type="Texture2D" uid="uid://bt72662c3gp2f" path="res://assets/graphics/timeline/remove_frame.png" id="20"]
 [ext_resource type="Texture2D" uid="uid://bujrukk5ii3bi" path="res://assets/graphics/timeline/go_to_first_frame.png" id="21"]
@@ -762,6 +763,34 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
+
+[node name="PlaybackRangeScroll" type="ScrollContainer" parent="TimelineContainer/TimelineButtons/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+size_flags_horizontal = 3
+vertical_scroll_mode = 3
+mouse_filter = 2
+theme = SubResource("20")
+
+[node name="PlaybackRangeHBox" type="HBoxContainer" parent="TimelineContainer/TimelineButtons/VBoxContainer/PlaybackRangeScroll"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="PlaybackRangeSpacer" type="Control" parent="TimelineContainer/TimelineButtons/VBoxContainer/PlaybackRangeScroll/PlaybackRangeHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+
+[node name="PlaybackRangeBar" type="Control" parent="TimelineContainer/TimelineButtons/VBoxContainer/PlaybackRangeScroll/PlaybackRangeHBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+mouse_filter = 0
+mouse_default_cursor_shape = 2
+tooltip_text = "Drag the playback range markers. This range overrides animation tags when enabled."
+script = ExtResource("playback_range_bar")
+
 [node name="MainBodyPanel" type="PanelContainer" parent="TimelineContainer" unique_id=206516430]
 layout_mode = 2
 size_flags_vertical = 3
@@ -987,7 +1016,7 @@ size_flags_horizontal = 3
 
 [node name="TimelineSettings" type="Popup" parent="." unique_id=2082174526]
 position = Vector2i(0, 24)
-size = Vector2i(296, 242)
+size = Vector2i(324, 308)
 unresizable = false
 borderless = false
 
@@ -1009,6 +1038,41 @@ If it's not, the animation will play for all frames, ignoring tags."
 mouse_default_cursor_shape = 2
 button_pressed = true
 text = "Animation plays only on frames of the same tag"
+
+
+[node name="PlaybackRangeEnabled" type="CheckBox" parent="TimelineSettings/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Play only frames between the two markers, overriding animation tags."
+text = "Custom playback range"
+
+[node name="PlaybackRangeNumbers" type="HBoxContainer" parent="TimelineSettings/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PlaybackRangeStartLabel" type="Label" parent="TimelineSettings/MarginContainer/VBoxContainer/PlaybackRangeNumbers"]
+layout_mode = 2
+text = "From"
+
+[node name="PlaybackRangeStart" type="SpinBox" parent="TimelineSettings/MarginContainer/VBoxContainer/PlaybackRangeNumbers"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 0)
+layout_mode = 2
+min_value = 1.0
+max_value = 10000.0
+value = 1.0
+
+[node name="PlaybackRangeEndLabel" type="Label" parent="TimelineSettings/MarginContainer/VBoxContainer/PlaybackRangeNumbers"]
+layout_mode = 2
+text = "To"
+
+[node name="PlaybackRangeEnd" type="SpinBox" parent="TimelineSettings/MarginContainer/VBoxContainer/PlaybackRangeNumbers"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 0)
+layout_mode = 2
+min_value = 1.0
+max_value = 10000.0
+value = 1.0
 
 [node name="CompactTimeline" type="CheckBox" parent="TimelineSettings/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true

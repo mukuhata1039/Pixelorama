@@ -67,6 +67,12 @@ var next_keyframe_id := 0
 ## Used as a placeholder to allow canvas drawing.
 var empty_image_texture: ImageTexture
 
+## Independent of animation tags. -1 means the current final frame, so new
+## projects and expanded timelines retain the full-range default.
+var playback_range_enabled := false
+var playback_range_start := 0
+var playback_range_end := -1
+
 var animation_tags: Array[AnimationTag] = []:
 	set(value):
 		animation_tags = value
@@ -342,6 +348,9 @@ func serialize() -> Dictionary:
 		"tilesets": tileset_data,
 		"vanishing_points": vanishing_points,
 		"fps": fps,
+		"playback_range_enabled": playback_range_enabled,
+		"playback_range_start": playback_range_start,
+		"playback_range_end": playback_range_end,
 		"include_blended_images": include_blended_images,
 		"license": license,
 		"user_data": user_data,
@@ -360,6 +369,9 @@ func serialize() -> Dictionary:
 func deserialize(dict: Dictionary, zip_reader: ZIPReader = null, file: FileAccess = null) -> void:
 	about_to_deserialize.emit(dict)
 	var pxo_version = dict.get("pxo_version", 1)
+	playback_range_enabled = bool(dict.get("playback_range_enabled", false))
+	playback_range_start = int(dict.get("playback_range_start", 0))
+	playback_range_end = int(dict.get("playback_range_end", -1))
 	if dict.has("size_x") and dict.has("size_y"):
 		size = Vector2i(dict.size_x, dict.size_y)
 		selection_map.crop(size.x, size.y)
