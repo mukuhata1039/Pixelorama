@@ -293,18 +293,22 @@ func _on_CelButton_pressed() -> void:
 	var is_left_click := Input.is_action_just_released(&"left_mouse")
 	if is_left_click or Input.is_action_just_released(&"ui_accept"):
 		Global.transform_content_confirmed.emit()
-		Global.animation_timeline.select_cel_range_source()
 		var frame_layer := [frame, layer]
-		var change_cel := true
 		if is_left_click and Global.is_ctrl_or_cmd_pressed() and Input.is_action_pressed("shift"):
-			# Keep a contiguous rectangular selection available without occupying Shift alone.
-			var anchor_frame := project.current_frame
-			var anchor_layer := project.current_layer
-			project.selected_cels.clear()
-			for f in range(mini(anchor_frame, frame), maxi(anchor_frame, frame) + 1):
-				for l in range(mini(anchor_layer, layer), maxi(anchor_layer, layer) + 1):
-					project.selected_cels.append([f, l])
-		elif is_left_click and Global.is_ctrl_or_cmd_pressed() and cel is not AudioCel:
+			# On the timeline, Ctrl+Shift+click adds the clicked cel's pixels to
+			# the canvas selection. Do not add timeline cels or change the active cel.
+			if cel is not AudioCel:
+				Global.canvas.selection.select_cel_pixels(
+					project.layers[layer], project.frames[frame], true
+				)
+			# Button presses are toggled by Godot before this callback. Restore
+			# the appearance of the existing timeline cel selection.
+			button_pressed = project.selected_cels.has(frame_layer)
+			cel_switched()
+			return
+		Global.animation_timeline.select_cel_range_source()
+		var change_cel := true
+		if is_left_click and Global.is_ctrl_or_cmd_pressed() and cel is not AudioCel:
 			# Select the opaque pixels of the clicked cel, not multiple timeline cels.
 			project.selected_cels = [frame_layer]
 			project.change_cel(frame, layer)
