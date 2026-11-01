@@ -189,12 +189,20 @@ func _process(_delta: float) -> void:
 			var coords := [int(hovered.get("frame")), int(hovered.get("layer"))]
 			var selected: bool = Global.current_project.selected_cels.has(coords)
 			var desired_shape := Control.CURSOR_ARROW
-			if selected and copy_modifier:
-				desired_shape = Control.CURSOR_CAN_DROP
-			elif selected and bool(
-				hovered.call("_is_drag_border", hovered.get_local_mouse_position())
-			):
-				desired_shape = Control.CURSOR_MOVE
+			# Shift starts an additive selection even on an old selected edge,
+			# so never advertise move/copy while Shift alone is held.
+			var shift_additive := (
+				Input.is_action_pressed(&"shift")
+				and not Global.is_ctrl_or_cmd_pressed()
+				and not Input.is_key_pressed(KEY_ALT)
+			)
+			if not shift_additive:
+				if selected and copy_modifier:
+					desired_shape = Control.CURSOR_CAN_DROP
+				elif selected and bool(
+					hovered.call("_is_drag_border", hovered.get_local_mouse_position())
+				):
+					desired_shape = Control.CURSOR_MOVE
 			if hovered.mouse_default_cursor_shape != desired_shape:
 				hovered.mouse_default_cursor_shape = desired_shape
 				get_viewport().update_mouse_cursor_state()
