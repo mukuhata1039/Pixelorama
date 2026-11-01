@@ -44,6 +44,17 @@ var drag_range_preview_additive := false
 var drag_range_preview_cels: Array = []
 ## Fast membership tests are important while a large rectangle changes.
 var drag_range_preview_lookup: Dictionary[Vector2i, bool] = {}
+## Snapshot of the last drawn timeline state. During playback, most of the
+## timeline is unchanged; only update cells in changed frame/layer guides.
+var _rendered_selected_cels: Dictionary[Vector2i, bool] = {}
+var _rendered_guide_frames: Dictionary[int, bool] = {}
+var _rendered_guide_layers: Dictionary[int, bool] = {}
+var _rendered_selected_rows: Dictionary[int, bool] = {}
+var _rendered_selected_columns: Dictionary[int, bool] = {}
+var _rendered_project: Project
+var _rendered_frame_count := -1
+var _rendered_layer_count := -1
+var _timeline_selection_cache_valid := false
 var is_animation_running := false
 var animation_loop := LoopType.CYCLE
 var animation_forward := true
@@ -2004,6 +2015,129 @@ func get_displayed_selected_cels() -> Array:
 	return Global.current_project.selected_cels
 
 
+## Fast path for animation playback. All frame/layer headers and every cel
+## were being restyled on each timer tick (frames * layers). Normal editing,
+## drag previews, and other multi-cel selections keep the full refresh.
+func _refresh_timeline_playback_appearance() -> void:
+	var project := Global.current_project
+	if (
+		not _timeline_selection_cache_valid
+		or project != _rendered_project
+		or _rendered_frame_count != project.frames.size()
+		or _rendered_layer_count != project.layers.size()
+		or drag_range_preview_active
+		or project.selected_cels.size() != 1
+		or project.selected_cels[0] != [project.current_frame, project.current_layer]
+	):
+		_refresh_timeline_selection_appearance()
+		return
+
+	var next_selected: Dictionary[Vector2i, bool] = {}
+	var current_key := Vector2i(project.current_frame, project.current_layer)
+	next_selected[current_key] = true
+	var next_guide_frames: Dictionary[int, bool] = {}
+	var next_guide_layers: Dictionary[int, bool] = {}
+	next_guide_frames[project.current_frame] = true
+	next_guide_layers[project.current_layer] = true
+	var next_rows: Dictionary[int, bool] = {}
+	var next_columns: Dictionary[int, bool] = {}
+	# A header-originated range still includes its header when there is only
+	# one frame (layer range) or one layer (frame range).
+	if range_selection_source == RangeSelectionSource.LAYERS and project.frames.size() == 1:
+		next_rows[project.current_layer] = true
+	elif range_selection_source == RangeSelectionSource.FRAMES and project.layers.size() == 1:
+		next_columns[project.current_frame] = true
+
+	var cells_to_refresh: Dictionary[Vector2i, bool] = {}
+	var frame_headers_to_refresh: Dictionary[int, bool] = {}
+	var layer_headers_to_refresh: Dictionary[int, bool] = {}
+	for key in _rendered_selected_cels:
+		cells_to_refresh[key] = true
+	cells_to_refresh[current_key] = true
+
+	# Only the rows/columns whose guide membership changed need to be
+	# restyled. For ordinary playback in the same layer, this is two columns
+	# of cel buttons, rather than the entire timeline.
+	for frame_index in _rendered_guide_frames:
+		frame_headers_to_refresh[frame_index] = true
+		if not next_guide_frames.has(frame_index):
+			for layer_index in project.layers.size():
+				cells_to_refresh[Vector2i(frame_index, layer_index)] = true
+	for frame_index in next_guide_frames:
+		frame_headers_to_refresh[frame_index] = true
+		if not _rendered_guide_frames.has(frame_index):
+			for layer_index in project.layers.size():
+				cells_to_refresh[Vector2i(frame_index, layer_index)] = true
+	for layer_index in _rendered_guide_layers:
+		layer_headers_to_refresh[layer_index] = true
+		if not next_guide_layers.has(layer_index):
+			for frame_index in project.frames.size():
+				cells_to_refresh[Vector2i(frame_index, layer_index)] = true
+	for layer_index in next_guide_layers:
+		layer_headers_to_refresh[layer_index] = true
+		if not _rendered_guide_layers.has(layer_index):
+			for frame_index in project.frames.size():
+				cells_to_refresh[Vector2i(frame_index, layer_index)] = true
+
+	# Old header ranges might have been selected before playback began.
+	# Update their neighbors too, so the 1px perimeter joins correctly.
+	for frame_index in _rendered_selected_columns:
+		for neighbor in range(frame_index - 1, frame_index + 2):
+			frame_headers_to_refresh[neighbor] = true
+	for frame_index in next_columns:
+		for neighbor in range(frame_index - 1, frame_index + 2):
+			frame_headers_to_refresh[neighbor] = true
+	for layer_index in _rendered_selected_rows:
+		for neighbor in range(layer_index - 1, layer_index + 2):
+			layer_headers_to_refresh[neighbor] = true
+	for layer_index in next_rows:
+		for neighbor in range(layer_index - 1, layer_index + 2):
+			layer_headers_to_refresh[neighbor] = true
+
+	range_guide_frames = next_guide_frames
+	range_guide_layers = next_guide_layers
+	for frame_index in frame_headers_to_refresh:
+		if frame_index < 0 or frame_index >= frame_hbox.get_child_count():
+			continue
+		var frame_button := frame_hbox.get_child(frame_index) as Button
+		_set_header_selection_style(
+			frame_button, next_guide_frames.has(frame_index),
+			next_columns.has(frame_index), false,
+			next_columns.has(frame_index - 1),
+			next_columns.has(frame_index + 1), true
+		)
+	for layer_index in layer_headers_to_refresh:
+		if layer_index < 0 or layer_index >= project.layers.size():
+			continue
+		var row_index := project.layers.size() - layer_index - 1
+		var layer_button = layer_vbox.get_child(row_index)
+		var active := next_guide_layers.has(layer_index)
+		var in_range := next_rows.has(layer_index)
+		_set_header_selection_style(
+			layer_button.main_button, active, in_range, true,
+			next_rows.has(layer_index + 1),
+			next_rows.has(layer_index - 1), false
+		)
+		layer_button.z_index = 1 if active or in_range else 0
+
+	for key in cells_to_refresh:
+		var row_index := project.layers.size() - 1 - key.y
+		if row_index < 0 or row_index >= cel_vbox.get_child_count():
+			continue
+		var cel_hbox = cel_vbox.get_child(row_index)
+		if key.x < 0 or key.x >= cel_hbox.get_child_count():
+			continue
+		var cel_button = cel_hbox.get_child(key.x)
+		cel_button.button_pressed = next_selected.has(key)
+		cel_button.cel_switched()
+
+	_rendered_selected_cels = next_selected
+	_rendered_guide_frames = next_guide_frames
+	_rendered_guide_layers = next_guide_layers
+	_rendered_selected_rows = next_rows
+	_rendered_selected_columns = next_columns
+
+
 ## Render the active row, active column and timeline range independently.
 ## Ranges started from the layer/frame header also include that header inside
 ## the single outline, as Aseprite does.
@@ -2084,6 +2218,17 @@ func _refresh_timeline_selection_appearance() -> void:
 			cel_button.button_pressed = selected.has(Vector2i(cel_button.frame, cel_button.layer))
 			cel_button.cel_switched()
 
+	# Remember exactly what was drawn so playback can update only the differences.
+	_rendered_selected_cels = selected.duplicate()
+	_rendered_guide_frames = range_guide_frames.duplicate()
+	_rendered_guide_layers = range_guide_layers.duplicate()
+	_rendered_selected_rows = selected_rows.duplicate()
+	_rendered_selected_columns = selected_columns.duplicate()
+	_rendered_project = project
+	_rendered_frame_count = project.frames.size()
+	_rendered_layer_count = project.layers.size()
+	_timeline_selection_cache_valid = true
+
 
 func _set_header_selection_style(
 	button: Button,
@@ -2139,7 +2284,10 @@ func _set_header_selection_style(
 	button.add_theme_stylebox_override(&"hover_pressed", style)
 
 func _cel_switched() -> void:
-	_refresh_timeline_selection_appearance()
+	if is_animation_running:
+		_refresh_timeline_playback_appearance()
+	else:
+		_refresh_timeline_selection_appearance()
 	for connection in get_incoming_connections():
 		if connection.callable == _on_layer_keyframe_changed:
 			connection.signal.disconnect(_on_layer_keyframe_changed)
