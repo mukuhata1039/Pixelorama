@@ -2109,7 +2109,7 @@ func _refresh_timeline_playback_appearance() -> void:
 	for layer_index in layer_headers_to_refresh:
 		if layer_index < 0 or layer_index >= project.layers.size():
 			continue
-		var row_index := project.layers.size() - layer_index - 1
+		var row_index: int = project.layers.size() - layer_index - 1
 		var layer_button = layer_vbox.get_child(row_index)
 		var active := next_guide_layers.has(layer_index)
 		var in_range := next_rows.has(layer_index)
@@ -2121,10 +2121,10 @@ func _refresh_timeline_playback_appearance() -> void:
 		layer_button.z_index = 1 if active or in_range else 0
 
 	for key in cells_to_refresh:
-		var row_index := project.layers.size() - 1 - key.y
-		if row_index < 0 or row_index >= cel_vbox.get_child_count():
+		var cel_row_index: int = project.layers.size() - 1 - key.y
+		if cel_row_index < 0 or cel_row_index >= cel_vbox.get_child_count():
 			continue
-		var cel_hbox = cel_vbox.get_child(row_index)
+		var cel_hbox = cel_vbox.get_child(cel_row_index)
 		if key.x < 0 or key.x >= cel_hbox.get_child_count():
 			continue
 		var cel_button = cel_hbox.get_child(key.x)
