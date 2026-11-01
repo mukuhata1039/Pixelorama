@@ -37,6 +37,9 @@ var range_guide_frames: Dictionary[int, bool] = {}
 var drag_range_preview_active := false
 var drag_range_preview_origin := Vector2i(-1, -1)
 var drag_range_preview_target := Vector2i(-1, -1)
+## Header drags use the same preview engine as cel-range drags, with an
+## independent selection-source type for row/column-only highlighting.
+var drag_range_preview_source := RangeSelectionSource.CELLS
 var drag_range_preview_cels: Array = []
 ## Fast membership tests are important while a large rectangle changes.
 var drag_range_preview_lookup: Dictionary[Vector2i, bool] = {}
@@ -181,7 +184,7 @@ func _process(_delta: float) -> void:
 	var copy_modifier: bool = Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT)
 	var hovered: Control = get_viewport().gui_get_hovered_control()
 	if is_instance_valid(hovered) and is_ancestor_of(hovered):
-		if hovered.has_method("_is_drag_border"):
+		if hovered.has_method("_is_drag_border") and hovered.has_method("_get_cel_indices"):
 			var coords := [int(hovered.get("frame")), int(hovered.get("layer"))]
 			var selected: bool = Global.current_project.selected_cels.has(coords)
 			var desired_shape := Control.CURSOR_ARROW
@@ -205,9 +208,14 @@ func _process(_delta: float) -> void:
 						or header.has_method("_get_frame_indices")
 					)
 				):
-					var header_shape := (
-						Control.CURSOR_CAN_DROP if copy_modifier else Control.CURSOR_MOVE
+					var on_border: bool = header.call(
+						"_is_drag_border", header.get_local_mouse_position()
 					)
+					var header_shape := Control.CURSOR_ARROW
+					if on_border:
+						header_shape = (
+							Control.CURSOR_CAN_DROP if copy_modifier else Control.CURSOR_MOVE
+						)
 					if header.mouse_default_cursor_shape != header_shape:
 						header.mouse_default_cursor_shape = header_shape
 						get_viewport().update_mouse_cursor_state()
@@ -1751,12 +1759,82 @@ func update_drag_cel_range_preview(origin: Array, end_frame: int, end_layer: int
 		return
 	drag_range_preview_origin = start
 	drag_range_preview_target = target
+	drag_range_preview_source = RangeSelectionSource.CELLS
 	drag_range_preview_cels = next_cels
 	drag_range_preview_lookup.clear()
 	for cel_index in next_cels:
 		drag_range_preview_lookup[Vector2i(int(cel_index[0]), int(cel_index[1]))] = true
 	drag_range_preview_active = true
 	_refresh_timeline_selection_appearance()
+
+
+## Aseprite timeline.cpp distinguishes STATE_SELECTING_LAYERS/FRAMES from
+## STATE_MOVING_RANGE. A drag in a header body previews complete rows/columns.
+## Only a drag that starts from the selected outline moves or copies content.
+func update_drag_header_range_preview(
+	is_layer: bool, first_index: int, last_index: int
+) -> void:
+	var project := Global.current_project
+	var source := RangeSelectionSource.LAYERS if is_layer else RangeSelectionSource.FRAMES
+	var start := Vector2i(first_index, 0) if is_layer else Vector2i(0, first_index)
+	var target := Vector2i(last_index, 0) if is_layer else Vector2i(0, last_index)
+	if (
+		drag_range_preview_active
+		and drag_range_preview_source == source
+		and drag_range_preview_origin == start
+		and drag_range_preview_target == target
+	):
+		return
+	var next_cels: Array = []
+	for index in range(mini(first_index, last_index), maxi(first_index, last_index) + 1):
+		if is_layer:
+			if index < 0 or index >= project.layers.size():
+				continue
+			var row_index := layer_vbox.get_child_count() - 1 - index
+			if row_index < 0 or row_index >= layer_vbox.get_child_count():
+				continue
+			if not layer_vbox.get_child(row_index).visible:
+				continue
+			for f in project.frames.size():
+				next_cels.append([f, index])
+		else:
+			if index < 0 or index >= project.frames.size():
+				continue
+			for l in project.layers.size():
+				next_cels.append([index, l])
+	if next_cels.is_empty():
+		return
+	drag_range_preview_source = source
+	drag_range_preview_origin = start
+	drag_range_preview_target = target
+	drag_range_preview_cels = next_cels
+	drag_range_preview_lookup.clear()
+	for cel_index in next_cels:
+		drag_range_preview_lookup[Vector2i(cel_index[0], cel_index[1])] = true
+	drag_range_preview_active = true
+	_refresh_timeline_selection_appearance()
+
+
+## Commit only when the header range is released, not on every drag motion.
+func commit_drag_header_range(is_layer: bool, first_index: int, last_index: int) -> void:
+	update_drag_header_range_preview(is_layer, first_index, last_index)
+	if not drag_range_preview_active:
+		return
+	var project := Global.current_project
+	var selected := drag_range_preview_cels.duplicate(true)
+	var target := clampi(
+		last_index, 0, project.layers.size() - 1 if is_layer else project.frames.size() - 1
+	)
+	clear_drag_cel_range_preview()
+	if is_layer:
+		select_layer_range_source()
+	else:
+		select_frame_range_source()
+	project.selected_cels = selected
+	if is_layer:
+		project.change_cel(-1, target)
+	else:
+		project.change_cel(target, -1)
 
 
 func clear_drag_cel_range_preview() -> void:
@@ -1767,6 +1845,7 @@ func clear_drag_cel_range_preview() -> void:
 	drag_range_preview_lookup.clear()
 	drag_range_preview_origin = Vector2i(-1, -1)
 	drag_range_preview_target = Vector2i(-1, -1)
+	drag_range_preview_source = RangeSelectionSource.CELLS
 	_refresh_timeline_selection_appearance()
 
 
@@ -1784,7 +1863,7 @@ func _refresh_timeline_selection_appearance() -> void:
 	var selected: Dictionary[Vector2i, bool] = {}
 	var display_cels: Array = get_displayed_selected_cels()
 	var display_source: int = (
-		RangeSelectionSource.CELLS if drag_range_preview_active else range_selection_source
+		drag_range_preview_source if drag_range_preview_active else range_selection_source
 	)
 	for cel_index in display_cels:
 		var frame_index: int = cel_index[0]

@@ -4,6 +4,8 @@ extends Button
 
 var layer_index := 0
 var hierarchy_depth_pixel_shift := 16
+const HEADER_DRAG_BORDER := 5.0
+var _drag_started_on_selected_border := false
 
 
 func _ready() -> void:
@@ -11,9 +13,48 @@ func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_PASS
 
 
+## The 1px selection outline is the drag handle. Dragging the header
+## interior starts a range selection (Aseprite's STATE_SELECTING_LAYERS).
+func _is_drag_border(local_pos: Vector2) -> bool:
+	var timeline := Global.animation_timeline
+	if not timeline.is_layer_header_range(layer_index):
+		return false
+	var first: bool = not timeline.is_layer_header_range(layer_index + 1)
+	var last: bool = not timeline.is_layer_header_range(layer_index - 1)
+	return (
+		local_pos.x <= HEADER_DRAG_BORDER
+		or (first and local_pos.y <= HEADER_DRAG_BORDER)
+		or (last and local_pos.y >= size.y - HEADER_DRAG_BORDER)
+	)
+
+
+func _gui_input(event: InputEvent) -> void:
+	if not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_LEFT:
+		return
+	if event.pressed:
+		_drag_started_on_selected_border = _is_drag_border(event.position)
+		if not _drag_started_on_selected_border:
+			Global.animation_timeline.update_drag_header_range_preview(
+				true, layer_index, layer_index
+			)
+	elif not get_viewport().gui_is_dragging():
+		Global.animation_timeline.clear_drag_cel_range_preview()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_DRAG_END:
+		# A canceled drag never commits the preview range.
+		Global.animation_timeline.clear_drag_cel_range_preview()
+
+
 func _get_drag_data(_position: Vector2) -> Variant:
 	if DisplayServer.is_touchscreen_available() and not button_pressed:
 		return null
+	if not _drag_started_on_selected_border and not DisplayServer.is_touchscreen_available():
+		Global.animation_timeline.update_drag_header_range_preview(
+			true, layer_index, layer_index
+		)
+		return ["LayerRange", layer_index]
 	var layers := _get_layer_indices()
 	for layer_i in layers:  # Add child layers, if we have selected groups
 		var layer := Global.current_project.layers[layer_i]
@@ -38,6 +79,14 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 	if typeof(data) != TYPE_ARRAY:
 		Global.animation_timeline.drag_highlight.visible = false
 		return false
+	if data.is_empty():
+		return false
+	if data[0] == "LayerRange":
+		Global.animation_timeline.drag_highlight.hide()
+		Global.animation_timeline.update_drag_header_range_preview(
+			true, int(data[1]), layer_index
+		)
+		return true
 	if data[0] != "Layer":
 		Global.animation_timeline.drag_highlight.visible = false
 		return false
@@ -99,6 +148,9 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 
 
 func _drop_data(pos: Vector2, data) -> void:
+	if data[0] == "LayerRange":
+		Global.animation_timeline.commit_drag_header_range(true, int(data[1]), layer_index)
+		return
 	var initial_drop_layers: PackedInt32Array = data[1]
 	var project := Global.current_project
 	var curr_layer := project.layers[layer_index]
