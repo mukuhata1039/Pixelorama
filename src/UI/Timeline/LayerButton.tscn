@@ -195,6 +195,7 @@ texture = ExtResource("8_ce16y")
 stretch_mode = 3
 
 [node name="MarginSpacer" type="Control" parent="LayerMainButton/LayerName" unique_id=453250867]
+mouse_filter = 2
 custom_minimum_size = Vector2(4, 0)
 layout_mode = 2
 
