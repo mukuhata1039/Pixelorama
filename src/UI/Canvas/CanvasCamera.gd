@@ -9,6 +9,15 @@ enum Cameras { MAIN, SECOND, SMALL }
 
 const CAMERA_SPEED_RATE := 15.0
 const ROTATION_SNAP_ANGLE := PI / 12.0  # 15 degrees
+## Deliberately chosen percentages for mouse-wheel zoom only.
+## Other zoom methods (drag, pinch, toolbar, keyboard) remain continuous.
+const WHEEL_ZOOM_PERCENTAGES := [
+	1.0, 2.0, 5.0, 10.0, 20.0, 25.0, 50.0, 75.0,
+	100.0, 125.0, 150.0, 200.0, 250.0, 300.0, 400.0, 500.0,
+	600.0, 800.0, 1000.0, 1250.0, 1500.0, 2000.0, 2500.0,
+	3000.0, 4000.0, 5000.0, 6000.0, 8000.0, 10000.0,
+	12500.0, 15000.0, 20000.0, 25000.0, 30000.0, 40000.0, 50000.0
+]
 
 @export var index := 0
 
@@ -41,6 +50,8 @@ var mouse_pos := Vector2.ZERO
 var drag := false
 var _quick_navigation_drag := false
 var _quick_zoom_anchor := Vector2.ZERO
+var _wheel_zoom_tween: Tween
+var _wheel_zoom_target := 1.0
 ## Canvas rotation drag driven by the current editable shortcut profile.
 var _clipstudio_rotate_drag := false
 var _clipstudio_rotate_button := MOUSE_BUTTON_LEFT
@@ -158,10 +169,16 @@ func _input(event: InputEvent) -> void:
 			drag = true
 	elif event.is_action_released(&"pan"):
 		drag = false
-	elif event.is_action_pressed(&"zoom_in", false, true):  # Wheel Up Event
-		zoom_camera(1)
-	elif event.is_action_pressed(&"zoom_out", false, true):  # Wheel Down Event
-		zoom_camera(-1)
+	elif event.is_action_pressed(&"zoom_in", false, true):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			zoom_camera_wheel(1)
+		else:  # Non-wheel shortcut: preserve the original free zoom behavior.
+			zoom_camera(1)
+	elif event.is_action_pressed(&"zoom_out", false, true):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			zoom_camera_wheel(-1)
+		else:
+			zoom_camera(-1)
 	elif event.is_action_pressed(&"rotate_right", false, true):  # Wheel Up Event
 		rotate_camera(1)
 	elif event.is_action_pressed(&"rotate_left", false, true):  # Wheel Down Event
@@ -351,6 +368,7 @@ func rotate_camera(dir: float) -> void:
 
 
 func zoom_camera(dir: float, event_pos := mouse_pos, immediate := false) -> void:
+	_cancel_wheel_zoom_tween()
 	var viewport_size := viewport_container.size
 	if Global.smooth_zoom:
 		var zoom_margin := zoom * dir / 5
@@ -400,12 +418,68 @@ func zoom_camera(dir: float, event_pos := mouse_pos, immediate := false) -> void
 		)
 
 
+## The wheel moves between explicit, round percentage stops. An arbitrary zoom
+## (e.g. 210% after a drag) jumps to the next stop in the scroll direction.
+## While a zoom tween is running, use its destination for the next notch so
+## rapid scrolling never skips or repeats stops based on intermediate frames.
+func zoom_camera_wheel(direction: int, event_pos := mouse_pos) -> void:
+	if direction == 0:
+		return
+	var reference_percent := zoom.x * 100.0
+	if is_instance_valid(_wheel_zoom_tween) and _wheel_zoom_tween.is_running():
+		reference_percent = _wheel_zoom_target
+	var next_percent := reference_percent
+	if direction > 0:
+		for stop_percent in WHEEL_ZOOM_PERCENTAGES:
+			if Global.integer_zoom and (int(stop_percent) < 100 or int(stop_percent) % 100 != 0):
+				continue
+			if stop_percent > reference_percent + 0.001 and stop_percent <= zoom_in_max.x * 100.0:
+				next_percent = float(stop_percent)
+				break
+	else:
+		for i in range(WHEEL_ZOOM_PERCENTAGES.size() - 1, -1, -1):
+			var stop_percent: float = WHEEL_ZOOM_PERCENTAGES[i]
+			if Global.integer_zoom and (int(stop_percent) < 100 or int(stop_percent) % 100 != 0):
+				continue
+			if stop_percent < reference_percent - 0.001 and stop_percent >= zoom_out_max.x * 100.0:
+				next_percent = float(stop_percent)
+				break
+	if is_equal_approx(next_percent, reference_percent):
+		return
+
+	_cancel_wheel_zoom_tween()
+	var next_zoom := Vector2.ONE * (next_percent / 100.0)
+	# Match zoom_camera's pivot calculation: the pixel under the mouse stays
+	# in the same screen position when the wheel zoom has finished.
+	var next_offset := (
+		offset
+		+ (-0.5 * viewport_container.size + event_pos).rotated(camera_angle)
+		* (Vector2.ONE / zoom - Vector2.ONE / next_zoom)
+	)
+	_wheel_zoom_target = next_percent
+	if Global.smooth_zoom:
+		_wheel_zoom_tween = create_tween().set_parallel()
+		_wheel_zoom_tween.set_trans(Tween.TRANS_LINEAR).set_ease(Tween.EASE_IN)
+		_wheel_zoom_tween.tween_property(self, "zoom", next_zoom, 0.05)
+		_wheel_zoom_tween.tween_property(self, "offset", next_offset, 0.05)
+	else:
+		zoom = next_zoom
+		offset = next_offset
+
+
+func _cancel_wheel_zoom_tween() -> void:
+	if is_instance_valid(_wheel_zoom_tween) and _wheel_zoom_tween.is_running():
+		_wheel_zoom_tween.kill()
+
+
 func zoom_100() -> void:
+	_cancel_wheel_zoom_tween()
 	zoom = Vector2.ONE
 	offset = Global.current_project.size / 2
 
 
 func fit_to_frame(size: Vector2) -> void:
+	_cancel_wheel_zoom_tween()
 	viewport_container = get_viewport().get_parent()
 	var h_ratio := viewport_container.size.x / size.x
 	var v_ratio := viewport_container.size.y / size.y
@@ -473,6 +547,7 @@ func _rotation_changed() -> void:
 
 
 func _zoom_slider_value_changed(value: float) -> void:
+	_cancel_wheel_zoom_tween()
 	if value <= 0:
 		value = 1
 	var new_zoom := Vector2(value, value) / 100.0
@@ -495,6 +570,7 @@ func _rotation_slider_value_changed(value: float) -> void:
 
 
 func _project_switched() -> void:
+	_cancel_wheel_zoom_tween()
 	offset = Global.current_project.cameras_offset[index]
 	camera_angle = Global.current_project.cameras_rotation[index]
 	zoom = Global.current_project.cameras_zoom[index]
