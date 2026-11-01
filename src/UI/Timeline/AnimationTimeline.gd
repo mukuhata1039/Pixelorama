@@ -2508,6 +2508,7 @@ func _on_keyframe_timeline_button_pressed() -> void:
 	var keyframe_timeline_enabled := not keyframe_timeline.visible
 	keyframe_timeline.visible = keyframe_timeline_enabled
 	tag_scroll_container.visible = not keyframe_timeline_enabled
+	playback_range_scroll.visible = not keyframe_timeline_enabled
 	layer_frame_header_h_split.get_parent().visible = not keyframe_timeline_enabled
 	frame_scroll_container.get_parent().visible = not keyframe_timeline_enabled
 	var texture_button: TextureRect = keyframe_timeline_button.get_child(0)
