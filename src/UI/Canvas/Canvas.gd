@@ -397,7 +397,7 @@ func _store_playback_frame_images(frame_index: int, images: Array[Image], metada
 	while _playback_frame_cache_bytes + bytes > PLAYBACK_IMAGE_CACHE_MAX_BYTES:
 		if _playback_frame_lru.is_empty():
 			break
-		var evicted_index := _playback_frame_lru.pop_front()
+		var evicted_index: int = _playback_frame_lru.pop_front()
 		var evicted: Dictionary = _playback_frame_cache.get(evicted_index, {})
 		_playback_frame_cache_bytes -= int(evicted.get("bytes", 0))
 		_playback_frame_cache.erase(evicted_index)
