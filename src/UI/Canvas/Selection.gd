@@ -671,12 +671,23 @@ func select_cel_rect() -> void:
 	commit_undo("Select", undo_data_tmp)
 
 
+## Replaces the pixel selection with the opaque pixels of a cel.
+## Keep the two-argument API: existing callers and Godot's cached script
+## class metadata expect this signature.
 func select_cel_pixels(layer: BaseLayer, frame: Frame) -> void:
+	_select_cel_pixels(layer, frame, false)
+
+
+## Adds the opaque pixels of a cel to the current canvas selection, without
+## selecting other timeline cels or changing the active editing cel.
+func add_cel_pixels_to_selection(layer: BaseLayer, frame: Frame) -> void:
+	_select_cel_pixels(layer, frame, true)
+
+
+func _select_cel_pixels(layer: BaseLayer, frame: Frame, add_to_selection: bool) -> void:
 	transform_content_confirm()
 	var project := Global.current_project
 	var undo_data_tmp := get_undo_data(false)
-	project.selection_map.crop(project.size.x, project.size.y)
-	project.selection_map.clear()
 	var current_cel := frame.cels[layer.index]
 	var cel_image: Image
 	if current_cel is GroupCel:
@@ -684,10 +695,25 @@ func select_cel_pixels(layer: BaseLayer, frame: Frame) -> void:
 	else:
 		cel_image = project.crop_image_to_project_size(current_cel.get_image(), current_cel.offset)
 	var selection_format := project.selection_map.get_format()
-	project.selection_map.copy_from(cel_image)
-	project.selection_map.convert(selection_format)
+	if add_to_selection and project.has_selection:
+		# Keep selection-map pixels outside the canvas by respecting the
+		# existing offset and expanding the image only when necessary.
+		cel_image.convert(selection_format)
+		var destination := -project.selection_offset
+		project.selection_map.crop(
+			maxi(project.selection_map.get_width(), project.size.x + destination.x),
+			maxi(project.selection_map.get_height(), project.size.y + destination.y)
+		)
+		project.selection_map.blend_rect(
+			cel_image, Rect2i(Vector2i.ZERO, cel_image.get_size()), destination
+		)
+	else:
+		project.selection_map.crop(project.size.x, project.size.y)
+		project.selection_map.clear()
+		project.selection_map.copy_from(cel_image)
+		project.selection_map.convert(selection_format)
+		project.selection_offset = Vector2i.ZERO
 	project.selection_map_changed()
-	project.selection_offset = Vector2.ZERO
 	commit_undo("Select", undo_data_tmp)
 
 
