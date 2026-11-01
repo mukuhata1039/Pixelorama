@@ -5,6 +5,10 @@ var mode := Mode.TIMELINE
 ## Use this material only when the animation of the canvas preview is playing
 ## This way we optimize drawing when the frame being shown is the same as the main canvas
 var animation_material := material as ShaderMaterial
+## Reuse the preview's GPU textures instead of reallocating them every frame.
+var _preview_texture_array := Texture2DArray.new()
+var _preview_metadata_image := Image.new()
+var _preview_metadata_texture := ImageTexture.new()
 var h_frames := 1
 var v_frames := 1
 var start_sprite_sheet_frame := 1
@@ -70,26 +74,39 @@ func _draw() -> void:
 
 func _draw_layers() -> void:
 	var project := Global.current_project
-	var current_frame := project.frames[frame_index]
-	var current_cels := current_frame.cels
+	var current_cels := project.frames[frame_index].cels
+	var recreate := (
+		_preview_texture_array.get_layers() != project.layers.size()
+		or _preview_texture_array.get_width() != project.size.x
+		or _preview_texture_array.get_height() != project.size.y
+	)
 	var textures: Array[Image] = []
-	# Nx4 texture, where N is the number of layers and the first row are the blend modes,
-	# the second are the opacities, the third are the origins and the fourth are the
-	# clipping mask booleans.
-	var metadata_image := Image.create(project.layers.size(), 4, false, Image.FORMAT_R8)
-	# Draw current frame layers
-	for i in project.ordered_layers:
-		var cel := current_cels[i]
-		var layer := project.layers[i]
+	if recreate:
+		textures.resize(project.layers.size())
+		_preview_metadata_image = Image.create(project.layers.size(), 4, false, Image.FORMAT_R8)
+	else:
+		# Prevent metadata from a previous frame surviving when a flag is cleared.
+		_preview_metadata_image.fill(Color.BLACK)
+	for ordered_index in project.ordered_layers.size():
+		var layer_index := project.ordered_layers[ordered_index]
+		var cel := current_cels[layer_index]
+		var layer := project.layers[layer_index]
 		var cel_image := Image.new()
 		Canvas.get_canvas_cel_image(cel, layer, cel_image)
-		textures.append(cel_image)
-		DrawingAlgos.set_layer_metadata_image(layer, cel, metadata_image, i)
-	var texture_array := Texture2DArray.new()
-	texture_array.create_from_images(textures)
-	material.set_shader_parameter("layers", texture_array)
-	material.set_shader_parameter("metadata", ImageTexture.create_from_image(metadata_image))
-
+		if recreate:
+			textures[ordered_index] = cel_image
+		else:
+			_preview_texture_array.update_layer(cel_image, ordered_index)
+		DrawingAlgos.set_layer_metadata_image(
+			layer, cel, _preview_metadata_image, ordered_index
+		)
+	if recreate:
+		_preview_texture_array.create_from_images(textures)
+		_preview_metadata_texture.set_image(_preview_metadata_image)
+		material.set_shader_parameter("layers", _preview_texture_array)
+		material.set_shader_parameter("metadata", _preview_metadata_texture)
+	else:
+		_preview_metadata_texture.update(_preview_metadata_image)
 
 func _on_AnimationTimer_timeout() -> void:
 	match mode:

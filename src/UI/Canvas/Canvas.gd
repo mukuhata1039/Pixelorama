@@ -16,6 +16,28 @@ var brush_profile_texture_us := 0
 var brush_profile_texture_calls := 0
 var brush_profile_layers_us := 0
 var brush_profile_layers_calls := 0
+## Only collected during the Ctrl+Shift+F9 benchmark; these are CPU timings.
+var _benchmark_canvas_sample_active := false
+var _benchmark_prepare_us := 0
+var _benchmark_texture_us := 0
+var _benchmark_metadata_us := 0
+## Bounded cache of GPU-ready layer images from previously displayed animation
+## frames. Keeping the prepared images avoids repeating effects and group blends
+## when a frame is shown again. Entries are only used for Timer-driven playback.
+const PLAYBACK_IMAGE_CACHE_MAX_BYTES = 512 * 1024 * 1024
+var _playback_frame_cache: Dictionary[int, Dictionary] = {}
+var _playback_frame_lru: Array[int] = []
+var _playback_frame_cache_bytes := 0
+var _playback_cache_armed := false
+var _playback_cache_eligible := false
+var _playback_cache_effects_enabled := false
+var _playback_cache_project: Project
+var _playback_cache_hits := 0
+var _playback_cache_misses := 0
+var _playback_cache_evictions := 0
+var _playback_cache_invalidations := 0
+## 1 = reused prepared images, 2 = generated images after cache miss.
+var _benchmark_cache_draw_outcome := 0
 var update_all_layers := false
 ## For optimization purposes. A kind of override to force include a layer during canvas update.
 ## Used in Undo/Redo for FX and visibility changes
@@ -56,6 +78,8 @@ func _ready() -> void:
 	Global.project_about_to_switch.connect(_on_project_about_to_switch)
 	Global.project_switched.connect(_on_project_switched)
 	Global.cel_switched.connect(queue_redraw_all_layers)
+	Global.project_data_changed.connect(_on_playback_project_data_changed)
+	_bind_playback_cache_project(Global.current_project)
 	onion_past.type = onion_past.PAST
 	onion_past.blue_red_color = Global.onion_skinning_past_color
 	onion_future.type = onion_future.FUTURE
@@ -75,11 +99,73 @@ func _draw() -> void:
 	# Placeholder so we can have a material here
 	var image_to_draw := project.empty_image_texture
 	draw_texture(image_to_draw, Vector2.ZERO)
-	var layer_start_us := Time.get_ticks_usec() if brush_profile_active else 0
-	draw_layers(project_changed)
+	var benchmark_timeline := Global.animation_timeline
+	var benchmark_sampling := (
+		is_instance_valid(benchmark_timeline)
+		and bool(benchmark_timeline.get("benchmark_recording"))
+	)
+	_benchmark_canvas_sample_active = benchmark_sampling
+	_benchmark_prepare_us = 0
+	_benchmark_texture_us = 0
+	_benchmark_metadata_us = 0
+	_benchmark_cache_draw_outcome = 0
+	var layer_start_us := (
+		Time.get_ticks_usec() if brush_profile_active or benchmark_sampling else 0
+	)
+	# Any redraw not caused by the animation timer could change the image.
+	# A drag/edit, effects change, visibility change or other UI redraw
+	# must never reuse an older prepared frame. Animated 3D cel textures can
+	# also change independently of the 2D frame, so never cache 3D projects.
+	var contains_3d_layers := false
+	if _playback_cache_eligible:
+		for layer in project.layers:
+			if layer is Layer3D:
+				contains_3d_layers = true
+				break
+	var timeline := Global.animation_timeline
+	var use_playback_cache := (
+		_playback_cache_eligible
+		and is_instance_valid(timeline)
+		and bool(timeline.get("is_animation_running"))
+		and not bool(timeline.get("benchmark_baseline_mode"))
+		and not live_recolor_enabled
+		and not contains_3d_layers
+		and not update_all_layers
+		and mandatory_update_layers.is_empty()
+	)
+	# Pan/zoom, cursor redraw and other presentation-only redraws must not
+	# throw away previously prepared animation frames. Invalidate only for
+	# actual content updates or incompatible rendering state.
+	var cache_is_stale := (
+		_playback_cache_project != project
+		or _playback_cache_effects_enabled != Global.display_layer_effects
+		or live_recolor_enabled
+		or update_all_layers
+		or not mandatory_update_layers.is_empty()
+		or (project_changed and not use_playback_cache)
+	)
+	_playback_cache_eligible = false
+	if cache_is_stale:
+		clear_playback_frame_cache()
+		_playback_cache_project = project
+		_playback_cache_effects_enabled = Global.display_layer_effects
+		use_playback_cache = false
+	# The full batch-upload path is deliberately preserved: the user's A/B
+	# measurements showed the separate per-layer uploads were slower.
+	draw_layers(project_changed, use_playback_cache)
+	_benchmark_canvas_sample_active = false
 	if brush_profile_active:
 		brush_profile_layers_us += Time.get_ticks_usec() - layer_start_us
 		brush_profile_layers_calls += 1
+	if benchmark_sampling:
+		benchmark_timeline.call(
+			"record_animation_benchmark_canvas",
+			Time.get_ticks_usec() - layer_start_us,
+			_benchmark_prepare_us,
+			_benchmark_texture_us,
+			_benchmark_metadata_us,
+			_benchmark_cache_draw_outcome
+		)
 	project_changed = false
 	if Global.onion_skinning:
 		refresh_onion()
@@ -293,7 +379,113 @@ func finish_brush_profile() -> Dictionary:
 	}
 
 
+## The Timeline calls this immediately before a Timer-driven frame advance.
+## Other frame changes (manual scrub etc.) are treated as invalidations.
+func prepare_playback_frame_change() -> void:
+	_playback_cache_armed = true
+
+
+func clear_playback_frame_cache() -> void:
+	if not _playback_frame_cache.is_empty():
+		_playback_cache_invalidations += 1
+	_playback_frame_cache.clear()
+	_playback_frame_lru.clear()
+	_playback_frame_cache_bytes = 0
+	# Preserve diagnostic totals until a benchmark sample resets them; otherwise
+	# an unexpected invalidation would conceal its preceding hits and misses.
+	_playback_cache_eligible = false
+	_playback_cache_armed = false
+
+
+func _store_playback_frame_images(frame_index: int, images: Array[Image], metadata: Image) -> void:
+	# Estimate allocations conservatively. Keep the cache bounded even on
+	# large or high-color projects. No caching when one frame exceeds budget.
+	var bytes := 0
+	for image in images:
+		var bytes_per_pixel := 4
+		match image.get_format():
+			Image.FORMAT_RGBAF:
+				bytes_per_pixel = 16
+			Image.FORMAT_RGBAH:
+				bytes_per_pixel = 8
+			Image.FORMAT_RGB8:
+				bytes_per_pixel = 3
+			Image.FORMAT_L8, Image.FORMAT_R8:
+				bytes_per_pixel = 1
+			Image.FORMAT_LA8, Image.FORMAT_RG8:
+				bytes_per_pixel = 2
+		bytes += image.get_width() * image.get_height() * bytes_per_pixel
+	bytes += metadata.get_width() * metadata.get_height()
+	if bytes > PLAYBACK_IMAGE_CACHE_MAX_BYTES:
+		return
+	while _playback_frame_cache_bytes + bytes > PLAYBACK_IMAGE_CACHE_MAX_BYTES:
+		if _playback_frame_lru.is_empty():
+			break
+		var evicted_index: int = _playback_frame_lru.pop_front()
+		var evicted: Dictionary = _playback_frame_cache.get(evicted_index, {})
+		_playback_frame_cache_bytes -= int(evicted.get("bytes", 0))
+		_playback_frame_cache.erase(evicted_index)
+		_playback_cache_evictions += 1
+	_playback_frame_cache[frame_index] = {
+		"textures": images,
+		"metadata": metadata,
+		"bytes": bytes,
+	}
+	_playback_frame_lru.append(frame_index)
+	_playback_frame_cache_bytes += bytes
+
+
+func reset_playback_cache_counters() -> void:
+	_playback_cache_hits = 0
+	_playback_cache_misses = 0
+	_playback_cache_evictions = 0
+	_playback_cache_invalidations = 0
+
+
+func get_playback_frame_cache_stats() -> Dictionary:
+	return {
+		"hits": _playback_cache_hits,
+		"misses": _playback_cache_misses,
+		"evictions": _playback_cache_evictions,
+		"invalidations": _playback_cache_invalidations,
+		"frames": _playback_frame_cache.size(),
+		"megabytes": float(_playback_frame_cache_bytes) / 1048576.0,
+	}
+
+
+func _on_playback_project_data_changed(project: Project) -> void:
+	if project == Global.current_project:
+		clear_playback_frame_cache()
+
+
+func _bind_playback_cache_project(project: Project) -> void:
+	_playback_cache_project = project
+	_playback_cache_effects_enabled = Global.display_layer_effects
+	if not project.layers_updated.is_connected(clear_playback_frame_cache):
+		project.layers_updated.connect(clear_playback_frame_cache)
+	if not project.frames_updated.is_connected(clear_playback_frame_cache):
+		project.frames_updated.connect(clear_playback_frame_cache)
+	if not project.resized.is_connected(clear_playback_frame_cache):
+		project.resized.connect(clear_playback_frame_cache)
+
+
+func _unbind_playback_cache_project(project: Project) -> void:
+	if project.layers_updated.is_connected(clear_playback_frame_cache):
+		project.layers_updated.disconnect(clear_playback_frame_cache)
+	if project.frames_updated.is_connected(clear_playback_frame_cache):
+		project.frames_updated.disconnect(clear_playback_frame_cache)
+	if project.resized.is_connected(clear_playback_frame_cache):
+		project.resized.disconnect(clear_playback_frame_cache)
+
+
 func queue_redraw_all_layers() -> void:
+	_playback_cache_eligible = _playback_cache_armed
+	_playback_cache_armed = false
+	if not _playback_cache_eligible:
+		clear_playback_frame_cache()
+	# Benchmarks showed that updating each Texture2DArray layer separately was
+	# slower than the original batch recreation for animation frame switches.
+	# Keep the faster batch path until a better measured rendering strategy lands.
 	project_changed = true
 	var project := Global.current_project
 	var current_cel := project.get_current_cel()
@@ -375,6 +567,7 @@ static func get_canvas_cel_image(cel: BaseCel, layer: BaseLayer, image: Image) -
 func update_texture(
 	layer_i: int, frame_i := -1, project := Global.current_project, undo := false
 ) -> void:
+	clear_playback_frame_cache()
 	if frame_i == -1:
 		frame_i = project.current_frame
 
@@ -397,6 +590,7 @@ func update_texture(
 
 
 func update_selected_cels_textures(project := Global.current_project) -> void:
+	clear_playback_frame_cache()
 	for cel_index in project.selected_cels:
 		var frame_index: int = cel_index[0]
 		var layer_index: int = cel_index[1]
@@ -405,7 +599,7 @@ func update_selected_cels_textures(project := Global.current_project) -> void:
 			current_cel.update_texture()
 
 
-func draw_layers(force_recreate := false) -> void:
+func draw_layers(force_recreate := false, allow_playback_cache := false) -> void:
 	var project := Global.current_project
 	var recreate_texture_array := (
 		layer_texture_array.get_layers() != project.layers.size()
@@ -415,22 +609,61 @@ func draw_layers(force_recreate := false) -> void:
 	)
 	if recreate_texture_array:
 		var textures: Array[Image] = []
-		textures.resize(project.layers.size())
-		# Nx4 texture, where N is the number of layers and the first row are the blend modes,
-		# the second are the opacities, the third are the clipping mask booleans.
-		layer_metadata_image = Image.create(project.layers.size(), 4, false, Image.FORMAT_R8)
-		# Draw current frame layers
-		for i in project.layers.size():
-			var layer := project.layers[i]
-			var ordered_index := project.ordered_layers.find(layer.index)
-			var cel_image := Image.new()
-			_update_texture_array_layer(project, layer, cel_image, false)
-			textures[ordered_index] = cel_image
-
+		var cached_entry: Dictionary = (
+			_playback_frame_cache.get(project.current_frame, {}) if allow_playback_cache else {}
+		)
+		if not cached_entry.is_empty():
+			textures = cached_entry["textures"]
+			layer_metadata_image = cached_entry["metadata"]
+			_playback_cache_hits += 1
+			_benchmark_cache_draw_outcome = 1
+			_playback_frame_lru.erase(project.current_frame)
+			_playback_frame_lru.append(project.current_frame)
+		else:
+			if allow_playback_cache:
+				_playback_cache_misses += 1
+				_benchmark_cache_draw_outcome = 2
+			textures.resize(project.layers.size())
+			# Nx4 texture, where N is the number of layers and the first row are
+			# blend modes, second opacities, third clipping mask flags.
+			layer_metadata_image = Image.create(project.layers.size(), 4, false, Image.FORMAT_R8)
+			var prepare_started_us := (
+				Time.get_ticks_usec() if _benchmark_canvas_sample_active else 0
+			)
+			for i in project.layers.size():
+				var layer := project.layers[i]
+				var ordered_index := project.ordered_layers.find(layer.index)
+				var cel_image := Image.new()
+				_update_texture_array_layer(project, layer, cel_image, false)
+				textures[ordered_index] = cel_image
+			if _benchmark_canvas_sample_active:
+				_benchmark_prepare_us += Time.get_ticks_usec() - prepare_started_us
+			if allow_playback_cache:
+				_store_playback_frame_images(project.current_frame, textures, layer_metadata_image)
+		var upload_started_us := (
+			Time.get_ticks_usec() if _benchmark_canvas_sample_active else 0
+		)
 		layer_texture_array.create_from_images(textures)
+		if _benchmark_canvas_sample_active:
+			_benchmark_texture_us += Time.get_ticks_usec() - upload_started_us
+		var metadata_started_us := (
+			Time.get_ticks_usec() if _benchmark_canvas_sample_active else 0
+		)
 		layer_metadata_texture.set_image(layer_metadata_image)
+		if _benchmark_canvas_sample_active:
+			_benchmark_metadata_us += Time.get_ticks_usec() - metadata_started_us
 	else:  # Update the TextureArray
+		# Camera/selection-overlay redraws also pass through this branch.
+		# Only explicit layer data updates invalidate prepared playback images.
+		# Pixel edits independently invalidate in update_texture() and
+		# update_selected_cels_textures(), and project mutations invalidate
+		# through the project signals or a full texture recreation.
+		if update_all_layers or not mandatory_update_layers.is_empty():
+			clear_playback_frame_cache()
 		if layer_texture_array.get_layers() > 0:
+			var update_started_us := (
+				Time.get_ticks_usec() if _benchmark_canvas_sample_active else 0
+			)
 			for i in project.layers.size():
 				var layer := project.layers[i]
 				if not update_all_layers:
@@ -460,7 +693,14 @@ func draw_layers(force_recreate := false) -> void:
 				if layer != parent_layer:
 					# True when the layer has parents. In that case, update its top-most parent.
 					_update_texture_array_layer(project, parent_layer, Image.new(), true)
+			if _benchmark_canvas_sample_active:
+				_benchmark_prepare_us += Time.get_ticks_usec() - update_started_us
+			var metadata_started_us := (
+				Time.get_ticks_usec() if _benchmark_canvas_sample_active else 0
+			)
 			layer_metadata_texture.update(layer_metadata_image)
+			if _benchmark_canvas_sample_active:
+				_benchmark_metadata_us += Time.get_ticks_usec() - metadata_started_us
 
 	mandatory_update_layers = []
 	update_all_layers = false
@@ -488,12 +728,16 @@ func refresh_onion() -> void:
 
 
 func _on_project_about_to_switch() -> void:
+	clear_playback_frame_cache()
 	var project := Global.current_project
+	_unbind_playback_cache_project(project)
 	if project.resized.is_connected(camera_zoom):
 		project.resized.disconnect(camera_zoom)
 
 
 func _on_project_switched() -> void:
+	clear_playback_frame_cache()
 	var project := Global.current_project
+	_bind_playback_cache_project(project)
 	if not project.resized.is_connected(camera_zoom):
 		project.resized.connect(camera_zoom.bind(project))

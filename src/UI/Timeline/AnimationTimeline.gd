@@ -44,6 +44,45 @@ var drag_range_preview_additive := false
 var drag_range_preview_cels: Array = []
 ## Fast membership tests are important while a large rectangle changes.
 var drag_range_preview_lookup: Dictionary[Vector2i, bool] = {}
+## Snapshot of the last drawn timeline state. During playback, most of the
+## timeline is unchanged; only update cells in changed frame/layer guides.
+var _rendered_selected_cels: Dictionary[Vector2i, bool] = {}
+var _rendered_guide_frames: Dictionary[int, bool] = {}
+var _rendered_guide_layers: Dictionary[int, bool] = {}
+var _rendered_selected_rows: Dictionary[int, bool] = {}
+var _rendered_selected_columns: Dictionary[int, bool] = {}
+var _rendered_project: Project
+var _rendered_frame_count := -1
+var _rendered_layer_count := -1
+var _timeline_selection_cache_valid := false
+## Ctrl+Shift+F9 in debug builds runs an automatic old/new timeline A/B test.
+## The measured canvas regression was reverted; both modes batch-recreate textures.
+const BENCHMARK_WARMUP_USEC = 1_500_000
+const BENCHMARK_SAMPLE_USEC = 5_000_000
+var benchmark_baseline_mode := false
+var benchmark_recording := false
+var _benchmark_active := false
+var _benchmark_stage := 0
+var _benchmark_stage_started_us := 0
+var _benchmark_project: Project
+var _benchmark_results: Array[Dictionary] = []
+var _benchmark_process_ms_sum := 0.0
+var _benchmark_process_samples := 0
+var _benchmark_timeline_us := 0
+var _benchmark_timeline_samples := 0
+var _benchmark_canvas_us := 0
+var _benchmark_canvas_samples := 0
+var _benchmark_canvas_prepare_us := 0
+var _benchmark_canvas_texture_us := 0
+var _benchmark_canvas_metadata_us := 0
+var _benchmark_playback_ticks := 0
+var _benchmark_cache_hit_draw_us := 0
+var _benchmark_cache_miss_draw_us := 0
+var _benchmark_cache_hit_draws := 0
+var _benchmark_cache_miss_draws := 0
+var _benchmark_cache_hit_peak_us := 0
+var _benchmark_cache_miss_peak_us := 0
+var _benchmark_process_peak_ms := 0.0
 var is_animation_running := false
 var animation_loop := LoopType.CYCLE
 var animation_forward := true
@@ -193,6 +232,8 @@ func _ready() -> void:
 ## The complete cursor skin is installed once, application-wide, by Main.gd.
 ## This script only changes the selected shape and active drag mode.
 func _process(_delta: float) -> void:
+	if _benchmark_active:
+		_advance_animation_benchmark()
 	var copy_modifier: bool = Global.is_ctrl_or_cmd_pressed() or Input.is_key_pressed(KEY_ALT)
 	var hovered: Control = get_viewport().gui_get_hovered_control()
 	if is_instance_valid(hovered) and is_ancestor_of(hovered):
@@ -258,6 +299,191 @@ func _process(_delta: float) -> void:
 		"set_timeline_cel_drag_cursor"
 	):
 		Global.control.call("set_timeline_cel_drag_cursor", next_mode)
+
+
+## Diagnostic benchmark uses the same open project and playback state for
+## both phases. It does not measure total Windows CPU/GPU utilization.
+func _begin_animation_benchmark() -> void:
+	if _benchmark_active:
+		return
+	if not is_animation_running:
+		OS.alert("Start animation playback, then press Ctrl+Shift+F9 again.", "Animation benchmark")
+		return
+	_benchmark_project = Global.current_project
+	_benchmark_results.clear()
+	_benchmark_stage = 0
+	_benchmark_active = true
+	benchmark_recording = false
+	benchmark_baseline_mode = true
+	_benchmark_stage_started_us = Time.get_ticks_usec()
+	Global.canvas.project_changed = true
+	Global.canvas.queue_redraw()
+	print("[AnimationBenchmark] Started: old/new timeline, same GPU upload; cache hit/miss timings recorded.")
+
+
+func _reset_animation_benchmark_sample() -> void:
+	_benchmark_process_ms_sum = 0.0
+	_benchmark_process_samples = 0
+	_benchmark_timeline_us = 0
+	_benchmark_timeline_samples = 0
+	_benchmark_canvas_us = 0
+	_benchmark_canvas_samples = 0
+	_benchmark_canvas_prepare_us = 0
+	_benchmark_canvas_texture_us = 0
+	_benchmark_canvas_metadata_us = 0
+	_benchmark_playback_ticks = 0
+	_benchmark_cache_hit_draw_us = 0
+	_benchmark_cache_miss_draw_us = 0
+	_benchmark_cache_hit_draws = 0
+	_benchmark_cache_miss_draws = 0
+	_benchmark_cache_hit_peak_us = 0
+	_benchmark_cache_miss_peak_us = 0
+	_benchmark_process_peak_ms = 0.0
+
+
+func record_animation_benchmark_canvas(
+	elapsed_us: int, prepare_us: int, texture_us: int, metadata_us: int, cache_outcome: int
+) -> void:
+	if benchmark_recording:
+		_benchmark_canvas_us += elapsed_us
+		_benchmark_canvas_prepare_us += prepare_us
+		_benchmark_canvas_texture_us += texture_us
+		_benchmark_canvas_metadata_us += metadata_us
+		_benchmark_canvas_samples += 1
+		if cache_outcome == 1:
+			_benchmark_cache_hit_draw_us += elapsed_us
+			_benchmark_cache_hit_draws += 1
+			_benchmark_cache_hit_peak_us = maxi(_benchmark_cache_hit_peak_us, elapsed_us)
+		elif cache_outcome == 2:
+			_benchmark_cache_miss_draw_us += elapsed_us
+			_benchmark_cache_miss_draws += 1
+			_benchmark_cache_miss_peak_us = maxi(_benchmark_cache_miss_peak_us, elapsed_us)
+
+
+func _advance_animation_benchmark() -> void:
+	if not is_animation_running or Global.current_project != _benchmark_project:
+		_benchmark_active = false
+		benchmark_recording = false
+		benchmark_baseline_mode = false
+		print("[AnimationBenchmark] Canceled: animation stopped or project changed.")
+		return
+	var now := Time.get_ticks_usec()
+	if _benchmark_stage == 1 or _benchmark_stage == 3:
+		var frame_process_ms: float = (
+			Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+		)
+		_benchmark_process_ms_sum += frame_process_ms
+		_benchmark_process_peak_ms = maxf(_benchmark_process_peak_ms, frame_process_ms)
+		_benchmark_process_samples += 1
+	var elapsed := now - _benchmark_stage_started_us
+	if _benchmark_stage % 2 == 0:
+		if elapsed < BENCHMARK_WARMUP_USEC:
+			return
+		_benchmark_stage += 1
+		_benchmark_stage_started_us = now
+		_reset_animation_benchmark_sample()
+		if not benchmark_baseline_mode:
+			Global.canvas.reset_playback_cache_counters()
+		benchmark_recording = true
+		print("[AnimationBenchmark] Sampling ", "baseline" if benchmark_baseline_mode else "optimized", " ...")
+		return
+	if elapsed < BENCHMARK_SAMPLE_USEC:
+		return
+	benchmark_recording = false
+	var result := {
+		"label": "baseline" if benchmark_baseline_mode else "optimized",
+		"process_ms": _benchmark_process_ms_sum / maxi(1, _benchmark_process_samples),
+		"timeline_ms": float(_benchmark_timeline_us) / maxi(1, _benchmark_timeline_samples) / 1000.0,
+		"canvas_ms": float(_benchmark_canvas_us) / maxi(1, _benchmark_canvas_samples) / 1000.0,
+		"prepare_ms": float(_benchmark_canvas_prepare_us) / maxi(1, _benchmark_canvas_samples) / 1000.0,
+		"upload_ms": float(_benchmark_canvas_texture_us) / maxi(1, _benchmark_canvas_samples) / 1000.0,
+		"metadata_ms": float(_benchmark_canvas_metadata_us) / maxi(1, _benchmark_canvas_samples) / 1000.0,
+		"timeline_calls": _benchmark_timeline_samples,
+		"canvas_calls": _benchmark_canvas_samples,
+		"ticks": _benchmark_playback_ticks,
+		"process_peak_ms": _benchmark_process_peak_ms,
+		"hit_draws": _benchmark_cache_hit_draws,
+		"miss_draws": _benchmark_cache_miss_draws,
+		"hit_ms": float(_benchmark_cache_hit_draw_us) / maxi(1, _benchmark_cache_hit_draws) / 1000.0,
+		"miss_ms": float(_benchmark_cache_miss_draw_us) / maxi(1, _benchmark_cache_miss_draws) / 1000.0,
+		"hit_peak_ms": float(_benchmark_cache_hit_peak_us) / 1000.0,
+		"miss_peak_ms": float(_benchmark_cache_miss_peak_us) / 1000.0,
+		"cache": Global.canvas.get_playback_frame_cache_stats(),
+	}
+	_benchmark_results.append(result)
+	if _benchmark_stage == 1:
+		_benchmark_stage = 2
+		_benchmark_stage_started_us = now
+		benchmark_baseline_mode = false
+		Global.canvas.project_changed = true
+		Global.canvas.queue_redraw()
+		print("[AnimationBenchmark] Baseline done. Optimized warm-up ...")
+		return
+
+	_benchmark_active = false
+	benchmark_baseline_mode = false
+	var before: Dictionary = _benchmark_results[0]
+	var after: Dictionary = _benchmark_results[1]
+	var baseline_process := float(before["process_ms"])
+	var optimized_process := float(after["process_ms"])
+	var baseline_timeline := float(before["timeline_ms"])
+	var optimized_timeline := float(after["timeline_ms"])
+	var baseline_canvas := float(before["canvas_ms"])
+	var optimized_canvas := float(after["canvas_ms"])
+	var report := "Animation A/B benchmark (same project, 5 seconds per mode)\n"
+	report += "Baseline = old timeline, uncached frame preparation\n"
+	report += "Optimized = diff timeline + cached frame preparation\n"
+	report += "Both use the same batch GPU texture upload.\n\n"
+	report += "Godot CPU process/frame: %.3f -> %.3f ms (%.1f%% improvement)\n" % [
+		baseline_process, optimized_process, _benchmark_reduction(baseline_process, optimized_process)
+	]
+	report += "Timeline switch: %.3f -> %.3f ms (%.1f%% improvement)\n" % [
+		baseline_timeline, optimized_timeline, _benchmark_reduction(baseline_timeline, optimized_timeline)
+	]
+	report += "Canvas layer redraw: %.3f -> %.3f ms (%.1f%% improvement)\n" % [
+		baseline_canvas, optimized_canvas, _benchmark_reduction(baseline_canvas, optimized_canvas)
+	]
+	report += "\nCanvas redraw breakdown (optimized, avg per draw):\n"
+	report += "Image preparation/effects: %.3f ms\n" % float(after["prepare_ms"])
+	report += "Texture array upload: %.3f ms\n" % float(after["upload_ms"])
+	report += "Metadata texture: %.3f ms\n" % float(after["metadata_ms"])
+	report += "Other canvas overhead: %.3f ms\n" % maxf(
+		0.0,
+		optimized_canvas - float(after["prepare_ms"]) - float(after["upload_ms"])
+		- float(after["metadata_ms"])
+	)
+	var cache: Dictionary = after["cache"]
+	report += "\nFrame image cache: %d hits / %d misses, %d stored (%.1f MiB)\n" % [
+		int(cache["hits"]), int(cache["misses"]), int(cache["frames"]),
+		float(cache["megabytes"])
+	]
+	report += "Image cache: %d evictions, %d invalidations during sample.\n" % [
+		int(cache["evictions"]), int(cache["invalidations"])
+	]
+	report += "Hit draws: %d, avg %.2f ms, peak %.2f ms\n" % [
+		int(after["hit_draws"]), float(after["hit_ms"]), float(after["hit_peak_ms"])
+	]
+	report += "Miss draws: %d, avg %.2f ms, peak %.2f ms\n" % [
+		int(after["miss_draws"]), float(after["miss_ms"]), float(after["miss_peak_ms"])
+	]
+	report += "Process peak: %.2f -> %.2f ms\n" % [
+		float(before["process_peak_ms"]), float(after["process_peak_ms"])
+	]
+	report += "First-time frames still need preparation.\n"
+	report += "\nSamples: timeline %d/%d, canvas %d/%d, timer ticks %d/%d\n" % [
+		int(before["timeline_calls"]), int(after["timeline_calls"]),
+		int(before["canvas_calls"]), int(after["canvas_calls"]),
+		int(before["ticks"]), int(after["ticks"])
+	]
+	report += "\nCPU timings only. Not a GPU utilization measurement."
+	print("[AnimationBenchmark] ", report)
+	OS.alert(report, "Pixelorama animation benchmark")
+
+
+func _benchmark_reduction(before: float, after: float) -> float:
+	if before <= 0.0:
+		return 0.0
+	return (before - after) / before * 100.0
 
 
 func _exit_tree() -> void:
@@ -414,6 +640,15 @@ func _draw_highlight_cels(cel_coords: Array, offset: Vector2i) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if OS.is_debug_build() and event is InputEventKey:
+		var key_event := event as InputEventKey
+		if (
+			key_event.pressed and not key_event.echo and key_event.keycode == KEY_F9
+			and key_event.ctrl_pressed and key_event.shift_pressed
+		):
+			_begin_animation_benchmark()
+			get_viewport().set_input_as_handled()
+			return
 	var project := Global.current_project
 	if event.is_action_pressed(&"go_to_previous_layer"):
 		Global.transform_content_confirmed.emit()
@@ -1153,11 +1388,22 @@ func _on_PlayBackwards_toggled(button_pressed: bool) -> void:
 
 
 ## Called on each frame of the animation
+## Mark only timer-driven frame advances as safe to reuse cached rendered
+## images. Manual scrubbing, edits and other frame changes invalidate the cache.
+func _playback_change_cel(frame_index: int, layer_index: int) -> void:
+	Global.canvas.prepare_playback_frame_change()
+	Global.current_project.change_cel(frame_index, layer_index)
+
+
 func _on_AnimationTimer_timeout() -> void:
+	if benchmark_recording:
+		_benchmark_playback_ticks += 1
 	if first_frame == last_frame:
 		play_forward.button_pressed = false
 		play_backwards.button_pressed = false
 		animation_timer.stop()
+		is_animation_running = false
+		Global.canvas.clear_playback_frame_cache()
 		return
 
 	Global.transform_content_confirmed.emit()
@@ -1170,7 +1416,7 @@ func _on_AnimationTimer_timeout() -> void:
 		project.current_frame < first_frame or project.current_frame > last_frame
 	):
 		project.selected_cels.clear()
-		project.change_cel(first_frame if animation_forward else last_frame, -1)
+		_playback_change_cel(first_frame if animation_forward else last_frame, -1)
 		animation_canon_frame = project.current_frame
 		animation_timer.wait_time = project.frames[project.current_frame].get_duration_in_seconds(fps)
 		animation_timer.start()
@@ -1178,7 +1424,7 @@ func _on_AnimationTimer_timeout() -> void:
 	if animation_forward:
 		if project.current_frame < last_frame:
 			project.selected_cels.clear()
-			project.change_cel(project.current_frame + 1, -1)
+			_playback_change_cel(project.current_frame + 1, -1)
 			animation_timer.wait_time = (
 				project.frames[project.current_frame].get_duration_in_seconds(fps)
 			)
@@ -1191,9 +1437,10 @@ func _on_AnimationTimer_timeout() -> void:
 					animation_timer.stop()
 					animation_finished.emit()
 					is_animation_running = false
+					Global.canvas.clear_playback_frame_cache()
 				LoopType.CYCLE:
 					project.selected_cels.clear()
-					project.change_cel(first_frame, -1)
+					_playback_change_cel(first_frame, -1)
 					animation_timer.wait_time = (
 						project.frames[project.current_frame].get_duration_in_seconds(fps)
 					)
@@ -1207,7 +1454,7 @@ func _on_AnimationTimer_timeout() -> void:
 	else:
 		if project.current_frame > first_frame:
 			project.selected_cels.clear()
-			project.change_cel(project.current_frame - 1, -1)
+			_playback_change_cel(project.current_frame - 1, -1)
 			animation_timer.wait_time = (
 				project.frames[project.current_frame].get_duration_in_seconds(fps)
 			)
@@ -1220,9 +1467,10 @@ func _on_AnimationTimer_timeout() -> void:
 					animation_timer.stop()
 					animation_finished.emit()
 					is_animation_running = false
+					Global.canvas.clear_playback_frame_cache()
 				LoopType.CYCLE:
 					project.selected_cels.clear()
-					project.change_cel(last_frame, -1)
+					_playback_change_cel(last_frame, -1)
 					animation_timer.wait_time = (
 						project.frames[project.current_frame].get_duration_in_seconds(fps)
 					)
@@ -1276,6 +1524,9 @@ func play_animation(play: bool, forward_dir: bool) -> void:
 		play_forward.toggled.connect(_on_PlayForward_toggled)
 
 	if play:
+		# A new playback session must never inherit images cached from previous
+		# edits, different frame ranges, or a different project.
+		Global.canvas.clear_playback_frame_cache()
 		# Starting outside a manual range must not play out-of-range frames.
 		if project.playback_range_enabled and (
 			project.current_frame < first_frame or project.current_frame > last_frame
@@ -1291,6 +1542,7 @@ func play_animation(play: bool, forward_dir: bool) -> void:
 		animation_started.emit(forward_dir)
 	else:
 		animation_timer.stop()
+		Global.canvas.clear_playback_frame_cache()
 		animation_finished.emit()
 
 	is_animation_running = play
@@ -2004,6 +2256,129 @@ func get_displayed_selected_cels() -> Array:
 	return Global.current_project.selected_cels
 
 
+## Fast path for animation playback. All frame/layer headers and every cel
+## were being restyled on each timer tick (frames * layers). Normal editing,
+## drag previews, and other multi-cel selections keep the full refresh.
+func _refresh_timeline_playback_appearance() -> void:
+	var project := Global.current_project
+	if (
+		not _timeline_selection_cache_valid
+		or project != _rendered_project
+		or _rendered_frame_count != project.frames.size()
+		or _rendered_layer_count != project.layers.size()
+		or drag_range_preview_active
+		or project.selected_cels.size() != 1
+		or project.selected_cels[0] != [project.current_frame, project.current_layer]
+	):
+		_refresh_timeline_selection_appearance()
+		return
+
+	var next_selected: Dictionary[Vector2i, bool] = {}
+	var current_key := Vector2i(project.current_frame, project.current_layer)
+	next_selected[current_key] = true
+	var next_guide_frames: Dictionary[int, bool] = {}
+	var next_guide_layers: Dictionary[int, bool] = {}
+	next_guide_frames[project.current_frame] = true
+	next_guide_layers[project.current_layer] = true
+	var next_rows: Dictionary[int, bool] = {}
+	var next_columns: Dictionary[int, bool] = {}
+	# A header-originated range still includes its header when there is only
+	# one frame (layer range) or one layer (frame range).
+	if range_selection_source == RangeSelectionSource.LAYERS and project.frames.size() == 1:
+		next_rows[project.current_layer] = true
+	elif range_selection_source == RangeSelectionSource.FRAMES and project.layers.size() == 1:
+		next_columns[project.current_frame] = true
+
+	var cells_to_refresh: Dictionary[Vector2i, bool] = {}
+	var frame_headers_to_refresh: Dictionary[int, bool] = {}
+	var layer_headers_to_refresh: Dictionary[int, bool] = {}
+	for key in _rendered_selected_cels:
+		cells_to_refresh[key] = true
+	cells_to_refresh[current_key] = true
+
+	# Only the rows/columns whose guide membership changed need to be
+	# restyled. For ordinary playback in the same layer, this is two columns
+	# of cel buttons, rather than the entire timeline.
+	for frame_index in _rendered_guide_frames:
+		frame_headers_to_refresh[frame_index] = true
+		if not next_guide_frames.has(frame_index):
+			for layer_index in project.layers.size():
+				cells_to_refresh[Vector2i(frame_index, layer_index)] = true
+	for frame_index in next_guide_frames:
+		frame_headers_to_refresh[frame_index] = true
+		if not _rendered_guide_frames.has(frame_index):
+			for layer_index in project.layers.size():
+				cells_to_refresh[Vector2i(frame_index, layer_index)] = true
+	for layer_index in _rendered_guide_layers:
+		layer_headers_to_refresh[layer_index] = true
+		if not next_guide_layers.has(layer_index):
+			for frame_index in project.frames.size():
+				cells_to_refresh[Vector2i(frame_index, layer_index)] = true
+	for layer_index in next_guide_layers:
+		layer_headers_to_refresh[layer_index] = true
+		if not _rendered_guide_layers.has(layer_index):
+			for frame_index in project.frames.size():
+				cells_to_refresh[Vector2i(frame_index, layer_index)] = true
+
+	# Old header ranges might have been selected before playback began.
+	# Update their neighbors too, so the 1px perimeter joins correctly.
+	for frame_index in _rendered_selected_columns:
+		for neighbor in range(frame_index - 1, frame_index + 2):
+			frame_headers_to_refresh[neighbor] = true
+	for frame_index in next_columns:
+		for neighbor in range(frame_index - 1, frame_index + 2):
+			frame_headers_to_refresh[neighbor] = true
+	for layer_index in _rendered_selected_rows:
+		for neighbor in range(layer_index - 1, layer_index + 2):
+			layer_headers_to_refresh[neighbor] = true
+	for layer_index in next_rows:
+		for neighbor in range(layer_index - 1, layer_index + 2):
+			layer_headers_to_refresh[neighbor] = true
+
+	range_guide_frames = next_guide_frames
+	range_guide_layers = next_guide_layers
+	for frame_index in frame_headers_to_refresh:
+		if frame_index < 0 or frame_index >= frame_hbox.get_child_count():
+			continue
+		var frame_button := frame_hbox.get_child(frame_index) as Button
+		_set_header_selection_style(
+			frame_button, next_guide_frames.has(frame_index),
+			next_columns.has(frame_index), false,
+			next_columns.has(frame_index - 1),
+			next_columns.has(frame_index + 1), true
+		)
+	for layer_index in layer_headers_to_refresh:
+		if layer_index < 0 or layer_index >= project.layers.size():
+			continue
+		var row_index: int = project.layers.size() - layer_index - 1
+		var layer_button = layer_vbox.get_child(row_index)
+		var active := next_guide_layers.has(layer_index)
+		var in_range := next_rows.has(layer_index)
+		_set_header_selection_style(
+			layer_button.main_button, active, in_range, true,
+			next_rows.has(layer_index + 1),
+			next_rows.has(layer_index - 1), false
+		)
+		layer_button.z_index = 1 if active or in_range else 0
+
+	for key in cells_to_refresh:
+		var cel_row_index: int = project.layers.size() - 1 - key.y
+		if cel_row_index < 0 or cel_row_index >= cel_vbox.get_child_count():
+			continue
+		var cel_hbox = cel_vbox.get_child(cel_row_index)
+		if key.x < 0 or key.x >= cel_hbox.get_child_count():
+			continue
+		var cel_button = cel_hbox.get_child(key.x)
+		cel_button.button_pressed = next_selected.has(key)
+		cel_button.cel_switched()
+
+	_rendered_selected_cels = next_selected
+	_rendered_guide_frames = next_guide_frames
+	_rendered_guide_layers = next_guide_layers
+	_rendered_selected_rows = next_rows
+	_rendered_selected_columns = next_columns
+
+
 ## Render the active row, active column and timeline range independently.
 ## Ranges started from the layer/frame header also include that header inside
 ## the single outline, as Aseprite does.
@@ -2084,6 +2459,17 @@ func _refresh_timeline_selection_appearance() -> void:
 			cel_button.button_pressed = selected.has(Vector2i(cel_button.frame, cel_button.layer))
 			cel_button.cel_switched()
 
+	# Remember exactly what was drawn so playback can update only the differences.
+	_rendered_selected_cels = selected.duplicate()
+	_rendered_guide_frames = range_guide_frames.duplicate()
+	_rendered_guide_layers = range_guide_layers.duplicate()
+	_rendered_selected_rows = selected_rows.duplicate()
+	_rendered_selected_columns = selected_columns.duplicate()
+	_rendered_project = project
+	_rendered_frame_count = project.frames.size()
+	_rendered_layer_count = project.layers.size()
+	_timeline_selection_cache_valid = true
+
 
 func _set_header_selection_style(
 	button: Button,
@@ -2139,7 +2525,11 @@ func _set_header_selection_style(
 	button.add_theme_stylebox_override(&"hover_pressed", style)
 
 func _cel_switched() -> void:
-	_refresh_timeline_selection_appearance()
+	var benchmark_start_us := Time.get_ticks_usec() if benchmark_recording else 0
+	if is_animation_running and not benchmark_baseline_mode:
+		_refresh_timeline_playback_appearance()
+	else:
+		_refresh_timeline_selection_appearance()
 	for connection in get_incoming_connections():
 		if connection.callable == _on_layer_keyframe_changed:
 			connection.signal.disconnect(_on_layer_keyframe_changed)
@@ -2154,6 +2544,9 @@ func _cel_switched() -> void:
 	var layer := project.layers[project.current_layer]
 	layer.keyframe_set.connect(_on_layer_keyframe_changed)
 	layer.keyframe_unset.connect(_on_layer_keyframe_changed)
+	if benchmark_recording:
+		_benchmark_timeline_us += Time.get_ticks_usec() - benchmark_start_us
+		_benchmark_timeline_samples += 1
 
 
 func _update_layer_settings_ui(animate_opacity := false) -> void:
