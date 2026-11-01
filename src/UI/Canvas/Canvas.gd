@@ -305,15 +305,10 @@ func finish_brush_profile() -> Dictionary:
 
 
 func queue_redraw_all_layers() -> void:
-	# A/B diagnostic mode reenables the original full texture array recreation.
-	# In normal usage a frame switch only needs new layer image contents.
-	if (
-		is_instance_valid(Global.animation_timeline)
-		and bool(Global.animation_timeline.get("benchmark_baseline_mode"))
-	):
-		project_changed = true
-	else:
-		update_all_layers = true
+	# Benchmarks showed that updating each Texture2DArray layer separately was
+	# slower than the original batch recreation for animation frame switches.
+	# Keep the faster batch path until a better measured rendering strategy lands.
+	project_changed = true
 	var project := Global.current_project
 	var current_cel := project.get_current_cel()
 	if current_cel is Cel3D:
