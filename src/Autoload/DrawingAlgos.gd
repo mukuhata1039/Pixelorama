@@ -60,22 +60,21 @@ func blend_layers(
 	var previous_ordered_layers: Array[int] = project.ordered_layers
 	project.order_layers(frame_index)
 	var textures: Array[Image] = []
-	# Nx4 texture, where N is the number of layers and the first row are the blend modes,
-	# the second are the opacities, the third are the origins and the fourth are the
-	# clipping mask booleans.
+	# One column per displayed layer: row 0 = blend mode, row 1 = opacity,
+	# row 2 = clipping / internal group-child flag. Row 3 is unused.
 	var metadata_image := Image.create(project.layers.size(), 4, false, Image.FORMAT_R8)
 	for i in project.layers.size():
 		var ordered_index := project.ordered_layers[i]
 		var layer := project.layers[ordered_index]
 		var include := true if layer.is_visible_in_hierarchy() else false
 		if only_selected_cels and include:
-			var test_array := [frame_index, i]
+			var test_array := [frame_index, ordered_index]
 			if not test_array in project.selected_cels:
 				include = false
 		if only_selected_layers and include:
 			var layer_is_selected := false
 			for selected_cel in project.selected_cels:
-				if i == selected_cel[1]:
+				if ordered_index == selected_cel[1]:
 					layer_is_selected = true
 					break
 			if not layer_is_selected:
@@ -99,7 +98,8 @@ func blend_layers(
 				and not only_selected_layers
 			):
 				include = false
-			set_layer_metadata_image(layer, cel, metadata_image, ordered_index, include)
+			# Textures are appended in z-sorted order; metadata must use the same index.
+			set_layer_metadata_image(layer, cel, metadata_image, i, include)
 	if DisplayServer.get_name() != "headless":
 		var texture_array := Texture2DArray.new()
 		texture_array.create_from_images(textures)
@@ -116,7 +116,13 @@ func blend_layers(
 
 
 func set_layer_metadata_image(
-	layer: BaseLayer, cel: BaseCel, image: Image, index: int, include := true, anim_opacity := true
+	layer: BaseLayer,
+	cel: BaseCel,
+	image: Image,
+	index: int,
+	include := true,
+	anim_opacity := true,
+	mark_composited_children := true
 ) -> void:
 	# Store the blend mode. We are adding 0.5 to it because if we don't, it breaks for
 	# RGH textures due to rounding errors.
@@ -132,10 +138,10 @@ func set_layer_metadata_image(
 		image.set_pixel(index, 2, Color.RED)
 	else:
 		image.set_pixel(index, 2, Color.BLACK)
-	if layer.is_blended_by_ancestor():
-		# Store a small red value as a way to indicate that this layer should be skipped
-		# Used for layers such as child layers of a group, so that the group layer itself can
-		# successfully be used as a clipping mask with the layer below it.
+	# Skip children only in the outer canvas blend: a non-pass-through group
+	# already contains them. When blending *inside* that group they must remain
+	# active and retain their own clipping flags.
+	if mark_composited_children and layer.is_blended_by_ancestor():
 		image.set_pixel(index, 2, Color(0.2, 0.0, 0.0, 0.0))
 
 
