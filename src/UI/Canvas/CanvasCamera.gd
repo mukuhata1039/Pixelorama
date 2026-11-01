@@ -434,7 +434,7 @@ func zoom_camera_wheel(direction: int, event_pos := mouse_pos) -> void:
 			if Global.integer_zoom and (int(stop_percent) < 100 or int(stop_percent) % 100 != 0):
 				continue
 			if stop_percent > reference_percent + 0.001 and stop_percent <= zoom_in_max.x * 100.0:
-				next_percent = stop_percent
+				next_percent = float(stop_percent)
 				break
 	else:
 		for i in range(WHEEL_ZOOM_PERCENTAGES.size() - 1, -1, -1):
@@ -442,7 +442,7 @@ func zoom_camera_wheel(direction: int, event_pos := mouse_pos) -> void:
 			if Global.integer_zoom and (int(stop_percent) < 100 or int(stop_percent) % 100 != 0):
 				continue
 			if stop_percent < reference_percent - 0.001 and stop_percent >= zoom_out_max.x * 100.0:
-				next_percent = stop_percent
+				next_percent = float(stop_percent)
 				break
 	if is_equal_approx(next_percent, reference_percent):
 		return
