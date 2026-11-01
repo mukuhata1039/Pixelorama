@@ -777,7 +777,11 @@ func _on_CopyFrame_pressed() -> void:
 ## created over the new frames.
 ## [br]Note: [param indices] must be in ascending order
 func copy_frames(
-	indices := [], destination := -1, select_all_cels := true, tag_name_from: AnimationTag = null
+	indices := [],
+	destination := -1,
+	select_all_cels := true,
+	tag_name_from: AnimationTag = null,
+	destination_is_insertion_index := false
 ) -> void:
 	Global.transform_content_confirmed.emit()
 	var project := Global.current_project
@@ -792,7 +796,10 @@ func copy_frames(
 	var copied_frames: Array[Frame] = []
 	var copied_indices := PackedInt32Array()  # the indices of newly copied frames
 
-	if destination != -1:
+	if destination_is_insertion_index:
+		var insertion := clampi(destination, 0, project.frames.size())
+		copied_indices = range(insertion, insertion + indices.size())
+	elif destination != -1:
 		copied_indices = range(destination + 1, (destination + 1) + indices.size())
 	else:
 		copied_indices = range(indices[-1] + 1, indices[-1] + 1 + indices.size())
