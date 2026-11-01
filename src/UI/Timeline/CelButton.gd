@@ -298,8 +298,11 @@ func _on_CelButton_pressed() -> void:
 			# On the timeline, Ctrl+Shift+click adds the clicked cel's pixels to
 			# the canvas selection. Do not add timeline cels or change the active cel.
 			if cel is not AudioCel:
-				Global.canvas.selection.select_cel_pixels(
-					project.layers[layer], project.frames[frame], true
+				# A separate method keeps the existing two-argument select_cel_pixels()
+				# signature intact. Resolve dynamically so stale Godot class metadata
+				# cannot reject this call while the editor reloads scripts.
+				Global.canvas.selection.call(
+					"add_cel_pixels_to_selection", project.layers[layer], project.frames[frame]
 				)
 			# Button presses are toggled by Godot before this callback. Restore
 			# the appearance of the existing timeline cel selection.
