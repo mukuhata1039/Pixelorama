@@ -174,7 +174,7 @@ func _ready() -> void:
 	layer.keyframe_unset.connect(_on_layer_keyframe_changed)
 
 
-## Select a contextual Aseprite cursor shape for timeline cel interaction.
+## Select Aseprite move/copy cursors for timeline cels, layer headers and frame headers.
 ## The complete cursor skin is installed once, application-wide, by Main.gd.
 ## This script only changes the selected shape and active drag mode.
 func _process(_delta: float) -> void:
@@ -194,16 +194,37 @@ func _process(_delta: float) -> void:
 			if hovered.mouse_default_cursor_shape != desired_shape:
 				hovered.mouse_default_cursor_shape = desired_shape
 				get_viewport().update_mouse_cursor_state()
+		else:
+			# Header labels can be hovered instead of their parent Button.
+			var header: Control = hovered
+			while is_instance_valid(header) and header != self:
+				if (
+					header is Button
+					and (
+						header.has_method("_get_layer_indices")
+						or header.has_method("_get_frame_indices")
+					)
+				):
+					var header_shape := (
+						Control.CURSOR_CAN_DROP if copy_modifier else Control.CURSOR_MOVE
+					)
+					if header.mouse_default_cursor_shape != header_shape:
+						header.mouse_default_cursor_shape = header_shape
+						get_viewport().update_mouse_cursor_state()
+					break
+				header = header.get_parent() as Control
 
 	var drag_data: Variant = null
 	if get_viewport().gui_is_dragging():
 		drag_data = get_viewport().gui_get_drag_data()
-	var dragging_cels := false
+	var dragging_timeline_content := false
 	if drag_data is Array:
 		var drag_array: Array = drag_data
-		dragging_cels = not drag_array.is_empty() and drag_array[0] == "Cel"
+		dragging_timeline_content = (
+			not drag_array.is_empty() and drag_array[0] in ["Cel", "Layer", "Frame"]
+		)
 	var next_mode := -1
-	if dragging_cels:
+	if dragging_timeline_content:
 		next_mode = 2 if copy_modifier else 1
 	if is_instance_valid(Global.control) and Global.control.has_method(
 		"set_timeline_cel_drag_cursor"
@@ -756,7 +777,11 @@ func _on_CopyFrame_pressed() -> void:
 ## created over the new frames.
 ## [br]Note: [param indices] must be in ascending order
 func copy_frames(
-	indices := [], destination := -1, select_all_cels := true, tag_name_from: AnimationTag = null
+	indices := [],
+	destination := -1,
+	select_all_cels := true,
+	tag_name_from: AnimationTag = null,
+	destination_is_insertion_index := false
 ) -> void:
 	Global.transform_content_confirmed.emit()
 	var project := Global.current_project
@@ -771,7 +796,10 @@ func copy_frames(
 	var copied_frames: Array[Frame] = []
 	var copied_indices := PackedInt32Array()  # the indices of newly copied frames
 
-	if destination != -1:
+	if destination_is_insertion_index:
+		var insertion := clampi(destination, 0, project.frames.size())
+		copied_indices = range(insertion, insertion + indices.size())
+	elif destination != -1:
 		copied_indices = range(destination + 1, (destination + 1) + indices.size())
 	else:
 		copied_indices = range(indices[-1] + 1, indices[-1] + 1 + indices.size())
@@ -1262,10 +1290,33 @@ func add_layer(layer: BaseLayer, project: Project) -> void:
 
 
 func _on_CloneLayer_pressed() -> void:
+	var project := Global.current_project
+	var source_layer := project.layers[project.current_layer]
+	var selected_layers := PackedInt32Array()
+	for child in source_layer.get_children(true):
+		selected_layers.append(child.index)
+	selected_layers.append(source_layer.index)
+	copy_layers_at(selected_layers, project.current_layer + 1, source_layer.parent, false)
+
+
+## Duplicate complete layers, including group descendants and every frame's
+## cels, into the chosen position without mutating the source layers.
+## Source indices are sorted in timeline order, children before group parent.
+func copy_layers_at(
+	source_indices: PackedInt32Array,
+	insertion_index: int,
+	destination_parent: BaseLayer,
+	select_copied_layers := true
+) -> void:
+	if source_indices.is_empty():
+		return
 	Global.transform_content_confirmed.emit()
 	var project := Global.current_project
-	var source_layers := project.layers[project.current_layer].get_children(true)
-	source_layers.append(project.layers[project.current_layer])
+	var source_layers: Array[BaseLayer] = []
+	for source_index in source_indices:
+		if source_index < 0 or source_index >= project.layers.size():
+			return
+		source_layers.append(project.layers[source_index])
 
 	var clones: Array[BaseLayer] = []
 	var cels := []  # 2D Array of Cels
@@ -1315,20 +1366,30 @@ func _on_CloneLayer_pressed() -> void:
 		var p := source_layers.find(cl_layer.parent)
 		if p > -1:  # Swap parent with clone if the parent is one of the source layers
 			cl_layer.parent = clones[p]
-		else:  # Add (Copy) to the name if its not a child of another copied layer
+		else:  # Root copy is placed at the drop's destination parent.
+			cl_layer.parent = destination_parent
 			cl_layer.name = str(cl_layer.name, " (", tr("copy"), ")")
 
-	var indices: PackedInt32Array = range(
-		project.current_layer + 1, project.current_layer + clones.size() + 1
-	)
+	var insertion := clampi(insertion_index, 0, project.layers.size())
+	var indices: PackedInt32Array = range(insertion, insertion + clones.size())
+	var previous_frame := project.current_frame
+	var previous_layer := project.current_layer
+	var previous_selection := project.selected_cels.duplicate(true)
 
 	project.undo_redo.create_action("Add Layer")
 	project.undo_redo.add_do_method(project.add_layers.bind(clones, indices, cels))
 	project.undo_redo.add_undo_method(project.remove_layers.bind(indices))
-	project.undo_redo.add_do_method(
-		project.change_cel.bind(-1, project.current_layer + clones.size())
-	)
-	project.undo_redo.add_undo_method(project.change_cel.bind(-1, project.current_layer))
+	var copied_selection := []
+	if select_copied_layers:
+		for index in indices:
+			for frame_index in project.frames.size():
+				copied_selection.append([frame_index, index])
+	else:
+		copied_selection.append([previous_frame, indices[-1]])
+	project.undo_redo.add_do_property(project, "selected_cels", copied_selection)
+	project.undo_redo.add_undo_property(project, "selected_cels", previous_selection)
+	project.undo_redo.add_do_method(project.change_cel.bind(previous_frame, indices[-1]))
+	project.undo_redo.add_undo_method(project.change_cel.bind(previous_frame, previous_layer))
 	project.undo_redo.add_do_method(Global.undo_or_redo.bind(false))
 	project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true))
 	project.undo_redo.commit_action()
