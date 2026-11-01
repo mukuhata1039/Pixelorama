@@ -1357,6 +1357,8 @@ func _on_AnimationTimer_timeout() -> void:
 		play_forward.button_pressed = false
 		play_backwards.button_pressed = false
 		animation_timer.stop()
+		is_animation_running = false
+		Global.canvas.clear_playback_frame_cache()
 		return
 
 	Global.transform_content_confirmed.emit()
@@ -1390,6 +1392,7 @@ func _on_AnimationTimer_timeout() -> void:
 					animation_timer.stop()
 					animation_finished.emit()
 					is_animation_running = false
+					Global.canvas.clear_playback_frame_cache()
 				LoopType.CYCLE:
 					project.selected_cels.clear()
 					_playback_change_cel(first_frame, -1)
@@ -1419,6 +1422,7 @@ func _on_AnimationTimer_timeout() -> void:
 					animation_timer.stop()
 					animation_finished.emit()
 					is_animation_running = false
+					Global.canvas.clear_playback_frame_cache()
 				LoopType.CYCLE:
 					project.selected_cels.clear()
 					_playback_change_cel(last_frame, -1)
