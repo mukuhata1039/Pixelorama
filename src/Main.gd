@@ -33,6 +33,13 @@ var changed_projects_on_quit: Array[Project]
 var cursor_image := preload("res://assets/graphics/cursor.png")
 var _rotate_view_cursor_active := false
 var _layer_pick_cursor_active := false
+## The hold shortcut only changes display state transiently, never the saved project.
+var _target_visibility_hold_project: Project
+var _target_visibility_hold_state: Dictionary = {}
+var _target_hold_ctrl := false
+var _target_hold_shift := false
+var _target_hold_alt := false
+var _target_hold_meta := false
 var _aseprite_cursors := {}
 ## -1 = no cel drag; 1 = move cels; 2 = copy cels.
 var _cel_drag_cursor_mode := -1
@@ -274,6 +281,15 @@ func _ready() -> void:
 ## cursor is more reliable than drawing a Sprite2D from inside the canvas
 ## SubViewport, and works with remapped keyboard/mouse rotation shortcuts.
 func _process(_delta: float) -> void:
+	# Recover even if a modifier is released first or the shortcut's release
+	# event was consumed by another GUI control.
+	if not _target_visibility_hold_state.is_empty():
+		if (
+			Global.current_project != _target_visibility_hold_project
+			or not Input.is_action_pressed(&"target_layer_visibility_hold")
+			or not _target_visibility_hold_modifiers_pressed()
+		):
+			_restore_target_visibility_hold()
 	var is_rotating_view := false
 	if (
 		Global.can_draw
@@ -344,6 +360,13 @@ func _process(_delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if event.is_action_released(&"target_layer_visibility_hold"):
+		_restore_target_visibility_hold()
+	if _can_use_target_visibility_shortcut():
+		if event.is_action_pressed(&"target_layer_visibility_toggle"):
+			_toggle_target_layer_visibility()
+		elif event.is_action_pressed(&"target_layer_visibility_hold"):
+			_start_target_visibility_hold(event)
 	if event.is_action_pressed(&"layer_visibility"):
 		for selected_cel in Global.current_project.selected_cels:
 			var layer := Global.current_project.layers[selected_cel[1]]
@@ -362,7 +385,126 @@ func _input(event: InputEvent) -> void:
 	right_cursor.position = get_global_mouse_position() + Vector2(32, 32)
 
 
+## Do not trigger the shortcut while typing a layer name or editing bindings.
+func _can_use_target_visibility_shortcut() -> bool:
+	if is_writing_text:
+		return false
+	var focus := get_viewport().gui_get_focus_owner()
+	return not (focus is LineEdit or focus is TextEdit)
+
+
+func _redraw_target_visibility() -> void:
+	Global.canvas.update_all_layers = true
+	Global.canvas.queue_redraw()
+	Global.animation_timeline.update_global_layer_buttons()
+
+
+## A single press makes all target layers hidden if any is visible,
+## or shows all of them if they are already all hidden.
+func _toggle_target_layer_visibility() -> void:
+	_restore_target_visibility_hold()
+	var project := Global.current_project
+	var targets: Array[BaseLayer] = []
+	var show_targets := true
+	for layer in project.layers:
+		if not layer.visibility_target:
+			continue
+		targets.append(layer)
+		if layer.visible:
+			show_targets = false
+	if targets.is_empty():
+		return
+	Global.transform_content_confirmed.emit()
+	if Global.layer_visibility_undoable:
+		project.undo_redo.create_action("Toggle Target Layer Visibility")
+		for layer in targets:
+			if layer.visible == show_targets:
+				continue
+			project.undo_redo.add_do_property(layer, "visible", show_targets)
+			project.undo_redo.add_undo_property(layer, "visible", layer.visible)
+		project.undo_redo.add_do_method(_redraw_target_visibility)
+		project.undo_redo.add_undo_method(_redraw_target_visibility)
+		project.undo_redo.add_do_method(Global.undo_or_redo.bind(false))
+		project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true))
+		project.undo_redo.commit_action()
+	else:
+		for layer in targets:
+			layer.visible = show_targets
+		project.has_changed = true
+		_redraw_target_visibility()
+
+
+## Hold hides the chosen layers without modifying their selection or original
+## individual visibility values; release restores every original value.
+func _start_target_visibility_hold(event: InputEvent) -> void:
+	if not _target_visibility_hold_state.is_empty():
+		return
+	var project := Global.current_project
+	for layer in project.layers:
+		if layer.visibility_target:
+			_target_visibility_hold_state[layer] = layer.visible
+			layer.visible = false
+	if _target_visibility_hold_state.is_empty():
+		return
+	_target_visibility_hold_project = project
+	# A .pxo save during the hold must retain the actual visibility settings.
+	if not project.serialized.is_connected(_preserve_saved_target_visibility):
+		project.serialized.connect(_preserve_saved_target_visibility)
+	if event is InputEventWithModifiers:
+		_target_hold_ctrl = event.ctrl_pressed
+		_target_hold_shift = event.shift_pressed
+		_target_hold_alt = event.alt_pressed
+		_target_hold_meta = event.meta_pressed
+	_redraw_target_visibility()
+
+
+## Also check the original modifier keys: if Ctrl/Alt/Shift/Meta is
+## released before the main shortcut key, Godot may retain the action state.
+func _target_visibility_hold_modifiers_pressed() -> bool:
+	return (
+		(not _target_hold_ctrl or Input.is_key_pressed(KEY_CTRL))
+		and (not _target_hold_shift or Input.is_key_pressed(KEY_SHIFT))
+		and (not _target_hold_alt or Input.is_key_pressed(KEY_ALT))
+		and (not _target_hold_meta or Input.is_key_pressed(KEY_META))
+	)
+
+
+## Project.serialize() emits after building its dictionary, before writing.
+## Correct just the saved data; leave the live transient preview untouched.
+func _preserve_saved_target_visibility(project_data: Dictionary) -> void:
+	if not is_instance_valid(_target_visibility_hold_project):
+		return
+	var saved_layers: Array = project_data.get("layers", [])
+	for layer in _target_visibility_hold_state:
+		if not is_instance_valid(layer):
+			continue
+		var layer_index := _target_visibility_hold_project.layers.find(layer)
+		if layer_index < 0 or layer_index >= saved_layers.size():
+			continue
+		var saved_layer: Dictionary = saved_layers[layer_index]
+		saved_layer["visible"] = _target_visibility_hold_state[layer]
+
+
+func _restore_target_visibility_hold() -> void:
+	if _target_visibility_hold_state.is_empty():
+		return
+	for layer in _target_visibility_hold_state:
+		if is_instance_valid(layer):
+			layer.visible = _target_visibility_hold_state[layer]
+	if is_instance_valid(_target_visibility_hold_project):
+		if _target_visibility_hold_project.serialized.is_connected(_preserve_saved_target_visibility):
+			_target_visibility_hold_project.serialized.disconnect(_preserve_saved_target_visibility)
+	_target_visibility_hold_state.clear()
+	_target_visibility_hold_project = null
+	_target_hold_ctrl = false
+	_target_hold_shift = false
+	_target_hold_alt = false
+	_target_hold_meta = false
+	_redraw_target_visibility()
+
+
 func _project_switched() -> void:
+	_restore_target_visibility_hold()
 	if Global.current_project.export_profile.directory_path != "":
 		open_sprite_dialog.current_dir = Global.current_project.export_profile.directory_path
 		save_sprite_dialog.current_dir = Global.current_project.export_profile.directory_path
@@ -505,9 +647,8 @@ func _apply_aseprite_cursor_shape(
 	Input.set_custom_mouse_cursor(texture, cursor_shape, ASEPRITE_CURSOR_ATLAS.get_hotspot(name))
 
 
-## Aseprite's timeline has two exceptions to its global cursor styles:
-## while moving a cel, generic arrow/move cursors show the move sprite;
-## while Ctrl/Alt-copying a cel, they show the copy (double-arrow) sprite.
+## Timeline cels and layer/frame headers use the same Aseprite drag cursors:
+## moving shows the move sprite, Ctrl/Alt-copying shows the double arrow.
 ## Everything outside the drag reverts to the normal global Aseprite styles.
 func set_timeline_cel_drag_cursor(mode: int) -> void:
 	if mode == _cel_drag_cursor_mode:
@@ -651,6 +792,7 @@ func _notification(what: int) -> void:
 		# If the mouse exits the window and another application has the focus,
 		# pause the application
 		NOTIFICATION_APPLICATION_FOCUS_OUT:
+			_restore_target_visibility_hold()
 			if Global.pause_when_unfocused:
 				get_tree().paused = true
 		NOTIFICATION_WM_MOUSE_EXIT:

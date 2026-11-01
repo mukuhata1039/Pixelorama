@@ -31,6 +31,8 @@ var audio_player: AudioStreamPlayer
 
 var _old_camera_auto_release_gui_focus: bool
 var drawing_color_lock_button: Button
+var target_visibility_button: Button
+var target_visibility_layer: BaseLayer
 @onready var properties: AcceptDialog = Global.control.find_child("LayerProperties")
 @onready var main_button := %LayerMainButton as Button
 @onready var expand_button := %ExpandButton as BaseButton
@@ -65,6 +67,7 @@ func _ready() -> void:
 	layer.ui_color_changed.connect(func(): layer_ui_color.color = layer.get_ui_color())
 	if layer is PixelLayer:
 		_setup_drawing_color_lock_button(layer)
+	_setup_target_visibility_button(layer)
 	for ancestor in layer.get_ancestors():
 		ancestor.ui_color_changed.connect(func(): layer_ui_color.color = layer.get_ui_color())
 	if layer is PixelLayer:
@@ -162,11 +165,78 @@ func _on_drawing_color_lock_pressed() -> void:
 		_select_current_layer()
 
 
+## Place the per-layer target pin immediately after the color-lock control.
+## This button never changes the active layer or the timeline cel selection.
+func _setup_target_visibility_button(layer: BaseLayer) -> void:
+	target_visibility_layer = layer
+	target_visibility_button = Button.new()
+	target_visibility_button.name = "TargetVisibilityButton"
+	target_visibility_button.tooltip_text = (
+		"Include/exclude this layer from target visibility shortcuts"
+	)
+	target_visibility_button.toggle_mode = true
+	target_visibility_button.set_pressed_no_signal(layer.visibility_target)
+	target_visibility_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	target_visibility_button.add_to_group("UIButtons")
+	$HBoxContainer.add_child(target_visibility_button)
+	target_visibility_button.draw.connect(_draw_target_visibility_indicator)
+	target_visibility_button.pressed.connect(_on_target_visibility_button_pressed)
+	layer.visibility_target_changed.connect(_update_target_visibility_button)
+
+
+func _update_target_visibility_button() -> void:
+	if not is_instance_valid(target_visibility_button):
+		return
+	if not is_instance_valid(target_visibility_layer):
+		return
+	target_visibility_button.set_pressed_no_signal(target_visibility_layer.visibility_target)
+	target_visibility_button.queue_redraw()
+
+
+func _draw_target_visibility_indicator() -> void:
+	if not is_instance_valid(target_visibility_button):
+		return
+	if not is_instance_valid(target_visibility_layer):
+		return
+	var center := target_visibility_button.size / 2.0
+	var pin_color := (
+		Color(1.0, 0.78, 0.22) if target_visibility_layer.visibility_target else Color(0.53, 0.53, 0.53)
+	)
+	# Compact thumbtack shape; highlighted and depressed when selected.
+	target_visibility_button.draw_rect(
+		Rect2(center + Vector2(-4, -5), Vector2(8, 3)), pin_color, true
+	)
+	target_visibility_button.draw_line(
+		center + Vector2(-3, -2), center + Vector2(3, -2), pin_color, 2.0
+	)
+	target_visibility_button.draw_line(
+		center + Vector2(0, -2), center + Vector2(0, 6), pin_color, 2.0
+	)
+	target_visibility_button.draw_line(
+		center + Vector2(-2, 3), center + Vector2(0, 6), pin_color, 1.0
+	)
+	target_visibility_button.draw_line(
+		center + Vector2(2, 3), center + Vector2(0, 6), pin_color, 1.0
+	)
+
+
+func _on_target_visibility_button_pressed() -> void:
+	if not is_instance_valid(target_visibility_layer):
+		return
+	var project := target_visibility_layer.project
+	if project != Global.current_project:
+		return
+	target_visibility_layer.visibility_target = not target_visibility_layer.visibility_target
+	project.has_changed = true
+
+
 ## Keep every layer control usable at 20px, including group and link buttons.
 func apply_compact_layout(enabled: bool) -> void:
 	var buttons := $HBoxContainer as HBoxContainer
 	var button_size := Vector2(20, 20) if enabled else Vector2(28, 22)
 	var button_count := 4 if is_instance_valid(drawing_color_lock_button) else 3
+	if is_instance_valid(target_visibility_button):
+		button_count += 1
 	buttons.custom_minimum_size.x = button_count * int(button_size.x)
 	var half_icon := 9.0 if enabled else 11.0
 	for button in buttons.get_children():
@@ -214,6 +284,8 @@ func apply_compact_layout(enabled: bool) -> void:
 	$LayerMainButton/LayerName/MarginSpacer.custom_minimum_size.x = 0 if enabled else 4
 	if is_instance_valid(drawing_color_lock_button):
 		drawing_color_lock_button.queue_redraw()
+	if is_instance_valid(target_visibility_button):
+		target_visibility_button.queue_redraw()
 
 
 func _on_cel_switched() -> void:

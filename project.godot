@@ -1077,6 +1077,14 @@ layer_visibility={
 "deadzone": 0.2,
 "events": []
 }
+target_layer_visibility_toggle={
+"deadzone": 0.2,
+"events": []
+}
+target_layer_visibility_hold={
+"deadzone": 0.2,
+"events": []
+}
 layer_lock={
 "deadzone": 0.2,
 "events": []

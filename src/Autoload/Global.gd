@@ -1090,6 +1090,12 @@ func _initialize_keychain() -> void:
 		&"loop_toggle": Keychain.InputAction.new("", "Timeline"),
 		&"onion_skinning_settings": Keychain.InputAction.new("", "Timeline"),
 		&"layer_visibility": Keychain.InputAction.new("", "Timeline"),
+		&"target_layer_visibility_toggle": Keychain.InputAction.new(
+			"Toggle target layer visibility", "Timeline"
+		),
+		&"target_layer_visibility_hold": Keychain.InputAction.new(
+			"Temporarily hide target layers (hold)", "Timeline"
+		),
 		&"layer_lock": Keychain.InputAction.new("", "Timeline"),
 		&"new_palette": Keychain.InputAction.new("", "Palettes"),
 		&"edit_palette": Keychain.InputAction.new("", "Palettes"),
