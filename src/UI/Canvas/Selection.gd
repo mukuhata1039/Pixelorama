@@ -671,9 +671,20 @@ func select_cel_rect() -> void:
 	commit_undo("Select", undo_data_tmp)
 
 
-## Select the pixels drawn in one cel. Optionally combine them with the
-## existing canvas selection without selecting additional timeline cels.
-func select_cel_pixels(layer: BaseLayer, frame: Frame, add_to_selection := false) -> void:
+## Replaces the pixel selection with the opaque pixels of a cel.
+## Keep the two-argument API: existing callers and Godot's cached script
+## class metadata expect this signature.
+func select_cel_pixels(layer: BaseLayer, frame: Frame) -> void:
+	_select_cel_pixels(layer, frame, false)
+
+
+## Adds the opaque pixels of a cel to the current canvas selection, without
+## selecting other timeline cels or changing the active editing cel.
+func add_cel_pixels_to_selection(layer: BaseLayer, frame: Frame) -> void:
+	_select_cel_pixels(layer, frame, true)
+
+
+func _select_cel_pixels(layer: BaseLayer, frame: Frame, add_to_selection: bool) -> void:
 	transform_content_confirm()
 	var project := Global.current_project
 	var undo_data_tmp := get_undo_data(false)
@@ -685,17 +696,14 @@ func select_cel_pixels(layer: BaseLayer, frame: Frame, add_to_selection := false
 		cel_image = project.crop_image_to_project_size(current_cel.get_image(), current_cel.offset)
 	var selection_format := project.selection_map.get_format()
 	if add_to_selection and project.has_selection:
-		# The selection map may extend outside the canvas with a negative
-		# selection_offset. Keep those pixels and map the cel's origin into
-		# the existing selection coordinates instead of cropping the selection.
+		# Keep selection-map pixels outside the canvas by respecting the
+		# existing offset and expanding the image only when necessary.
 		cel_image.convert(selection_format)
 		var destination := -project.selection_offset
 		project.selection_map.crop(
 			maxi(project.selection_map.get_width(), project.size.x + destination.x),
 			maxi(project.selection_map.get_height(), project.size.y + destination.y)
 		)
-		# Alpha compositing is a union here: previously selected pixels
-		# remain selected, and new nontransparent cel pixels are added.
 		project.selection_map.blend_rect(
 			cel_image, Rect2i(Vector2i.ZERO, cel_image.get_size()), destination
 		)
