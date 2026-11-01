@@ -771,6 +771,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 vertical_scroll_mode = 3
 mouse_filter = 2
+theme = SubResource("20")
 
 [node name="PlaybackRangeHBox" type="HBoxContainer" parent="TimelineContainer/TimelineButtons/VBoxContainer/PlaybackRangeScroll"]
 layout_mode = 2

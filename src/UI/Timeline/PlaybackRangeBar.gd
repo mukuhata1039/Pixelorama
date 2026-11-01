@@ -5,7 +5,6 @@ extends Control
 const START_COLOR := Color("f0bf64")
 const END_COLOR := Color("7fc6f1")
 const INACTIVE_COLOR := Color(0.6, 0.6, 0.6, 0.45)
-const HANDLE_HIT_RADIUS := 12.0
 
 var _dragging_handle := -1  ## 0: start, 1: end; -1: none.
 

@@ -479,7 +479,7 @@ func _get_minimum_size() -> Vector2:
 	# Y targets enough to see 1 layer
 	if not is_instance_valid(layer_vbox) or not cel_vbox.is_visible_in_tree():
 		return Vector2.ZERO
-	return Vector2(layer_vbox.size.x + cel_size + 26, cel_size + 105)
+	return Vector2(layer_vbox.size.x + cel_size + 26, cel_size + 127)
 
 
 func _frame_scroll_changed(_value: float) -> void:
