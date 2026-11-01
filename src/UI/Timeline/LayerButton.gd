@@ -32,6 +32,7 @@ var audio_player: AudioStreamPlayer
 var _old_camera_auto_release_gui_focus: bool
 var drawing_color_lock_button: Button
 var target_visibility_button: Button
+var target_visibility_layer: BaseLayer
 @onready var properties: AcceptDialog = Global.control.find_child("LayerProperties")
 @onready var main_button := %LayerMainButton as Button
 @onready var expand_button := %ExpandButton as BaseButton
@@ -167,6 +168,7 @@ func _on_drawing_color_lock_pressed() -> void:
 ## Place the per-layer target pin immediately after the color-lock control.
 ## This button never changes the active layer or the timeline cel selection.
 func _setup_target_visibility_button(layer: BaseLayer) -> void:
+	target_visibility_layer = layer
 	target_visibility_button = Button.new()
 	target_visibility_button.name = "TargetVisibilityButton"
 	target_visibility_button.tooltip_text = (
@@ -185,18 +187,20 @@ func _setup_target_visibility_button(layer: BaseLayer) -> void:
 func _update_target_visibility_button() -> void:
 	if not is_instance_valid(target_visibility_button):
 		return
-	var layer := Global.current_project.layers[layer_index]
-	target_visibility_button.set_pressed_no_signal(layer.visibility_target)
+	if not is_instance_valid(target_visibility_layer):
+		return
+	target_visibility_button.set_pressed_no_signal(target_visibility_layer.visibility_target)
 	target_visibility_button.queue_redraw()
 
 
 func _draw_target_visibility_indicator() -> void:
 	if not is_instance_valid(target_visibility_button):
 		return
-	var layer := Global.current_project.layers[layer_index]
+	if not is_instance_valid(target_visibility_layer):
+		return
 	var center := target_visibility_button.size / 2.0
 	var pin_color := (
-		Color(1.0, 0.78, 0.22) if layer.visibility_target else Color(0.53, 0.53, 0.53)
+		Color(1.0, 0.78, 0.22) if target_visibility_layer.visibility_target else Color(0.53, 0.53, 0.53)
 	)
 	# Compact thumbtack shape; highlighted and depressed when selected.
 	target_visibility_button.draw_rect(
@@ -217,9 +221,12 @@ func _draw_target_visibility_indicator() -> void:
 
 
 func _on_target_visibility_button_pressed() -> void:
-	var project := Global.current_project
-	var layer := project.layers[layer_index]
-	layer.visibility_target = not layer.visibility_target
+	if not is_instance_valid(target_visibility_layer):
+		return
+	var project := target_visibility_layer.project
+	if project != Global.current_project:
+		return
+	target_visibility_layer.visibility_target = not target_visibility_layer.visibility_target
 	project.has_changed = true
 
 

@@ -36,6 +36,10 @@ var _layer_pick_cursor_active := false
 ## The hold shortcut only changes display state transiently, never the saved project.
 var _target_visibility_hold_project: Project
 var _target_visibility_hold_state: Dictionary = {}
+var _target_hold_ctrl := false
+var _target_hold_shift := false
+var _target_hold_alt := false
+var _target_hold_meta := false
 var _aseprite_cursors := {}
 ## -1 = no cel drag; 1 = move cels; 2 = copy cels.
 var _cel_drag_cursor_mode := -1
@@ -283,6 +287,7 @@ func _process(_delta: float) -> void:
 		if (
 			Global.current_project != _target_visibility_hold_project
 			or not Input.is_action_pressed(&"target_layer_visibility_hold")
+			or not _target_visibility_hold_modifiers_pressed()
 		):
 			_restore_target_visibility_hold()
 	var is_rotating_view := false
@@ -361,7 +366,7 @@ func _input(event: InputEvent) -> void:
 		if event.is_action_pressed(&"target_layer_visibility_toggle"):
 			_toggle_target_layer_visibility()
 		elif event.is_action_pressed(&"target_layer_visibility_hold"):
-			_start_target_visibility_hold()
+			_start_target_visibility_hold(event)
 	if event.is_action_pressed(&"layer_visibility"):
 		for selected_cel in Global.current_project.selected_cels:
 			var layer := Global.current_project.layers[selected_cel[1]]
@@ -431,7 +436,7 @@ func _toggle_target_layer_visibility() -> void:
 
 ## Hold hides the chosen layers without modifying their selection or original
 ## individual visibility values; release restores every original value.
-func _start_target_visibility_hold() -> void:
+func _start_target_visibility_hold(event: InputEvent) -> void:
 	if not _target_visibility_hold_state.is_empty():
 		return
 	var project := Global.current_project
@@ -442,7 +447,23 @@ func _start_target_visibility_hold() -> void:
 	if _target_visibility_hold_state.is_empty():
 		return
 	_target_visibility_hold_project = project
+	if event is InputEventWithModifiers:
+		_target_hold_ctrl = event.ctrl_pressed
+		_target_hold_shift = event.shift_pressed
+		_target_hold_alt = event.alt_pressed
+		_target_hold_meta = event.meta_pressed
 	_redraw_target_visibility()
+
+
+## Also check the original modifier keys: if Ctrl/Alt/Shift/Meta is
+## released before the main shortcut key, Godot may retain the action state.
+func _target_visibility_hold_modifiers_pressed() -> bool:
+	return (
+		(not _target_hold_ctrl or Input.is_key_pressed(KEY_CTRL))
+		and (not _target_hold_shift or Input.is_key_pressed(KEY_SHIFT))
+		and (not _target_hold_alt or Input.is_key_pressed(KEY_ALT))
+		and (not _target_hold_meta or Input.is_key_pressed(KEY_META))
+	)
 
 
 func _restore_target_visibility_hold() -> void:
@@ -453,6 +474,10 @@ func _restore_target_visibility_hold() -> void:
 			layer.visible = _target_visibility_hold_state[layer]
 	_target_visibility_hold_state.clear()
 	_target_visibility_hold_project = null
+	_target_hold_ctrl = false
+	_target_hold_shift = false
+	_target_hold_alt = false
+	_target_hold_meta = false
 	_redraw_target_visibility()
 
 
