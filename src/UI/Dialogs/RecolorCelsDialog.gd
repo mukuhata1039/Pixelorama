@@ -199,6 +199,7 @@ func _on_visibility_changed() -> void:
 	if visible:
 		return
 	_stop_preview()
-	Global.dialog_open(false)
+	# The recolor dialog does not dim the background when opened, so it must
+	# not reset the shared dialog dimming state when it closes.
 	# Keep the snapshot here: ConfirmationDialog can hide before emitting
 	# confirmed, and _apply() must still be able to access its targets.
