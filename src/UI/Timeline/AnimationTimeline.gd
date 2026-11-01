@@ -561,14 +561,15 @@ func _draw_highlight_cels(cel_coords: Array, offset: Vector2i) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if (
-		OS.is_debug_build() and event is InputEventKey
-		and event.pressed and not event.echo and event.keycode == KEY_F9
-		and event.ctrl_pressed and event.shift_pressed
-	):
-		_begin_animation_benchmark()
-		get_viewport().set_input_as_handled()
-		return
+	if OS.is_debug_build() and event is InputEventKey:
+		var key_event := event as InputEventKey
+		if (
+			key_event.pressed and not key_event.echo and key_event.keycode == KEY_F9
+			and key_event.ctrl_pressed and key_event.shift_pressed
+		):
+			_begin_animation_benchmark()
+			get_viewport().set_input_as_handled()
+			return
 	var project := Global.current_project
 	if event.is_action_pressed(&"go_to_previous_layer"):
 		Global.transform_content_confirmed.emit()
