@@ -19,8 +19,8 @@ func _is_drag_border(local_pos: Vector2) -> bool:
 	var timeline := Global.animation_timeline
 	if not timeline.is_layer_header_range(layer_index):
 		return false
-	var first := not timeline.is_layer_header_range(layer_index + 1)
-	var last := not timeline.is_layer_header_range(layer_index - 1)
+	var first: bool = not timeline.is_layer_header_range(layer_index + 1)
+	var last: bool = not timeline.is_layer_header_range(layer_index - 1)
 	return (
 		local_pos.x <= HEADER_DRAG_BORDER
 		or (first and local_pos.y <= HEADER_DRAG_BORDER)
