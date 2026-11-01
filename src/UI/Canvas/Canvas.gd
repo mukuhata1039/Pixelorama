@@ -75,11 +75,22 @@ func _draw() -> void:
 	# Placeholder so we can have a material here
 	var image_to_draw := project.empty_image_texture
 	draw_texture(image_to_draw, Vector2.ZERO)
-	var layer_start_us := Time.get_ticks_usec() if brush_profile_active else 0
+	var benchmark_timeline := Global.animation_timeline
+	var benchmark_sampling := (
+		is_instance_valid(benchmark_timeline)
+		and bool(benchmark_timeline.get("benchmark_recording"))
+	)
+	var layer_start_us := (
+		Time.get_ticks_usec() if brush_profile_active or benchmark_sampling else 0
+	)
 	draw_layers(project_changed)
 	if brush_profile_active:
 		brush_profile_layers_us += Time.get_ticks_usec() - layer_start_us
 		brush_profile_layers_calls += 1
+	if benchmark_sampling:
+		benchmark_timeline.call(
+			"record_animation_benchmark_canvas", Time.get_ticks_usec() - layer_start_us
+		)
 	project_changed = false
 	if Global.onion_skinning:
 		refresh_onion()
@@ -294,10 +305,15 @@ func finish_brush_profile() -> Dictionary:
 
 
 func queue_redraw_all_layers() -> void:
-	# A frame switch changes the images, not the texture-array shape. Refresh
-	# every layer in place; recreate the array only when its dimensions or
-	# layer count change (or when another caller explicitly requests it).
-	update_all_layers = true
+	# A/B diagnostic mode reenables the original full texture array recreation.
+	# In normal usage a frame switch only needs new layer image contents.
+	if (
+		is_instance_valid(Global.animation_timeline)
+		and bool(Global.animation_timeline.get("benchmark_baseline_mode"))
+	):
+		project_changed = true
+	else:
+		update_all_layers = true
 	var project := Global.current_project
 	var current_cel := project.get_current_cel()
 	if current_cel is Cel3D:
