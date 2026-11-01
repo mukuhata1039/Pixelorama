@@ -57,8 +57,8 @@ var _rendered_layer_count := -1
 var _timeline_selection_cache_valid := false
 ## Ctrl+Shift+F9 in debug builds runs an automatic old/new playback A/B test.
 ## Baseline preserves the old full timeline refresh and texture-array recreation.
-const BENCHMARK_WARMUP_USEC := 1_500_000
-const BENCHMARK_SAMPLE_USEC := 5_000_000
+const BENCHMARK_WARMUP_USEC = 1_500_000
+const BENCHMARK_SAMPLE_USEC = 5_000_000
 var benchmark_baseline_mode := false
 var benchmark_recording := false
 var _benchmark_active := false
@@ -380,21 +380,23 @@ func _advance_animation_benchmark() -> void:
 	var optimized_timeline := float(after["timeline_ms"])
 	var baseline_canvas := float(before["canvas_ms"])
 	var optimized_canvas := float(after["canvas_ms"])
-	var report := (
-		"Animation A/B benchmark (same project, 5 seconds per mode)\\n"
-		+ "Baseline = original full update / Optimized = PR #46\\n\\n"
-		+ "Godot CPU process/frame: %.3f -> %.3f ms (%.1f%% faster)\\n"
-		% [baseline_process, optimized_process, _benchmark_reduction(baseline_process, optimized_process)]
-		+ "Timeline switch: %.3f -> %.3f ms (%.1f%% faster)\\n"
-		% [baseline_timeline, optimized_timeline, _benchmark_reduction(baseline_timeline, optimized_timeline)]
-		+ "Canvas layer redraw: %.3f -> %.3f ms (%.1f%% faster)\\n"
-		% [baseline_canvas, optimized_canvas, _benchmark_reduction(baseline_canvas, optimized_canvas)]
-		+ "\\nSamples: timeline %d/%d, canvas %d/%d, timer ticks %d/%d\\n"
-		% [int(before["timeline_calls"]), int(after["timeline_calls"]),
-			int(before["canvas_calls"]), int(after["canvas_calls"]),
-			int(before["ticks"]), int(after["ticks"])]
-		+ "\\nCPU timings only. Not a GPU utilization measurement."
-	)
+	var report := "Animation A/B benchmark (same project, 5 seconds per mode)\n"
+	report += "Baseline = original full update / Optimized = PR #46\n\n"
+	report += "Godot CPU process/frame: %.3f -> %.3f ms (%.1f%% improvement)\n" % [
+		baseline_process, optimized_process, _benchmark_reduction(baseline_process, optimized_process)
+	]
+	report += "Timeline switch: %.3f -> %.3f ms (%.1f%% improvement)\n" % [
+		baseline_timeline, optimized_timeline, _benchmark_reduction(baseline_timeline, optimized_timeline)
+	]
+	report += "Canvas layer redraw: %.3f -> %.3f ms (%.1f%% improvement)\n" % [
+		baseline_canvas, optimized_canvas, _benchmark_reduction(baseline_canvas, optimized_canvas)
+	]
+	report += "\nSamples: timeline %d/%d, canvas %d/%d, timer ticks %d/%d\n" % [
+		int(before["timeline_calls"]), int(after["timeline_calls"]),
+		int(before["canvas_calls"]), int(after["canvas_calls"]),
+		int(before["ticks"]), int(after["ticks"])
+	]
+	report += "\nCPU timings only. Not a GPU utilization measurement."
 	print("[AnimationBenchmark] ", report)
 	OS.alert(report, "Pixelorama animation benchmark")
 
