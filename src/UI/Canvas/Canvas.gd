@@ -391,8 +391,8 @@ func clear_playback_frame_cache() -> void:
 	_playback_frame_cache.clear()
 	_playback_frame_lru.clear()
 	_playback_frame_cache_bytes = 0
-	_playback_cache_hits = 0
-	_playback_cache_misses = 0
+	# Preserve diagnostic totals until a benchmark sample resets them; otherwise
+	# an unexpected invalidation would conceal its preceding hits and misses.
 	_playback_cache_eligible = false
 	_playback_cache_armed = false
 
