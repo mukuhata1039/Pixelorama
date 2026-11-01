@@ -55,8 +55,8 @@ var _rendered_project: Project
 var _rendered_frame_count := -1
 var _rendered_layer_count := -1
 var _timeline_selection_cache_valid := false
-## Ctrl+Shift+F9 in debug builds runs an automatic old/new playback A/B test.
-## Baseline preserves the old full timeline refresh and texture-array recreation.
+## Ctrl+Shift+F9 in debug builds runs an automatic old/new timeline A/B test.
+## The measured canvas regression was reverted; both modes batch-recreate textures.
 const BENCHMARK_WARMUP_USEC = 1_500_000
 const BENCHMARK_SAMPLE_USEC = 5_000_000
 var benchmark_baseline_mode := false
@@ -308,7 +308,7 @@ func _begin_animation_benchmark() -> void:
 	_benchmark_stage_started_us = Time.get_ticks_usec()
 	Global.canvas.project_changed = true
 	Global.canvas.queue_redraw()
-	print("[AnimationBenchmark] Started. Baseline warm-up then baseline sample, optimized warm-up and optimized sample.")
+	print("[AnimationBenchmark] Started: old/new timeline updates, identical canvas rendering.")
 
 
 func _reset_animation_benchmark_sample() -> void:
@@ -365,7 +365,7 @@ func _advance_animation_benchmark() -> void:
 		_benchmark_stage = 2
 		_benchmark_stage_started_us = now
 		benchmark_baseline_mode = false
-		Global.canvas.update_all_layers = true
+		Global.canvas.project_changed = true
 		Global.canvas.queue_redraw()
 		print("[AnimationBenchmark] Baseline done. Optimized warm-up ...")
 		return
@@ -381,7 +381,8 @@ func _advance_animation_benchmark() -> void:
 	var baseline_canvas := float(before["canvas_ms"])
 	var optimized_canvas := float(after["canvas_ms"])
 	var report := "Animation A/B benchmark (same project, 5 seconds per mode)\n"
-	report += "Baseline = original full update / Optimized = PR #46\n\n"
+	report += "Baseline = old timeline / Optimized = changed-cel timeline\n"
+	report += "Canvas batch draw is identical in both modes (regression reverted).\n\n"
 	report += "Godot CPU process/frame: %.3f -> %.3f ms (%.1f%% improvement)\n" % [
 		baseline_process, optimized_process, _benchmark_reduction(baseline_process, optimized_process)
 	]
