@@ -76,6 +76,13 @@ var _benchmark_canvas_prepare_us := 0
 var _benchmark_canvas_texture_us := 0
 var _benchmark_canvas_metadata_us := 0
 var _benchmark_playback_ticks := 0
+var _benchmark_cache_hit_draw_us := 0
+var _benchmark_cache_miss_draw_us := 0
+var _benchmark_cache_hit_draws := 0
+var _benchmark_cache_miss_draws := 0
+var _benchmark_cache_hit_peak_us := 0
+var _benchmark_cache_miss_peak_us := 0
+var _benchmark_process_peak_ms := 0.0
 var is_animation_running := false
 var animation_loop := LoopType.CYCLE
 var animation_forward := true
@@ -311,7 +318,7 @@ func _begin_animation_benchmark() -> void:
 	_benchmark_stage_started_us = Time.get_ticks_usec()
 	Global.canvas.project_changed = true
 	Global.canvas.queue_redraw()
-	print("[AnimationBenchmark] Started: old/new timeline updates, identical canvas rendering.")
+	print("[AnimationBenchmark] Started: old/new timeline, same GPU upload; cache hit/miss timings recorded.")
 
 
 func _reset_animation_benchmark_sample() -> void:
@@ -325,10 +332,17 @@ func _reset_animation_benchmark_sample() -> void:
 	_benchmark_canvas_texture_us = 0
 	_benchmark_canvas_metadata_us = 0
 	_benchmark_playback_ticks = 0
+	_benchmark_cache_hit_draw_us = 0
+	_benchmark_cache_miss_draw_us = 0
+	_benchmark_cache_hit_draws = 0
+	_benchmark_cache_miss_draws = 0
+	_benchmark_cache_hit_peak_us = 0
+	_benchmark_cache_miss_peak_us = 0
+	_benchmark_process_peak_ms = 0.0
 
 
 func record_animation_benchmark_canvas(
-	elapsed_us: int, prepare_us: int, texture_us: int, metadata_us: int
+	elapsed_us: int, prepare_us: int, texture_us: int, metadata_us: int, cache_outcome: int
 ) -> void:
 	if benchmark_recording:
 		_benchmark_canvas_us += elapsed_us
@@ -336,6 +350,14 @@ func record_animation_benchmark_canvas(
 		_benchmark_canvas_texture_us += texture_us
 		_benchmark_canvas_metadata_us += metadata_us
 		_benchmark_canvas_samples += 1
+		if cache_outcome == 1:
+			_benchmark_cache_hit_draw_us += elapsed_us
+			_benchmark_cache_hit_draws += 1
+			_benchmark_cache_hit_peak_us = maxi(_benchmark_cache_hit_peak_us, elapsed_us)
+		elif cache_outcome == 2:
+			_benchmark_cache_miss_draw_us += elapsed_us
+			_benchmark_cache_miss_draws += 1
+			_benchmark_cache_miss_peak_us = maxi(_benchmark_cache_miss_peak_us, elapsed_us)
 
 
 func _advance_animation_benchmark() -> void:
@@ -347,7 +369,11 @@ func _advance_animation_benchmark() -> void:
 		return
 	var now := Time.get_ticks_usec()
 	if _benchmark_stage == 1 or _benchmark_stage == 3:
-		_benchmark_process_ms_sum += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+		var frame_process_ms: float = (
+			Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+		)
+		_benchmark_process_ms_sum += frame_process_ms
+		_benchmark_process_peak_ms = maxf(_benchmark_process_peak_ms, frame_process_ms)
 		_benchmark_process_samples += 1
 	var elapsed := now - _benchmark_stage_started_us
 	if _benchmark_stage % 2 == 0:
@@ -375,6 +401,13 @@ func _advance_animation_benchmark() -> void:
 		"timeline_calls": _benchmark_timeline_samples,
 		"canvas_calls": _benchmark_canvas_samples,
 		"ticks": _benchmark_playback_ticks,
+		"process_peak_ms": _benchmark_process_peak_ms,
+		"hit_draws": _benchmark_cache_hit_draws,
+		"miss_draws": _benchmark_cache_miss_draws,
+		"hit_ms": float(_benchmark_cache_hit_draw_us) / maxi(1, _benchmark_cache_hit_draws) / 1000.0,
+		"miss_ms": float(_benchmark_cache_miss_draw_us) / maxi(1, _benchmark_cache_miss_draws) / 1000.0,
+		"hit_peak_ms": float(_benchmark_cache_hit_peak_us) / 1000.0,
+		"miss_peak_ms": float(_benchmark_cache_miss_peak_us) / 1000.0,
 		"cache": Global.canvas.get_playback_frame_cache_stats(),
 	}
 	_benchmark_results.append(result)
@@ -424,7 +457,19 @@ func _advance_animation_benchmark() -> void:
 		int(cache["hits"]), int(cache["misses"]), int(cache["frames"]),
 		float(cache["megabytes"])
 	]
-	report += "Cache warms after frames have been played once.\n"
+	report += "Image cache: %d evictions, %d invalidations during sample.\n" % [
+		int(cache["evictions"]), int(cache["invalidations"])
+	]
+	report += "Hit draws: %d, avg %.2f ms, peak %.2f ms\n" % [
+		int(after["hit_draws"]), float(after["hit_ms"]), float(after["hit_peak_ms"])
+	]
+	report += "Miss draws: %d, avg %.2f ms, peak %.2f ms\n" % [
+		int(after["miss_draws"]), float(after["miss_ms"]), float(after["miss_peak_ms"])
+	]
+	report += "Process peak: %.2f -> %.2f ms\n" % [
+		float(before["process_peak_ms"]), float(after["process_peak_ms"])
+	]
+	report += "First-time frames still need preparation.\n"
 	report += "\nSamples: timeline %d/%d, canvas %d/%d, timer ticks %d/%d\n" % [
 		int(before["timeline_calls"]), int(after["timeline_calls"]),
 		int(before["canvas_calls"]), int(after["canvas_calls"]),
