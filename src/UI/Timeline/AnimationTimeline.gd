@@ -1296,14 +1296,17 @@ func _on_CloneLayer_pressed() -> void:
 	for child in source_layer.get_children(true):
 		selected_layers.append(child.index)
 	selected_layers.append(source_layer.index)
-	copy_layers_at(selected_layers, project.current_layer + 1, source_layer.parent)
+	copy_layers_at(selected_layers, project.current_layer + 1, source_layer.parent, false)
 
 
 ## Duplicate complete layers, including group descendants and every frame's
 ## cels, into the chosen position without mutating the source layers.
 ## Source indices are sorted in timeline order, children before group parent.
 func copy_layers_at(
-	source_indices: PackedInt32Array, insertion_index: int, destination_parent: BaseLayer
+	source_indices: PackedInt32Array,
+	insertion_index: int,
+	destination_parent: BaseLayer,
+	select_copied_layers := true
 ) -> void:
 	if source_indices.is_empty():
 		return
@@ -1377,9 +1380,12 @@ func copy_layers_at(
 	project.undo_redo.add_do_method(project.add_layers.bind(clones, indices, cels))
 	project.undo_redo.add_undo_method(project.remove_layers.bind(indices))
 	var copied_selection := []
-	for index in indices:
-		for frame_index in project.frames.size():
-			copied_selection.append([frame_index, index])
+	if select_copied_layers:
+		for index in indices:
+			for frame_index in project.frames.size():
+				copied_selection.append([frame_index, index])
+	else:
+		copied_selection.append([previous_frame, indices[-1]])
 	project.undo_redo.add_do_property(project, "selected_cels", copied_selection)
 	project.undo_redo.add_undo_property(project, "selected_cels", previous_selection)
 	project.undo_redo.add_do_method(project.change_cel.bind(previous_frame, indices[-1]))
