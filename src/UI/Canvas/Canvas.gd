@@ -16,6 +16,11 @@ var brush_profile_texture_us := 0
 var brush_profile_texture_calls := 0
 var brush_profile_layers_us := 0
 var brush_profile_layers_calls := 0
+## Only collected during the Ctrl+Shift+F9 benchmark; these are CPU timings.
+var _benchmark_canvas_sample_active := false
+var _benchmark_prepare_us := 0
+var _benchmark_texture_us := 0
+var _benchmark_metadata_us := 0
 var update_all_layers := false
 ## For optimization purposes. A kind of override to force include a layer during canvas update.
 ## Used in Undo/Redo for FX and visibility changes
@@ -80,16 +85,25 @@ func _draw() -> void:
 		is_instance_valid(benchmark_timeline)
 		and bool(benchmark_timeline.get("benchmark_recording"))
 	)
+	_benchmark_canvas_sample_active = benchmark_sampling
+	_benchmark_prepare_us = 0
+	_benchmark_texture_us = 0
+	_benchmark_metadata_us = 0
 	var layer_start_us := (
 		Time.get_ticks_usec() if brush_profile_active or benchmark_sampling else 0
 	)
 	draw_layers(project_changed)
+	_benchmark_canvas_sample_active = false
 	if brush_profile_active:
 		brush_profile_layers_us += Time.get_ticks_usec() - layer_start_us
 		brush_profile_layers_calls += 1
 	if benchmark_sampling:
 		benchmark_timeline.call(
-			"record_animation_benchmark_canvas", Time.get_ticks_usec() - layer_start_us
+			"record_animation_benchmark_canvas",
+			Time.get_ticks_usec() - layer_start_us,
+			_benchmark_prepare_us,
+			_benchmark_texture_us,
+			_benchmark_metadata_us
 		)
 	project_changed = false
 	if Global.onion_skinning:
@@ -434,6 +448,9 @@ func draw_layers(force_recreate := false) -> void:
 		# the second are the opacities, the third are the clipping mask booleans.
 		layer_metadata_image = Image.create(project.layers.size(), 4, false, Image.FORMAT_R8)
 		# Draw current frame layers
+		var prepare_started_us := (
+			Time.get_ticks_usec() if _benchmark_canvas_sample_active else 0
+		)
 		for i in project.layers.size():
 			var layer := project.layers[i]
 			var ordered_index := project.ordered_layers.find(layer.index)
@@ -441,10 +458,25 @@ func draw_layers(force_recreate := false) -> void:
 			_update_texture_array_layer(project, layer, cel_image, false)
 			textures[ordered_index] = cel_image
 
+		if _benchmark_canvas_sample_active:
+			_benchmark_prepare_us += Time.get_ticks_usec() - prepare_started_us
+		var upload_started_us := (
+			Time.get_ticks_usec() if _benchmark_canvas_sample_active else 0
+		)
 		layer_texture_array.create_from_images(textures)
+		if _benchmark_canvas_sample_active:
+			_benchmark_texture_us += Time.get_ticks_usec() - upload_started_us
+		var metadata_started_us := (
+			Time.get_ticks_usec() if _benchmark_canvas_sample_active else 0
+		)
 		layer_metadata_texture.set_image(layer_metadata_image)
+		if _benchmark_canvas_sample_active:
+			_benchmark_metadata_us += Time.get_ticks_usec() - metadata_started_us
 	else:  # Update the TextureArray
 		if layer_texture_array.get_layers() > 0:
+			var update_started_us := (
+				Time.get_ticks_usec() if _benchmark_canvas_sample_active else 0
+			)
 			for i in project.layers.size():
 				var layer := project.layers[i]
 				if not update_all_layers:
@@ -474,7 +506,14 @@ func draw_layers(force_recreate := false) -> void:
 				if layer != parent_layer:
 					# True when the layer has parents. In that case, update its top-most parent.
 					_update_texture_array_layer(project, parent_layer, Image.new(), true)
+			if _benchmark_canvas_sample_active:
+				_benchmark_prepare_us += Time.get_ticks_usec() - update_started_us
+			var metadata_started_us := (
+				Time.get_ticks_usec() if _benchmark_canvas_sample_active else 0
+			)
 			layer_metadata_texture.update(layer_metadata_image)
+			if _benchmark_canvas_sample_active:
+				_benchmark_metadata_us += Time.get_ticks_usec() - metadata_started_us
 
 	mandatory_update_layers = []
 	update_all_layers = false
