@@ -10,6 +10,7 @@ signal effect_added(effect: LayerEffect)  ## Emits when an effect is added to [m
 signal effect_removed(effect: LayerEffect)  ## Emits when an effect is removed from [member effects]
 signal ui_color_changed  ## Emits when [member ui_color] is changed.
 signal drawing_color_lock_changed  ## A layer's allowed drawing color or lock has changed.
+signal visibility_target_changed  ## A shortcut visibility target was enabled or disabled.
 
 ## All currently supported layer blend modes between two layers. The upper layer
 ## is the blend layer, and the bottom layer is the base layer.
@@ -65,6 +66,13 @@ var blend_mode := BlendModes.NORMAL  ## Blend mode of the current layer.
 var clipping_mask := false  ## If [code]true[/code], the layer acts as a clipping mask.
 var opacity := 1.0  ## The opacity of the layer, affects all frames that belong to that layer.
 ## Aseprite-inspired restriction: this includes the exact alpha of the paint color.
+## Whether target-visibility shortcuts affect this layer, regardless of active cel.
+var visibility_target := false:
+	set(value):
+		if visibility_target == value:
+			return
+		visibility_target = value
+		visibility_target_changed.emit()
 var drawing_color_locked := false:
 	set(value):
 		drawing_color_locked = value
@@ -388,6 +396,7 @@ func serialize() -> Dictionary:
 		"clipping_mask": clipping_mask,
 		"opacity": opacity,
 		"drawing_color_locked": drawing_color_locked,
+		"visibility_target": visibility_target,
 		"drawing_color": "#" + drawing_color.to_html(true),
 		"ui_color": ui_color,
 		"parent": parent.index if is_instance_valid(parent) else -1,
@@ -426,6 +435,7 @@ func deserialize(dict: Dictionary) -> void:
 		else:
 			drawing_color = Color(encoded)
 	drawing_color_locked = dict.get("drawing_color_locked", false)
+	visibility_target = dict.get("visibility_target", false)
 	user_data = dict.get("user_data", user_data)
 	if dict.has("ui_color"):
 		var tmp_ui_color = dict.ui_color

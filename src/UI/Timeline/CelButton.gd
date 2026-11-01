@@ -309,15 +309,16 @@ func _on_CelButton_pressed() -> void:
 			button_pressed = project.selected_cels.has(frame_layer)
 			cel_switched()
 			return
+		if is_left_click and Global.is_ctrl_or_cmd_pressed() and cel is not AudioCel:
+			# Take opaque pixels from this cel as a canvas selection only.
+			# Do not change the editing frame/layer or the timeline cel selection.
+			Global.canvas.selection.select_cel_pixels(project.layers[layer], project.frames[frame])
+			button_pressed = project.selected_cels.has(frame_layer)
+			cel_switched()
+			return
 		Global.animation_timeline.select_cel_range_source()
 		var change_cel := true
-		if is_left_click and Global.is_ctrl_or_cmd_pressed() and cel is not AudioCel:
-			# Select the opaque pixels of the clicked cel, not multiple timeline cels.
-			project.selected_cels = [frame_layer]
-			project.change_cel(frame, layer)
-			Global.canvas.selection.select_cel_pixels(project.layers[layer], project.frames[frame])
-			return
-		elif Input.is_action_pressed("shift"):
+		if Input.is_action_pressed("shift"):
 			# Add/remove individual, possibly non-adjacent cels.
 			if project.selected_cels.has(frame_layer):
 				if project.selected_cels.size() > 1:

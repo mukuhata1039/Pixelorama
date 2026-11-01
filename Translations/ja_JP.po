@@ -4268,3 +4268,10 @@ msgstr "対象セル: %d"
 
 msgid "Indexed-color projects are not supported."
 msgstr "インデックスカラープロジェクトには未対応です。"
+
+# Target-layer visibility shortcut actions.
+msgid "Shortcut action: target_layer_visibility_toggle"
+msgstr "ターゲットレイヤーの表示切替"
+
+msgid "Shortcut action: target_layer_visibility_hold"
+msgstr "ターゲットレイヤーを一時的に非表示（ホールド）"
