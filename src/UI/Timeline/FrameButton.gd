@@ -9,6 +9,8 @@ const COMPACT_HORIZONTAL_TEXT_MARGIN := 1.0
 const COMPACT_STYLEBOX_NAMES := [&"normal", &"hover", &"pressed"]
 
 var frame := 0
+const HEADER_DRAG_BORDER := 5.0
+var _drag_started_on_selected_border := false
 
 @onready var popup_menu: PopupMenu = $PopupMenu
 @onready var frame_properties := Global.control.find_child("FrameProperties") as ConfirmationDialog
@@ -131,9 +133,43 @@ func _on_PopupMenu_id_pressed(id: int) -> void:
 			DrawingAlgos.center_frames(indices)
 
 
+## Aseprite selects columns from the header interior; the current
+## selection outline is the only move/copy handle.
+func _is_drag_border(local_pos: Vector2) -> bool:
+	var timeline := Global.animation_timeline
+	if not timeline.is_frame_header_range(frame):
+		return false
+	var first := not timeline.is_frame_header_range(frame - 1)
+	var last := not timeline.is_frame_header_range(frame + 1)
+	return (
+		local_pos.y <= HEADER_DRAG_BORDER
+		or (first and local_pos.x <= HEADER_DRAG_BORDER)
+		or (last and local_pos.x >= size.x - HEADER_DRAG_BORDER)
+	)
+
+
+func _gui_input(event: InputEvent) -> void:
+	if not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_LEFT:
+		return
+	if event.pressed:
+		_drag_started_on_selected_border = _is_drag_border(event.position)
+		if not _drag_started_on_selected_border:
+			Global.animation_timeline.update_drag_header_range_preview(false, frame, frame)
+	elif not get_viewport().gui_is_dragging():
+		Global.animation_timeline.clear_drag_cel_range_preview()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_DRAG_END:
+		Global.animation_timeline.clear_drag_cel_range_preview()
+
+
 func _get_drag_data(_position: Vector2) -> Variant:
 	if DisplayServer.is_touchscreen_available() and not button_pressed:
 		return null
+	if not _drag_started_on_selected_border and not DisplayServer.is_touchscreen_available():
+		Global.animation_timeline.update_drag_header_range_preview(false, frame, frame)
+		return ["FrameRange", frame]
 	var button := Button.new()
 	button.size = size
 	button.theme = Global.control.theme
@@ -147,6 +183,12 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 	if typeof(data) != TYPE_ARRAY:
 		Global.animation_timeline.drag_highlight.visible = false
 		return false
+	if data.is_empty():
+		return false
+	if data[0] == "FrameRange":
+		Global.animation_timeline.drag_highlight.hide()
+		Global.animation_timeline.update_drag_header_range_preview(false, int(data[1]), frame)
+		return true
 	if data[0] != "Frame":
 		Global.animation_timeline.drag_highlight.visible = false
 		return false
@@ -183,6 +225,9 @@ func _can_drop_data(pos: Vector2, data) -> bool:
 
 
 func _drop_data(_pos: Vector2, data) -> void:
+	if data[0] == "FrameRange":
+		Global.animation_timeline.commit_drag_header_range(false, int(data[1]), frame)
+		return
 	var drop_frames: PackedInt32Array = data[1]
 	var project := Global.current_project
 	# The frame header duplicates entire frames, including every layer's cel.

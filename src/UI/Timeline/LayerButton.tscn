@@ -134,6 +134,7 @@ mouse_filter = 2
 color = Color(0, 0, 0, 0)
 
 [node name="LayerName" type="HBoxContainer" parent="LayerMainButton" unique_id=1103935264]
+mouse_filter = 2
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -150,6 +151,7 @@ mouse_filter = 2
 script = ExtResource("7_7gdso")
 
 [node name="ClippingMask" type="TextureRect" parent="LayerMainButton/LayerName" unique_id=532219846]
+mouse_filter = 2
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -157,6 +159,7 @@ texture = ExtResource("6_73j5q")
 stretch_mode = 5
 
 [node name="LayerNameLabel" type="Label" parent="LayerMainButton/LayerName" unique_id=574181518]
+mouse_filter = 2
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -175,6 +178,7 @@ caret_blink = true
 caret_blink_interval = 0.5
 
 [node name="LayerFXTextureRect" type="TextureRect" parent="LayerMainButton/LayerName" unique_id=561557841 groups=["UIButtons"]]
+mouse_filter = 2
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -183,6 +187,7 @@ stretch_mode = 3
 flip_v = true
 
 [node name="LayerTypeTextureRect" type="TextureRect" parent="LayerMainButton/LayerName" unique_id=1553318290 groups=["UIButtons"]]
+mouse_filter = 2
 unique_name_in_owner = true
 modulate = Color(1, 1, 1, 0.498039)
 layout_mode = 2
