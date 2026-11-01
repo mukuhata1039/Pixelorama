@@ -34,6 +34,10 @@ var _playback_cache_effects_enabled := false
 var _playback_cache_project: Project
 var _playback_cache_hits := 0
 var _playback_cache_misses := 0
+var _playback_cache_evictions := 0
+var _playback_cache_invalidations := 0
+## 1 = reused prepared images, 2 = generated images after cache miss.
+var _benchmark_cache_draw_outcome := 0
 var update_all_layers := false
 ## For optimization purposes. A kind of override to force include a layer during canvas update.
 ## Used in Undo/Redo for FX and visibility changes
@@ -104,6 +108,7 @@ func _draw() -> void:
 	_benchmark_prepare_us = 0
 	_benchmark_texture_us = 0
 	_benchmark_metadata_us = 0
+	_benchmark_cache_draw_outcome = 0
 	var layer_start_us := (
 		Time.get_ticks_usec() if brush_profile_active or benchmark_sampling else 0
 	)
@@ -128,15 +133,23 @@ func _draw() -> void:
 		and not update_all_layers
 		and mandatory_update_layers.is_empty()
 	)
+	# Pan/zoom, cursor redraw and other presentation-only redraws must not
+	# throw away previously prepared animation frames. Invalidate only for
+	# actual content updates or incompatible rendering state.
+	var cache_is_stale := (
+		_playback_cache_project != project
+		or _playback_cache_effects_enabled != Global.display_layer_effects
+		or live_recolor_enabled
+		or update_all_layers
+		or not mandatory_update_layers.is_empty()
+		or (project_changed and not use_playback_cache)
+	)
 	_playback_cache_eligible = false
-	if not use_playback_cache:
-		clear_playback_frame_cache()
-	elif _playback_cache_project != project or (
-		_playback_cache_effects_enabled != Global.display_layer_effects
-	):
+	if cache_is_stale:
 		clear_playback_frame_cache()
 		_playback_cache_project = project
 		_playback_cache_effects_enabled = Global.display_layer_effects
+		use_playback_cache = false
 	# The full batch-upload path is deliberately preserved: the user's A/B
 	# measurements showed the separate per-layer uploads were slower.
 	draw_layers(project_changed, use_playback_cache)
@@ -150,7 +163,8 @@ func _draw() -> void:
 			Time.get_ticks_usec() - layer_start_us,
 			_benchmark_prepare_us,
 			_benchmark_texture_us,
-			_benchmark_metadata_us
+			_benchmark_metadata_us,
+			_benchmark_cache_draw_outcome
 		)
 	project_changed = false
 	if Global.onion_skinning:
@@ -372,6 +386,8 @@ func prepare_playback_frame_change() -> void:
 
 
 func clear_playback_frame_cache() -> void:
+	if not _playback_frame_cache.is_empty():
+		_playback_cache_invalidations += 1
 	_playback_frame_cache.clear()
 	_playback_frame_lru.clear()
 	_playback_frame_cache_bytes = 0
@@ -409,6 +425,7 @@ func _store_playback_frame_images(frame_index: int, images: Array[Image], metada
 		var evicted: Dictionary = _playback_frame_cache.get(evicted_index, {})
 		_playback_frame_cache_bytes -= int(evicted.get("bytes", 0))
 		_playback_frame_cache.erase(evicted_index)
+		_playback_cache_evictions += 1
 	_playback_frame_cache[frame_index] = {
 		"textures": images,
 		"metadata": metadata,
@@ -421,12 +438,16 @@ func _store_playback_frame_images(frame_index: int, images: Array[Image], metada
 func reset_playback_cache_counters() -> void:
 	_playback_cache_hits = 0
 	_playback_cache_misses = 0
+	_playback_cache_evictions = 0
+	_playback_cache_invalidations = 0
 
 
 func get_playback_frame_cache_stats() -> Dictionary:
 	return {
 		"hits": _playback_cache_hits,
 		"misses": _playback_cache_misses,
+		"evictions": _playback_cache_evictions,
+		"invalidations": _playback_cache_invalidations,
 		"frames": _playback_frame_cache.size(),
 		"megabytes": float(_playback_frame_cache_bytes) / 1048576.0,
 	}
@@ -595,11 +616,13 @@ func draw_layers(force_recreate := false, allow_playback_cache := false) -> void
 			textures = cached_entry["textures"]
 			layer_metadata_image = cached_entry["metadata"]
 			_playback_cache_hits += 1
+			_benchmark_cache_draw_outcome = 1
 			_playback_frame_lru.erase(project.current_frame)
 			_playback_frame_lru.append(project.current_frame)
 		else:
 			if allow_playback_cache:
 				_playback_cache_misses += 1
+				_benchmark_cache_draw_outcome = 2
 			textures.resize(project.layers.size())
 			# Nx4 texture, where N is the number of layers and the first row are
 			# blend modes, second opacities, third clipping mask flags.
