@@ -72,6 +72,9 @@ var _benchmark_timeline_us := 0
 var _benchmark_timeline_samples := 0
 var _benchmark_canvas_us := 0
 var _benchmark_canvas_samples := 0
+var _benchmark_canvas_prepare_us := 0
+var _benchmark_canvas_texture_us := 0
+var _benchmark_canvas_metadata_us := 0
 var _benchmark_playback_ticks := 0
 var is_animation_running := false
 var animation_loop := LoopType.CYCLE
@@ -318,12 +321,20 @@ func _reset_animation_benchmark_sample() -> void:
 	_benchmark_timeline_samples = 0
 	_benchmark_canvas_us = 0
 	_benchmark_canvas_samples = 0
+	_benchmark_canvas_prepare_us = 0
+	_benchmark_canvas_texture_us = 0
+	_benchmark_canvas_metadata_us = 0
 	_benchmark_playback_ticks = 0
 
 
-func record_animation_benchmark_canvas(elapsed_us: int) -> void:
+func record_animation_benchmark_canvas(
+	elapsed_us: int, prepare_us: int, texture_us: int, metadata_us: int
+) -> void:
 	if benchmark_recording:
 		_benchmark_canvas_us += elapsed_us
+		_benchmark_canvas_prepare_us += prepare_us
+		_benchmark_canvas_texture_us += texture_us
+		_benchmark_canvas_metadata_us += metadata_us
 		_benchmark_canvas_samples += 1
 
 
@@ -356,6 +367,9 @@ func _advance_animation_benchmark() -> void:
 		"process_ms": _benchmark_process_ms_sum / maxi(1, _benchmark_process_samples),
 		"timeline_ms": float(_benchmark_timeline_us) / maxi(1, _benchmark_timeline_samples) / 1000.0,
 		"canvas_ms": float(_benchmark_canvas_us) / maxi(1, _benchmark_canvas_samples) / 1000.0,
+		"prepare_ms": float(_benchmark_canvas_prepare_us) / maxi(1, _benchmark_canvas_samples) / 1000.0,
+		"upload_ms": float(_benchmark_canvas_texture_us) / maxi(1, _benchmark_canvas_samples) / 1000.0,
+		"metadata_ms": float(_benchmark_canvas_metadata_us) / maxi(1, _benchmark_canvas_samples) / 1000.0,
 		"timeline_calls": _benchmark_timeline_samples,
 		"canvas_calls": _benchmark_canvas_samples,
 		"ticks": _benchmark_playback_ticks,
@@ -392,6 +406,15 @@ func _advance_animation_benchmark() -> void:
 	report += "Canvas layer redraw: %.3f -> %.3f ms (%.1f%% improvement)\n" % [
 		baseline_canvas, optimized_canvas, _benchmark_reduction(baseline_canvas, optimized_canvas)
 	]
+	report += "\nCanvas redraw breakdown (optimized, avg per draw):\n"
+	report += "Image preparation/effects: %.3f ms\n" % float(after["prepare_ms"])
+	report += "Texture array upload: %.3f ms\n" % float(after["upload_ms"])
+	report += "Metadata texture: %.3f ms\n" % float(after["metadata_ms"])
+	report += "Other canvas overhead: %.3f ms\n" % maxf(
+		0.0,
+		optimized_canvas - float(after["prepare_ms"]) - float(after["upload_ms"])
+		- float(after["metadata_ms"])
+	)
 	report += "\nSamples: timeline %d/%d, canvas %d/%d, timer ticks %d/%d\n" % [
 		int(before["timeline_calls"]), int(after["timeline_calls"]),
 		int(before["canvas_calls"]), int(after["canvas_calls"]),
