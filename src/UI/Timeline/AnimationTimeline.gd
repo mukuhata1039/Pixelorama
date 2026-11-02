@@ -701,6 +701,109 @@ func _input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 
 
+## Delete is a timeline-only command. Do not steal the same key from text
+## fields, other panels or the canvas selection tools.
+func _unhandled_key_input(event: InputEvent) -> void:
+	if not event is InputEventKey:
+		return
+	var key := event as InputEventKey
+	if (
+		not key.pressed or key.echo or key.keycode != KEY_DELETE
+		or key.ctrl_pressed or key.alt_pressed or key.shift_pressed or key.meta_pressed
+	):
+		return
+	var focus := get_viewport().gui_get_focus_owner()
+	if focus is LineEdit or focus is TextEdit or focus is SpinBox:
+		return
+	var hovered := get_viewport().gui_get_hovered_control()
+	var focus_in_timeline := is_instance_valid(focus) and (
+		cel_vbox.is_ancestor_of(focus) or layer_vbox.is_ancestor_of(focus)
+		or frame_hbox.is_ancestor_of(focus)
+	)
+	var mouse_in_timeline := is_instance_valid(hovered) and (
+		cel_vbox.is_ancestor_of(hovered) or layer_vbox.is_ancestor_of(hovered)
+		or frame_hbox.is_ancestor_of(hovered)
+	)
+	if not focus_in_timeline and not mouse_in_timeline:
+		return
+	if clear_cel_contents(Global.current_project.selected_cels):
+		get_viewport().set_input_as_handled()
+
+
+## Clear all eligible selected cels as one undoable Draw action. Linked
+## cels share one replacement so the link remains intact; deduplicate their
+## members to avoid applying multiple undo steps to the same cel.
+func clear_cel_contents(indices: Array) -> bool:
+	var project := Global.current_project
+	var replacements: Dictionary = {}
+	for coords in indices:
+		if not coords is Array or coords.size() != 2:
+			continue
+		var frame_index: int = int(coords[0])
+		var layer_index: int = int(coords[1])
+		if (
+			frame_index < 0 or frame_index >= project.frames.size()
+			or layer_index < 0 or layer_index >= project.layers.size()
+			or project.layers[layer_index].is_locked_in_hierarchy()
+		):
+			continue
+		var cel := project.frames[frame_index].cels[layer_index]
+		if not cel is PixelCel:
+			continue
+		var members: Array = [cel] if cel.link_set == null else cel.link_set.get("cels", [])
+		var empty_content: Variant = cel.create_empty_content()
+		for member in members:
+			if member is PixelCel and not replacements.has(member):
+				replacements[member] = empty_content
+	if replacements.is_empty():
+		return false
+
+	project.undo_redo.create_action("Draw")
+	for affected_cel in replacements:
+		var old_content: Variant = affected_cel.get_content()
+		project.undo_redo.add_do_method(
+			affected_cel.set_content.bind(replacements[affected_cel])
+		)
+		project.undo_redo.add_undo_method(affected_cel.set_content.bind(old_content))
+	# Refresh every cel affected by shared linked content, including cells
+	# outside the selection, without redrawing unrelated frames.
+	for frame_index in project.frames.size():
+		for layer_index in project.layers.size():
+			if replacements.has(project.frames[frame_index].cels[layer_index]):
+				project.undo_redo.add_do_method(
+					Global.undo_or_redo.bind(false, frame_index, layer_index, project)
+				)
+				project.undo_redo.add_undo_method(
+					Global.undo_or_redo.bind(true, frame_index, layer_index, project)
+				)
+	project.undo_redo.commit_action()
+	return true
+
+
+## OS file drops do not use Control._drop_data; the Main.files_dropped
+## callback asks the timeline which visible cel lies under the mouse.
+func get_cel_at_drop_position(mouse_position: Vector2) -> Vector2i:
+	if (
+		not cel_vbox.is_visible_in_tree()
+		or not timeline_scroll.get_global_rect().has_point(mouse_position)
+		or not frame_scroll_container.get_global_rect().has_point(mouse_position)
+	):
+		return Vector2i(-1, -1)
+	var project := Global.current_project
+	for layer_index in project.layers.size():
+		var row_index := cel_vbox.get_child_count() - layer_index - 1
+		if row_index < 0 or row_index >= cel_vbox.get_child_count():
+			continue
+		var row := cel_vbox.get_child(row_index) as Control
+		if not row.visible or not row.get_global_rect().has_point(mouse_position):
+			continue
+		for frame_index in mini(project.frames.size(), row.get_child_count()):
+			var button := row.get_child(frame_index) as Control
+			if button.get_global_rect().has_point(mouse_position):
+				return Vector2i(frame_index, layer_index)
+	return Vector2i(-1, -1)
+
+
 func reset_settings() -> void:
 	%CompactTimeline.set_pressed_no_signal(false)
 	_on_compact_timeline_toggled(false)
