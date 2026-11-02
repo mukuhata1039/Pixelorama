@@ -819,7 +819,7 @@ func _on_files_dropped(files: PackedStringArray) -> void:
 			all_png_files = false
 			break
 	if all_png_files:
-		var drop_cel := Global.animation_timeline.get_cel_at_drop_position(
+		var drop_cel: Vector2i = Global.animation_timeline.get_cel_at_drop_position(
 			get_global_mouse_position()
 		)
 		if drop_cel.x >= 0:
