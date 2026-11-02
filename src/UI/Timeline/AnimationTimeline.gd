@@ -2690,8 +2690,10 @@ func project_changed() -> void:
 	for cel_hbox in cel_vbox.get_children():
 		cel_hbox.free()
 
+	# Rebuilding UI for a loaded or switched project must not overwrite
+	# GroupLayer.expanded values restored from the project file.
 	for i in project.layers.size():
-		project_layer_added(i)
+		project_layer_added(i, false)
 	for f in project.frames.size():
 		var button := FRAME_BUTTON_TSCN.instantiate() as Button
 		button.frame = f
@@ -2741,7 +2743,9 @@ func project_frame_removed(frame: int) -> void:
 	set_timeline_first_and_last_frames()
 
 
-func project_layer_added(layer_index: int) -> void:
+## A newly added or moved layer should reveal its parent group, but
+## reconstructing a saved project's timeline must preserve its collapsed groups.
+func project_layer_added(layer_index: int, expand_parents := true) -> void:
 	var project := Global.current_project
 	var layer := project.layers[layer_index]
 	var layer_button := layer.instantiate_layer_button() as LayerButton
@@ -2762,8 +2766,9 @@ func project_layer_added(layer_index: int) -> void:
 	layer_vbox.move_child(layer_button, count - 1 - layer_index)
 	cel_vbox.add_child(cel_hbox)
 	cel_vbox.move_child(cel_hbox, count - 1 - layer_index)
-	for ancestor in layer.get_ancestors():
-		ancestor.expanded = true
+	if expand_parents:
+		for ancestor in layer.get_ancestors():
+			ancestor.expanded = true
 	update_layer_expanded_status.call_deferred()
 	update_global_layer_buttons()
 	# project_changed() constructs layers before frame header buttons exist.

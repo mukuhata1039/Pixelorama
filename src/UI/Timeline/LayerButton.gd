@@ -509,8 +509,12 @@ func _save_layer_name(new_name: String) -> void:
 
 
 func _on_expand_button_pressed() -> void:
-	var layer := Global.current_project.layers[layer_index]
+	var project := Global.current_project
+	var layer := project.layers[layer_index]
 	layer.expanded = !layer.expanded
+	# Expansion is part of GroupLayer.serialize(), so closing or opening a
+	# group must mark the project dirty before it is saved.
+	project.has_changed = true
 	_update_buttons_all_layers()
 
 
