@@ -142,7 +142,17 @@ func set_content(content, texture: ImageTexture = null) -> void:
 		if image_texture.get_image().get_size() != image.get_size():
 			image_texture.set_image(image)
 	else:
-		image_texture.update(image)
+		# Empty cels start at 1x1, while imported frames can be larger.
+		# ImageTexture.update() requires identical image size and format.
+		var texture_image := image_texture.get_image()
+		if (
+			not is_instance_valid(texture_image)
+			or texture_image.get_size() != image.get_size()
+			or texture_image.get_format() != image.get_format()
+		):
+			image_texture.set_image(image)
+		else:
+			image_texture.update(image)
 
 
 func create_empty_content() -> Variant:

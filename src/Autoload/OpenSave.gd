@@ -212,6 +212,104 @@ func handle_loading_image(file: String, image: Image, force_import_dialog := fal
 	Global.dialog_open(true)
 
 
+## Import a batch of PNGs as consecutive frames in one existing PixelLayer.
+## Validate the entire destination range and decode every file before any
+## project mutation: a failed drop must never partially overwrite artwork.
+func import_png_sequence_into_cels(
+	files: PackedStringArray, first_frame: int, layer_index: int
+) -> void:
+	if files.size() < 2:
+		return
+	var project := Global.current_project
+	if (
+		layer_index < 0 or layer_index >= project.layers.size()
+		or first_frame < 0 or first_frame >= project.frames.size()
+	):
+		return
+	var layer := project.layers[layer_index]
+	if not layer is PixelLayer or layer.is_locked_in_hierarchy():
+		Global.popup_error(tr("Select an unlocked pixel layer to import the PNG sequence."))
+		return
+	# Keep the original frame count so we can validate existing destinations
+	# first, then append only the frames missing from the sequence.
+	var existing_frame_count: int = project.frames.size()
+
+	var sorted_paths: Array[String] = []
+	for file in files:
+		sorted_paths.append(file)
+	# Natural file name order: 1.png, 2.png, 10.png (not lexicographic).
+	sorted_paths.sort_custom(
+		func(a: String, b: String) -> bool:
+			return a.get_file().naturalnocasecmp_to(b.get_file()) < 0
+	)
+	var imported_contents: Array = []
+	for i in sorted_paths.size():
+		var frame_index := first_frame + i
+		if frame_index < existing_frame_count:
+			var dest_cel := project.frames[frame_index].cels[layer_index]
+			if not dest_cel is PixelCel or dest_cel is CelTileMap:
+				Global.popup_error(tr("The PNG destination must be a pixel cel."))
+				return
+			if dest_cel.link_set != null:
+				Global.popup_error(tr("Cannot import over linked cels. Unlink them first."))
+				return
+			if not dest_cel.get_image().is_invisible():
+				Global.popup_error(
+					tr("A destination cel already contains artwork. No PNGs were imported.")
+				)
+				return
+		var image := Image.load_from_file(sorted_paths[i])
+		if not is_instance_valid(image) or image.is_empty():
+			Global.popup_error(
+				tr("Could not read PNG: %s") % sorted_paths[i].get_file()
+			)
+			return
+		image.convert(project.get_image_format())
+		imported_contents.append((layer as PixelLayer).new_cel_from_image(image).get_content())
+
+	# New frames are prepared off-project; failures above leave the project
+	# unchanged. Append them as one UndoRedo operation, rather than inserting
+	# frames individually or modifying other layers' existing frames.
+	var new_frames: Array[Frame] = []
+	var new_frame_indices := PackedInt32Array()
+	for frame_index in range(existing_frame_count, first_frame + imported_contents.size()):
+		var new_frame := project.new_empty_frame()
+		new_frame.cels[layer_index].set_content(imported_contents[frame_index - first_frame])
+		new_frames.append(new_frame)
+		new_frame_indices.append(frame_index)
+
+	var old_frame := project.current_frame
+	var old_layer := project.current_layer
+	var old_selection := project.selected_cels.duplicate(true)
+	var new_selection: Array = []
+	project.undo_redo.create_action("Draw")
+	if not new_frames.is_empty():
+		project.undo_redo.add_do_method(project.add_frames.bind(new_frames, new_frame_indices))
+		project.undo_redo.add_undo_method(project.remove_frames.bind(new_frame_indices))
+	for i in imported_contents.size():
+		var frame_index := first_frame + i
+		# The new frames already hold their imported cels. Their Undo/Redo is
+		# handled by adding/removing the frames; only existing cels need
+		# per-cel set_content and restoration.
+		if frame_index < existing_frame_count:
+			var cel := project.frames[frame_index].cels[layer_index]
+			var previous_content: Variant = cel.get_content()
+			project.undo_redo.add_do_method(cel.set_content.bind(imported_contents[i]))
+			project.undo_redo.add_undo_method(cel.set_content.bind(previous_content))
+			project.undo_redo.add_do_method(
+				Global.undo_or_redo.bind(false, frame_index, layer_index, project)
+			)
+			project.undo_redo.add_undo_method(
+				Global.undo_or_redo.bind(true, frame_index, layer_index, project)
+			)
+		new_selection.append([frame_index, layer_index])
+	project.undo_redo.add_do_property(project, "selected_cels", new_selection)
+	project.undo_redo.add_undo_property(project, "selected_cels", old_selection)
+	project.undo_redo.add_do_method(project.change_cel.bind(first_frame, layer_index))
+	project.undo_redo.add_undo_method(project.change_cel.bind(old_frame, old_layer))
+	project.undo_redo.commit_action()
+
+
 ## For loading the output of AImgIO as a project
 func handle_loading_aimg(path: String, frames: Array) -> void:
 	var project := Project.new([], path.uri_decode().get_file(), frames[0].content.get_size())
