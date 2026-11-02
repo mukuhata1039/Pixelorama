@@ -811,6 +811,22 @@ func _notification(what: int) -> void:
 
 
 func _on_files_dropped(files: PackedStringArray) -> void:
+	# Multi-PNG drops directly onto a timeline cel fill consecutive empty
+	# frames. Everywhere else, preserve the existing import-dialog workflow.
+	var all_png_files := files.size() > 1
+	for file in files:
+		if file.get_extension().to_lower() != "png" or not FileAccess.file_exists(file):
+			all_png_files = false
+			break
+	if all_png_files:
+		var drop_cel := Global.animation_timeline.get_cel_at_drop_position(
+			get_global_mouse_position()
+		)
+		if drop_cel.x >= 0:
+			OpenSave.import_png_sequence_into_cels(files, drop_cel.x, drop_cel.y)
+			if splash_dialog.visible:
+				splash_dialog.hide()
+			return
 	for file in files:
 		if not FileAccess.file_exists(file):
 			# If the file doesn't exist, it could be a URL. This can occur when dragging
