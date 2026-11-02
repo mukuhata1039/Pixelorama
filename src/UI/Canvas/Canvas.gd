@@ -90,12 +90,10 @@ func _ready() -> void:
 
 func _draw() -> void:
 	var project := Global.current_project
-	var position_tmp := position
-	var scale_tmp := scale
-	if Global.mirror_view:
-		position_tmp.x = position_tmp.x + project.size.x
-		scale_tmp.x = -1
-	draw_set_transform(position_tmp, rotation, scale_tmp)
+	# Mirror View is applied to the whole viewport in CanvasCamera, after
+	# camera rotation. Rendering layers here in their original coordinates
+	# also keeps selection, guides and brush previews in sync.
+	draw_set_transform(position, rotation, scale)
 	# Placeholder so we can have a material here
 	var image_to_draw := project.empty_image_texture
 	draw_texture(image_to_draw, Vector2.ZERO)
@@ -205,8 +203,8 @@ func _quick_picker_matches_right_mouse(event: InputEventMouseButton) -> bool:
 ## Read the actual cel pixels, never the color shown by the cursor preview.
 ## This avoids swapping tools in the middle of an InputEvent.
 func _sample_quick_right_color(pixel: Vector2i) -> void:
-	if Global.mirror_view:
-		pixel.x = Global.current_project.size.x - pixel.x - 1
+	# The mirrored viewport transform already maps the pointer to the
+	# correct unmirrored cel pixel; do not reflect its X coordinate twice.
 	var color_picker_script := preload("res://src/Tools/UtilityTools/ColorPicker.gd")
 	var sampled: Dictionary = color_picker_script.sample_top_color(pixel)
 	Tools.assign_color(sampled["color"], MOUSE_BUTTON_LEFT, false, sampled["index"])

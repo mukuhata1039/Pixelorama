@@ -150,7 +150,7 @@ func _input(event: InputEvent) -> void:
 						true
 					)
 				else:
-					offset = offset - event.relative.rotated(camera_angle) / zoom
+					offset = offset - _unmirror_screen_vector(event.relative).rotated(camera_angle) / zoom
 					update_transparent_checker_offset()
 			else:
 				_quick_navigation_drag = false
@@ -190,10 +190,10 @@ func _input(event: InputEvent) -> void:
 		zoom_camera(zoom_strength, event.position)
 	elif event is InputEventPanGesture:
 		# Pan gesture on touchscreens
-		offset = offset + event.delta.rotated(camera_angle) * 2.0 / zoom
+		offset = offset + _unmirror_screen_vector(event.delta).rotated(camera_angle) * 2.0 / zoom
 	elif event is InputEventMouseMotion:
 		if drag:
-			offset = offset - event.relative.rotated(camera_angle) / zoom
+			offset = offset - _unmirror_screen_vector(event.relative).rotated(camera_angle) / zoom
 			update_transparent_checker_offset()
 	else:
 		var dir := Input.get_vector(&"camera_left", &"camera_right", &"camera_up", &"camera_down")
@@ -203,7 +203,7 @@ func _input(event: InputEvent) -> void:
 			and not Tools.selection_tool_has_selection()
 			and not root.is_writing_text
 		):
-			offset = offset + (dir.rotated(camera_angle) / zoom) * CAMERA_SPEED_RATE
+			offset = offset + (_unmirror_screen_vector(dir).rotated(camera_angle) / zoom) * CAMERA_SPEED_RATE
 
 
 ## Temporary canvas rotation, without modifying image pixels. All activation
@@ -299,7 +299,11 @@ func _handle_clipstudio_rotation(event: InputEvent) -> bool:
 			var current := mouse_pos - center
 			# Avoid angular jumps when a drag passes through the pivot.
 			if previous.length_squared() > 256.0 and current.length_squared() > 256.0:
-				_clipstudio_rotate_raw_angle -= previous.angle_to(current)
+				# Screen-space reflection reverses the apparent angular direction.
+				var angle_delta := previous.angle_to(current)
+				if _is_screen_mirrored():
+					angle_delta = -angle_delta
+				_clipstudio_rotate_raw_angle -= angle_delta
 				camera_angle = (
 					snappedf(_clipstudio_rotate_raw_angle, ROTATION_SNAP_ANGLE)
 					if _clipstudio_rotate_snap_active
@@ -382,7 +386,7 @@ func zoom_camera(dir: float, event_pos := mouse_pos, immediate := false) -> void
 			var new_offset := (
 				offset
 				+ (
-					(-0.5 * viewport_size + event_pos).rotated(camera_angle)
+					(-0.5 * viewport_size + _unmirror_screen_point(event_pos)).rotated(camera_angle)
 					* (Vector2.ONE / zoom - Vector2.ONE / new_zoom)
 				)
 			)
@@ -412,7 +416,7 @@ func zoom_camera(dir: float, event_pos := mouse_pos, immediate := false) -> void
 		offset = (
 			offset
 			+ (
-				(-0.5 * viewport_size + event_pos).rotated(camera_angle)
+				(-0.5 * viewport_size + _unmirror_screen_point(event_pos)).rotated(camera_angle)
 				* (Vector2.ONE / prev_zoom - Vector2.ONE / zoom)
 			)
 		)
@@ -453,7 +457,7 @@ func zoom_camera_wheel(direction: int, event_pos := mouse_pos) -> void:
 	# in the same screen position when the wheel zoom has finished.
 	var next_offset := (
 		offset
-		+ (-0.5 * viewport_container.size + event_pos).rotated(camera_angle)
+		+ (-0.5 * viewport_container.size + _unmirror_screen_point(event_pos)).rotated(camera_angle)
 		* (Vector2.ONE / zoom - Vector2.ONE / next_zoom)
 	)
 	_wheel_zoom_target = next_percent
@@ -518,6 +522,30 @@ func update_transparent_checker_offset() -> void:
 
 ## Updates the viewport's canvas transform, which is the area of the canvas that is
 ## currently visible. Called every time the camera's zoom, rotation or origin changes.
+## Mirror the rendered viewport around its vertical screen axis, *after*
+## camera rotation. Mirroring the image's local X axis instead is incorrect
+## whenever the canvas is rotated. The viewport transform also makes
+## CanvasItem.get_local_mouse_position() automatically return the unmirrored
+## document coordinate, with no manual X correction in the brush/tools.
+func _is_screen_mirrored() -> bool:
+	return index == Cameras.MAIN and Global.mirror_view
+
+
+func _unmirror_screen_vector(vector: Vector2) -> Vector2:
+	return Vector2(-vector.x, vector.y) if _is_screen_mirrored() else vector
+
+
+func _unmirror_screen_point(point: Vector2) -> Vector2:
+	if _is_screen_mirrored():
+		return Vector2(viewport_container.size.x - point.x, point.y)
+	return point
+
+
+func refresh_mirror_view() -> void:
+	_update_viewport_transform()
+	update_transparent_checker_offset()
+
+
 func _update_viewport_transform() -> void:
 	if not is_instance_valid(viewport):
 		return
@@ -527,7 +555,15 @@ func _update_viewport_transform() -> void:
 	var screen_offset := -(half_size * zoom_scale).rotated(camera_angle) + offset
 	var xform := Transform2D(camera_angle, zoom_scale, 0, screen_offset)
 	camera_screen_center = xform * half_size
-	viewport.canvas_transform = xform.affine_inverse()
+	var screen_transform := xform.affine_inverse()
+	if _is_screen_mirrored():
+		var screen_mirror := Transform2D(
+			Vector2(-1.0, 0.0),
+			Vector2(0.0, 1.0),
+			Vector2(viewport_size.x, 0.0)
+		)
+		screen_transform = screen_mirror * screen_transform
+	viewport.canvas_transform = screen_transform
 
 
 func _zoom_changed() -> void:

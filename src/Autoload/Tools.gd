@@ -1049,9 +1049,9 @@ func handle_draw(position: Vector2i, event: InputEvent) -> void:
 	if not Global.can_draw:
 		return
 
+	# CanvasCamera handles Mirror View in the viewport transform, so
+	# this coordinate is already in the original image's pixel space.
 	var draw_pos := position
-	if Global.mirror_view:
-		draw_pos.x = Global.current_project.size.x - position.x - 1
 	if event is InputEventGesture:
 		if active_button == MOUSE_BUTTON_LEFT:
 			_slots[active_button].tool_node.cancel_tool()

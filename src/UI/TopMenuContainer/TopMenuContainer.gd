@@ -1099,14 +1099,11 @@ func _on_delete_layout_confirmation_visibility_changed() -> void:
 
 func _toggle_mirror_view() -> void:
 	Global.mirror_view = !Global.mirror_view
-	var marching_ants_outline: Sprite2D = Global.canvas.selection.marching_ants_outline
-	marching_ants_outline.scale.x = -marching_ants_outline.scale.x
-	if Global.mirror_view:
-		marching_ants_outline.position.x = (
-			marching_ants_outline.position.x + Global.current_project.size.x
-		)
-	else:
-		Global.canvas.selection.marching_ants_outline.position.x = 0
+	# Reflect the entire canvas viewport about the vertical axis of the
+	# *screen*. This must happen after camera rotation, without modifying
+	# image pixels or manually flipping the selection outline.
+	Global.camera.refresh_mirror_view()
+	Global.canvas.queue_redraw()
 	Global.canvas.selection.queue_redraw()
 	view_menu.set_item_checked(Global.ViewMenu.MIRROR_VIEW, Global.mirror_view)
 
