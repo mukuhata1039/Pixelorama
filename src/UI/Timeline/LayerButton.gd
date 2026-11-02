@@ -67,6 +67,14 @@ func _ready() -> void:
 	layer.ui_color_changed.connect(func(): layer_ui_color.color = layer.get_ui_color())
 	if layer is PixelLayer:
 		_setup_drawing_color_lock_button(layer)
+	else:
+		# Keep the color-lock slot even when the layer cannot use this tool.
+		_add_control_spacer("DrawingColorLockSpacer")
+	if not layer is PixelLayer and not layer is GroupLayer:
+		# Pixel layers use LinkButton; groups use ExpandButton. Other types
+		# need an empty action slot so the name starts at the same x position.
+		var action_spacer := _add_control_spacer("LayerActionSpacer")
+		$HBoxContainer.move_child(action_spacer, linked_button.get_index())
 	_setup_target_visibility_button(layer)
 	for ancestor in layer.get_ancestors():
 		ancestor.ui_color_changed.connect(func(): layer_ui_color.color = layer.get_ui_color())
@@ -103,6 +111,17 @@ func _ready() -> void:
 	hierarchy_spacer.layer_index = layer_index
 	update_buttons()
 	apply_compact_layout(Global.animation_timeline.compact_timeline)
+
+
+## Empty, non-interactive controls reserve the same icon columns for every
+## layer type. Without them a group header begins 28px before a pixel header
+## (20px in compact mode), shifting the hierarchy guides and layer names.
+func _add_control_spacer(spacer_name: String) -> Control:
+	var spacer := Control.new()
+	spacer.name = spacer_name
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$HBoxContainer.add_child(spacer)
+	return spacer
 
 
 ## Add Aseprite-like color lock after eye, padlock and link/group controls.
@@ -234,15 +253,18 @@ func _on_target_visibility_button_pressed() -> void:
 func apply_compact_layout(enabled: bool) -> void:
 	var buttons := $HBoxContainer as HBoxContainer
 	var button_size := Vector2(20, 20) if enabled else Vector2(28, 22)
-	var button_count := 4 if is_instance_valid(drawing_color_lock_button) else 3
-	if is_instance_valid(target_visibility_button):
-		button_count += 1
-	buttons.custom_minimum_size.x = button_count * int(button_size.x)
+	# Fixed columns: visibility, lock, link/expand, drawing-color lock, pin.
+	# Never let the presence of an action icon move the hierarchy/name column.
+	buttons.custom_minimum_size.x = 5 * int(button_size.x)
 	var half_icon := 9.0 if enabled else 11.0
-	for button in buttons.get_children():
-		if button is not Button:
+	for child in buttons.get_children():
+		if not child is Control:
 			continue
-		button.custom_minimum_size = button_size
+		var control := child as Control
+		control.custom_minimum_size = button_size
+		if not control is Button:
+			continue
+		var button := control as Button
 		# Fit the original 22px icon within the compact 20px row as an
 		# 18px texture, centered in a 20x20 click target.
 		button.clip_contents = enabled
