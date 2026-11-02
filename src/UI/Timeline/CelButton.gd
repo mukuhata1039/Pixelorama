@@ -655,30 +655,9 @@ static func _clone_cel_content(indices: Array, paste_offset := Vector2i.RIGHT) -
 
 
 func _delete_cel_content() -> void:
-	var indices := _get_cel_indices()
-	var project := Global.current_project
-	project.undo_redo.create_action("Draw")
-	for cel_index in indices:
-		var frame_index: int = cel_index[0]
-		var layer_index: int = cel_index[1]
-		var selected_cel := project.frames[frame_index].cels[layer_index]
-		var empty_content = selected_cel.create_empty_content()
-		var old_content = selected_cel.get_content()
-		if selected_cel.link_set == null:
-			project.undo_redo.add_do_method(selected_cel.set_content.bind(empty_content))
-			project.undo_redo.add_undo_method(selected_cel.set_content.bind(old_content))
-		else:
-			for linked_cel in selected_cel.link_set["cels"]:
-				project.undo_redo.add_do_method(linked_cel.set_content.bind(empty_content))
-				project.undo_redo.add_undo_method(linked_cel.set_content.bind(old_content))
-		project.undo_redo.add_do_method(
-			Global.undo_or_redo.bind(false, frame_index, layer_index, project)
-		)
-		project.undo_redo.add_undo_method(
-			Global.undo_or_redo.bind(true, frame_index, layer_index, project)
-		)
-	project.undo_redo.commit_action()
-
+	# The context menu and the Delete key use the same safe multi-cel
+	# implementation, including linked cels and Undo/Redo.
+	Global.animation_timeline.clear_cel_contents(_get_cel_indices())
 
 func _dim_checker() -> void:
 	var image := cel.get_image()
