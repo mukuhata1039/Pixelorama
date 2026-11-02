@@ -27,9 +27,10 @@ This file records requested future Pixelorama changes. Items below are **not imp
 
 **Expected behavior**
 - Drop multiple PNG files from Explorer onto the first target cel in the timeline.
-- Fill sequential existing frames on the same PixelLayer in natural filename order (e.g. `1.png`, `2.png`, `10.png`).
-- Do not overwrite any occupied/linked destination, and reject batches if there are insufficient frames.
-- Validate the entire batch before any mutation and support one-step Undo.
+- Fill sequential existing empty frames on the same PixelLayer in natural filename order (e.g. `1.png`, `2.png`, `10.png`).
+- Automatically append **only the missing frames** when the sequence exceeds the current timeline length.
+- Do not overwrite any occupied/linked existing destination; reject the whole import without modifying the project in that case.
+- Validate the complete batch before any mutation, and undo/redo the imported pixels **and added frames** as one action.
 - Keep the existing image import dialogs for drops outside the timeline grid.
 
-**Verification:** Drop five consecutively numbered PNGs on five empty timeline cels, check their order and undo/redo. Verify busy frame, non-pixel/locked layer, linked cel, too few frames, and dropping outside the grid.
+**Verification:** Drop five consecutively numbered PNGs on five empty timeline cels, check their order and undo/redo. Verify occupied frame, non-pixel/locked layer, linked cel, automatic frame append, undo/redo of appended frames, and dropping outside the grid.
