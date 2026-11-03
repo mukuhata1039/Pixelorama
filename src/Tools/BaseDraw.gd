@@ -451,6 +451,8 @@ func draw_end(pos: Vector2i) -> void:
 
 func cancel_tool() -> void:
 	super()
+	# Restore the original full-composite path after a cancelled brush stroke.
+	Global.canvas.finish_brush_profile()
 	# A canceled stroke must not retain a full-canvas coverage image or
 	# copies of the original cel images until the next time a tool is used.
 	_dither_stroke_coverage = null
