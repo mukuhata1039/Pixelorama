@@ -199,7 +199,7 @@ func draw_move(pos_i: Vector2i) -> void:
 		# Keep the existing Shift+drag behavior. A movement of at least
 		# three canvas pixels makes the mouse-down point the line start;
 		# a click (including tiny pointer jitter) uses the previous endpoint.
-		if _shift_click_uses_anchor and (pos - _shift_click_press_pos).length_squared() >= 9:
+		if _shift_click_uses_anchor and (Vector2i(pos) - _shift_click_press_pos).length_squared() >= 9:
 			_shift_click_uses_anchor = false
 			_line_start = _shift_click_press_pos
 			if Global.mirror_view:
