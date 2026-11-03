@@ -163,7 +163,12 @@ func open_for_layer(layer: BaseLayer) -> void:
 	_project = layer.project
 	_target_label.text = "対象: " + layer.name
 	var settings: Dictionary = layer.gallery_settings
+	# New top-level layers should default to a toggle group, so the user
+	# does not need to open the import-mode dropdown every time. Child layers
+	# keep inheritance, and existing metadata always keeps its saved meaning.
 	var selected_mode := Mode.INHERIT
+	if settings.is_empty() and not is_instance_valid(layer.parent):
+		selected_mode = Mode.TOGGLE
 	match str(settings.get("mode", "")):
 		"toggle":
 			selected_mode = Mode.TOGGLE
