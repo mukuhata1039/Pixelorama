@@ -26,10 +26,11 @@ grow_vertical = 2
 custom_minimum_size = Vector2(120, 0)
 layout_mode = 2
 size_flags_vertical = 3
-item_count = 3
+item_count = 4
 item_0/text = "General"
 item_1/text = "Tilesets"
 item_2/text = "Author"
+item_3/text = "ギャラリー"
 
 [node name="VBoxContainer" type="VBoxContainer" parent="HSplitContainer" unique_id=1487218891]
 layout_mode = 2
@@ -132,6 +133,35 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 scroll_fit_content_height = true
+
+[node name="GalleryContainer" type="VBoxContainer" parent="HSplitContainer/VBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="GalleryHeader" type="HBoxContainer" parent="HSplitContainer/VBoxContainer/GalleryContainer"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="GalleryTitle" type="Label" parent="HSplitContainer/VBoxContainer/GalleryContainer/GalleryHeader"]
+layout_mode = 2
+theme_type_variation = &"HeaderSmall"
+text = "ギャラリー設定（作品全体）"
+
+[node name="GallerySeparator" type="HSeparator" parent="HSplitContainer/VBoxContainer/GalleryContainer/GalleryHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="GalleryImportCheckBox" type="CheckBox" parent="HSplitContainer/VBoxContainer/GalleryContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "ギャラリーへの取り込みを許可"
+
+[node name="GalleryImportDescription" type="Label" parent="HSplitContainer/VBoxContainer/GalleryContainer"]
+layout_mode = 2
+text = "ON：Godot側の自動取り込みを許可します。\nOFF：取り込み対象から除外します。\n\n初期値はOFFです。レイヤーごとのギャラリー設定とは独立しています。変更後はPXOファイルを保存してください。"
+autowrap_mode = 2
 
 [node name="TilesetsContainer" type="VBoxContainer" parent="HSplitContainer/VBoxContainer" unique_id=2103412727]
 unique_name_in_owner = true
@@ -256,6 +286,7 @@ mouse_filter = 1
 [connection signal="text_changed" from="HSplitContainer/VBoxContainer/GeneralContainer/GridContainer/NameLineEdit" to="." method="_on_name_line_edit_text_changed"]
 [connection signal="text_changed" from="HSplitContainer/VBoxContainer/GeneralContainer/GridContainer/LicenseTextEdit" to="." method="_on_license_text_edit_text_changed"]
 [connection signal="text_changed" from="HSplitContainer/VBoxContainer/GeneralContainer/GridContainer/UserDataTextEdit" to="." method="_on_user_data_text_edit_text_changed"]
+[connection signal="toggled" from="HSplitContainer/VBoxContainer/GalleryContainer/GalleryImportCheckBox" to="." method="_on_gallery_import_check_box_toggled"]
 [connection signal="text_changed" from="HSplitContainer/VBoxContainer/TilesetsContainer/FilterByNameEdit" to="." method="_on_filter_by_name_line_edit_text_changed"]
 [connection signal="button_clicked" from="HSplitContainer/VBoxContainer/TilesetsContainer/PanelContainer/TilesetsList" to="." method="_on_tilesets_list_button_clicked"]
 [connection signal="item_activated" from="HSplitContainer/VBoxContainer/TilesetsContainer/PanelContainer/TilesetsList" to="." method="_on_tilesets_list_item_activated"]
