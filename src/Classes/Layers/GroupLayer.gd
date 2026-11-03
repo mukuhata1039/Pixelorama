@@ -17,6 +17,7 @@ var _stroke_texture_array: Texture2DArray
 var _stroke_metadata_texture: ImageTexture
 var _stroke_child_index := -1
 var _stroke_image_format := Image.FORMAT_RGBA8
+var _stroke_has_mipmaps := false
 var _stroke_animate_params := false
 var _stroke_apply_effects := false
 
@@ -56,7 +57,6 @@ func _get_stroke_child_index(frame: Frame, children: Array[BaseLayer]) -> int:
 	return children.find(painted_layer)
 
 
-
 func _init(_project: Project, _name := "") -> void:
 	super(_project, _name)
 	blend_mode = BlendModes.PASS_THROUGH
@@ -90,6 +90,7 @@ func blend_children(frame: Frame, animate_params := true, apply_effects := true)
 			changed_image.get_size()
 			== Vector2i(_stroke_texture_array.get_width(), _stroke_texture_array.get_height())
 			and changed_image.get_format() == _stroke_image_format
+			and changed_image.has_mipmaps() == _stroke_has_mipmaps
 		):
 			_stroke_texture_array.update_layer(changed_image, painted_child_index)
 			_blend_generator.generate_image(
@@ -153,6 +154,7 @@ func blend_children(frame: Frame, animate_params := true, apply_effects := true)
 			_stroke_metadata_texture = metadata_texture
 			_stroke_child_index = painted_child_index
 			_stroke_image_format = textures[painted_child_index].get_format()
+			_stroke_has_mipmaps = textures[painted_child_index].has_mipmaps()
 			_stroke_animate_params = animate_params
 			_stroke_apply_effects = apply_effects
 			_cache_texture_data.clear()
