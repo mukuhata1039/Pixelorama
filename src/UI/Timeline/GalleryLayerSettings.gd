@@ -8,8 +8,15 @@ extends ConfirmationDialog
 ##   "mode": "toggle" | "always" | "exclude",
 ##   "toggle_group": "shirt",  # only relevant for mode=toggle
 ##   "variant_group": "ghost_top",  # mutually exclusive variant family
-##   "conditions": {"shirt": true, "bra": false}  # unset = don't care
+##   "conditions": {"shirt": true, "bra": false},  # unset = don't care
+##   "condition_logic": "or"  # optional; defaults to "and"
 ## }
+##
+## Evaluate only specified conditions: AND requires all to match, OR requires
+## at least one to match. With no conditions the layer is unconditional for
+## either mode. The future importer should AND each layer's resulting condition
+## expression with its ancestors' expressions, while preserving each layer's
+## chosen AND/OR logic.
 ##
 ## Children inherit their parent mode, toggle_group, and variant_group unless
 ## overridden. Conditions on ancestors and descendants are combined by the
@@ -27,6 +34,7 @@ const CONDITION_IDS := ["panty", "bra", "shirt", "skirt", "socks", "shoes"]
 const CONDITION_NAMES := ["パンティ", "ブラ", "シャツ", "スカート", "靴下", "靴"]
 
 enum Mode { INHERIT, TOGGLE, ALWAYS, EXCLUDE }
+enum ConditionLogic { AND, OR }
 
 var _layer: BaseLayer
 var _project: Project
@@ -37,6 +45,7 @@ var _group_box: VBoxContainer
 var _effective_group_label: Label
 var _variant_line_edit: LineEdit
 var _effective_variant_label: Label
+var _condition_logic_button: OptionButton
 var _condition_container: VBoxContainer
 var _condition_buttons: Dictionary = {}
 var _condition_rows: Dictionary = {}
@@ -104,6 +113,12 @@ func _ready() -> void:
 	_variant_line_edit.text_changed.connect(func(_text: String): _validate())
 
 	_add_label(content, "表示条件（『問わない』なら条件なし）")
+	_add_label(content, "条件の結合方法")
+	_condition_logic_button = OptionButton.new()
+	_condition_logic_button.add_item("AND（すべての条件を満たす）", ConditionLogic.AND)
+	_condition_logic_button.add_item("OR（どれか1つでも条件を満たす）", ConditionLogic.OR)
+	_condition_logic_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content.add_child(_condition_logic_button)
 	_condition_container = VBoxContainer.new()
 	content.add_child(_condition_container)
 
@@ -156,6 +171,10 @@ func open_for_layer(layer: BaseLayer) -> void:
 	_mode_button.select(selected_mode)
 	_group_line_edit.text = str(settings.get("toggle_group", ""))
 	_variant_line_edit.text = str(settings.get("variant_group", ""))
+	_condition_logic_button.select(
+		ConditionLogic.OR if str(settings.get("condition_logic", "and")) == "or"
+		else ConditionLogic.AND
+	)
 	_on_mode_selected(selected_mode)
 
 	for key in _condition_rows.keys():
@@ -343,6 +362,9 @@ func _save_settings() -> void:
 				conditions[key] = false
 	if not conditions.is_empty():
 		data["conditions"] = conditions
+	# Omit the default so existing PXO files stay backward compatible.
+	if _condition_logic_button.get_selected_id() == ConditionLogic.OR:
+		data["condition_logic"] = "or"
 	var old_data := _layer.gallery_settings.duplicate(true)
 	if old_data == data:
 		return
