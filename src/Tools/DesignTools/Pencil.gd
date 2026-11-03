@@ -2,6 +2,18 @@ extends BaseDrawTool
 
 var _prev_mode := false
 var _last_position := Vector2i(Vector2.INF)
+# Position of the last completed pencil stroke, for Shift+click straight lines.
+# Scoped to the same project, frame and layer so a click never joins other cels.
+var _line_anchor := Vector2i(Vector2.INF)
+var _line_anchor_project: Project
+var _line_anchor_frame := -1
+var _line_anchor_layer := -1
+var _shift_click_press_pos := Vector2i(Vector2.INF)
+var _shift_click_uses_anchor := false
+# Cache the cursor-to-anchor outline until the pointer or brush actually changes.
+var _hover_line_start := Vector2i(Vector2.INF)
+var _hover_line_end := Vector2i(Vector2.INF)
+var _hover_line_indicator: BitMap
 var _changed := false
 var _overwrite := false
 var _fill_inside := false
@@ -30,6 +42,32 @@ class PencilOp:
 
 func _init() -> void:
 	_drawer.color_op = PencilOp.new()
+
+
+func _ready() -> void:
+	super._ready()
+	Global.cel_switched.connect(_clear_line_anchor)
+	Global.project_switched.connect(_clear_line_anchor)
+
+
+func _clear_line_anchor() -> void:
+	_line_anchor = Vector2i(Vector2.INF)
+	_line_anchor_project = null
+	_line_anchor_frame = -1
+	_line_anchor_layer = -1
+	_shift_click_uses_anchor = false
+	_hover_line_start = Vector2i(Vector2.INF)
+	_hover_line_end = Vector2i(Vector2.INF)
+	_hover_line_indicator = null
+
+
+func cancel_tool() -> void:
+	var was_drawing := is_moving
+	super.cancel_tool()
+	_clear_line_anchor()
+	_draw_line = false
+	if was_drawing:
+		_spacing_mode = _old_spacing_mode
 
 
 func _on_Overwrite_toggled(button_pressed: bool) -> void:
@@ -98,9 +136,63 @@ func update_config() -> void:
 	$Spacing.value = _spacing
 
 
+## The existing line-outline renderer is also used before a click. Holding
+## Shift displays the would-be segment from the previous completed endpoint
+## to the cursor, without editing any pixels or creating an undo action.
+func draw_indicator(left: bool) -> void:
+	var project := Global.current_project
+	if (
+		is_moving
+		or Tools.active_button != -1
+		or not Input.is_action_pressed(&"draw_create_line")
+		or Input.is_action_pressed(&"change_layer_automatically", true)
+		or _line_anchor == Vector2i(Vector2.INF)
+		or _line_anchor_project != project
+		or _line_anchor_frame != project.current_frame
+		or _line_anchor_layer != project.current_layer
+		or not Rect2i(Vector2i.ZERO, project.size).has_point(_cursor)
+	):
+		super.draw_indicator(left)
+		return
+
+	var start := _line_anchor
+	var end := Vector2i(snap_position(_cursor))
+	if Global.mirror_view:
+		start.x = (project.size.x - 1) - start.x
+		end.x = (project.size.x - 1) - end.x
+	end = _line_angle_constraint(start, end).position
+	if (
+		start != _hover_line_start
+		or end != _hover_line_end
+		or _hover_line_indicator != _indicator
+	):
+		update_line_polylines(start, end)
+		_hover_line_start = start
+		_hover_line_end = end
+		_hover_line_indicator = _indicator
+
+	# Reuse the exact brush-footprint outline shown during Shift-drag, so
+	# previews remain consistent for 1px, large, dither, and custom brushes.
+	var saved_start := _line_start
+	var saved_end := _line_end
+	_line_start = start
+	_line_end = end
+	_draw_line = true
+	super.draw_indicator(left)
+	_draw_line = false
+	_line_start = saved_start
+	_line_end = saved_end
+
+
 func draw_start(pos: Vector2i) -> void:
 	_old_spacing_mode = _spacing_mode
 	pos = snap_position(pos)
+	_shift_click_press_pos = pos
+	_shift_click_uses_anchor = false
+	# Active Shift-drag reuses _line_polylines, so its next hover preview
+	# must rebuild the outline even if the cursor ends at the same pixel.
+	_hover_line_start = Vector2i(Vector2.INF)
+	_hover_line_end = Vector2i(Vector2.INF)
 	super.draw_start(pos)
 
 	Global.transform_content_confirmed.emit()
@@ -118,18 +210,32 @@ func draw_start(pos: Vector2i) -> void:
 
 	_draw_line = Input.is_action_pressed("draw_create_line")
 	var project := Global.current_project
+	var current_cel := project.get_current_cel()
 	var draw_pos := pos
-	if project.get_current_cel() is Cel3D:
+	if current_cel is Cel3D:
 		var layer := project.layers[project.current_layer] as Layer3D
 		draw_pos = draw_on_3d_object(pos, layer)
 		if draw_pos == Vector2i(Vector2.INF):
 			return
 	if _draw_line:
 		_spacing_mode = false  # spacing mode is disabled during line mode
+		var line_start := pos
+		if (
+			current_cel is PixelCel
+			and not current_cel is CelTileMap
+			and _line_anchor != Vector2i(Vector2.INF)
+			and _line_anchor_project == project
+			and _line_anchor_frame == project.current_frame
+			and _line_anchor_layer == project.current_layer
+		):
+			# Shift+click begins at the endpoint of the last stroke, not here.
+			line_start = _line_anchor
+			_shift_click_uses_anchor = true
 		if Global.mirror_view:
-			# mirroring position is ONLY required by "Preview"
-			pos.x = (Global.current_project.size.x - 1) - pos.x
-		_line_start = pos
+			# Only the line preview needs mirrored coordinates.
+			line_start.x = (project.size.x - 1) - line_start.x
+			pos.x = (project.size.x - 1) - pos.x
+		_line_start = line_start
 		_line_end = pos
 		update_line_polylines(_line_start, _line_end)
 	else:
@@ -149,6 +255,14 @@ func draw_move(pos_i: Vector2i) -> void:
 
 	if _draw_line:
 		_spacing_mode = false  # spacing mode is disabled during line mode
+		# Keep the existing Shift+drag behavior. A movement of at least
+		# three canvas pixels makes the mouse-down point the line start;
+		# a click (including tiny pointer jitter) uses the previous endpoint.
+		if _shift_click_uses_anchor and (Vector2i(pos) - _shift_click_press_pos).length_squared() >= 9:
+			_shift_click_uses_anchor = false
+			_line_start = _shift_click_press_pos
+			if Global.mirror_view:
+				_line_start.x = (Global.current_project.size.x - 1) - _line_start.x
 		if Global.mirror_view:
 			# mirroring position is ONLY required by "Preview"
 			pos.x = (Global.current_project.size.x - 1) - pos.x
@@ -170,6 +284,7 @@ func draw_move(pos_i: Vector2i) -> void:
 
 func draw_end(pos: Vector2i) -> void:
 	pos = snap_position(pos)
+	var stroke_end := _last_position
 
 	if _draw_line:
 		_spacing_mode = false  # spacing mode is disabled during line mode
@@ -179,6 +294,7 @@ func draw_end(pos: Vector2i) -> void:
 			_line_end.x = (Global.current_project.size.x - 1) - _line_end.x
 		draw_tool(_line_start)
 		draw_fill_gap(_line_start, _line_end)
+		stroke_end = _line_end
 		_draw_line = false
 	else:
 		if _fill_inside:
@@ -199,6 +315,17 @@ func draw_end(pos: Vector2i) -> void:
 	_fill_inside_rect = Rect2i()
 	commit_undo()
 	super.draw_end(pos)
+	# The next Shift+click can now continue from this stroke's endpoint.
+	var project := Global.current_project
+	var cel := project.get_current_cel()
+	if cel is PixelCel and not cel is CelTileMap:
+		_line_anchor = stroke_end
+		_line_anchor_project = project
+		_line_anchor_frame = project.current_frame
+		_line_anchor_layer = project.current_layer
+	else:
+		_clear_line_anchor()
+	_shift_click_uses_anchor = false
 	cursor_text = ""
 	update_random_image()
 	_spacing_mode = _old_spacing_mode
