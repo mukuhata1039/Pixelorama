@@ -34,7 +34,9 @@ var _target_label: Label
 var _mode_button: OptionButton
 var _group_line_edit: LineEdit
 var _group_box: VBoxContainer
+var _effective_group_label: Label
 var _variant_line_edit: LineEdit
+var _effective_variant_label: Label
 var _condition_container: VBoxContainer
 var _condition_buttons: Dictionary = {}
 var _condition_rows: Dictionary = {}
@@ -75,6 +77,7 @@ func _ready() -> void:
 	_group_box = VBoxContainer.new()
 	_group_box.add_child(_add_label_unparented("操作グループ"))
 	content.add_child(_group_box)
+	_effective_group_label = _add_label(content, "")
 	var group_row := HBoxContainer.new()
 	_group_box.add_child(group_row)
 	var group_picker := OptionButton.new()
@@ -97,6 +100,7 @@ func _ready() -> void:
 	_variant_line_edit = LineEdit.new()
 	_variant_line_edit.placeholder_text = "同じ位置で切り替える差分を同じIDにする"
 	content.add_child(_variant_line_edit)
+	_effective_variant_label = _add_label(content, "")
 	_variant_line_edit.text_changed.connect(func(_text: String): _validate())
 
 	_add_label(content, "表示条件（『問わない』なら条件なし）")
@@ -242,6 +246,73 @@ func _validate() -> void:
 	)
 	var variant_invalid := not variant_id.is_empty() and not variant_id.is_valid_identifier()
 	get_ok_button().disabled = group_invalid or variant_invalid
+	_refresh_effective_settings()
+
+
+## Shows the resolved values without copying inherited metadata onto this layer.
+## Local edits change the preview immediately but are only saved on confirmation.
+func _refresh_effective_settings() -> void:
+	if not is_instance_valid(_layer):
+		return
+	match _mode_button.get_selected_id():
+		Mode.TOGGLE:
+			var group_name := _group_line_edit.text.strip_edges()
+			_effective_group_label.text = "操作グループ：" + group_name + "（このレイヤーで設定）"
+		Mode.ALWAYS:
+			_effective_group_label.text = "操作グループ：なし（常に表示）"
+		Mode.EXCLUDE:
+			_effective_group_label.text = "操作グループ：なし（ギャラリーから除外）"
+		Mode.INHERIT:
+			_effective_group_label.text = _get_inherited_mode_description()
+
+	var own_variant := _variant_line_edit.text.strip_edges()
+	var parent_variant := _find_parent_value("variant_group")
+	if not own_variant.is_empty():
+		_effective_variant_label.text = (
+			"差分グループ：" + own_variant + "（このレイヤーで設定）"
+		)
+	elif not parent_variant.is_empty():
+		var inherited_variant := str(parent_variant["value"])
+		_effective_variant_label.text = (
+			"差分グループ：" + inherited_variant
+			+ "（親「" + str(parent_variant["source"]) + "」から継承）"
+		)
+	else:
+		_effective_variant_label.text = "差分グループ：なし"
+	_variant_line_edit.placeholder_text = (
+		"空欄なら親から継承（" + str(parent_variant["value"]) + "）"
+		if not parent_variant.is_empty()
+		else "任意・例: ghost_top"
+	)
+
+
+func _get_inherited_mode_description() -> String:
+	var ancestor := _layer.parent
+	while is_instance_valid(ancestor):
+		var inherited_settings: Dictionary = ancestor.gallery_settings
+		var mode := str(inherited_settings.get("mode", ""))
+		match mode:
+			"toggle":
+				return (
+					"操作グループ：" + str(inherited_settings.get("toggle_group", ""))
+					+ "（親「" + ancestor.name + "」から継承）"
+				)
+			"always":
+				return "操作グループ：なし（親「" + ancestor.name + "」の常時表示を継承）"
+			"exclude":
+				return "操作グループ：なし（親「" + ancestor.name + "」の除外を継承）"
+		ancestor = ancestor.parent
+	return "操作グループ：なし（親に設定なし・ギャラリーから除外）"
+
+
+func _find_parent_value(key: String) -> Dictionary:
+	var ancestor := _layer.parent
+	while is_instance_valid(ancestor):
+		var value := str(ancestor.gallery_settings.get(key, "")).strip_edges()
+		if not value.is_empty():
+			return {"value": value, "source": ancestor.name}
+		ancestor = ancestor.parent
+	return {}
 
 
 func _save_settings() -> void:
