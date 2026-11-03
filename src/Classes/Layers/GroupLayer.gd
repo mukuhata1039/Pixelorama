@@ -32,7 +32,13 @@ func _get_stroke_child_index(frame: Frame, children: Array[BaseLayer]) -> int:
 	var canvas := Global.canvas
 	if not is_instance_valid(canvas) or not canvas.brush_profile_active:
 		return -1
-	if canvas.update_all_layers or not canvas.mandatory_update_layers.is_empty():
+	if (
+		canvas.update_all_layers
+		or canvas.project_changed
+		or canvas.live_recolor_enabled
+		or not canvas.mandatory_update_layers.is_empty()
+		or project != Global.current_project
+	):
 		return -1
 	if frame != project.frames[project.current_frame] or project.selected_cels.size() != 1:
 		return -1
