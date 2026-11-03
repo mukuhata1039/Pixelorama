@@ -53,7 +53,8 @@ func _ready() -> void:
 	scroll.custom_minimum_size = Vector2(510, 470)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	get_vbox().add_child(scroll)
+	# AcceptDialog lays out direct Control children above its buttons.
+	add_child(scroll)
 
 	var content := VBoxContainer.new()
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
