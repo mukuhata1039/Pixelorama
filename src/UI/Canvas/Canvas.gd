@@ -746,6 +746,8 @@ func refresh_onion() -> void:
 
 
 func _on_project_about_to_switch() -> void:
+	brush_profile_active = false
+	clear_brush_group_caches()
 	clear_playback_frame_cache()
 	var project := Global.current_project
 	_unbind_playback_cache_project(project)
