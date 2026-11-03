@@ -102,6 +102,9 @@ func _ready() -> void:
 		func(index: int):
 			if index > 0:
 				_group_line_edit.text = GROUP_IDS[index - 1]
+				# Setting LineEdit.text from code does not emit text_changed.
+				# Refresh Save validity and the effective-group preview explicitly.
+				_validate()
 	)
 	_group_line_edit.text_changed.connect(func(_text: String): _validate())
 
