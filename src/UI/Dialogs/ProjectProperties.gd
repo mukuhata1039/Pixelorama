@@ -1,6 +1,6 @@
 extends AcceptDialog
 
-enum Tabs { GENERAL, TILESETS, AUTHOR }
+enum Tabs { GENERAL, TILESETS, AUTHOR, GALLERY }
 
 const SAVE_TEXTURE := preload("uid://cvc120a27s57m")
 const DUPLICATE_TEXTURE := preload("res://assets/graphics/timeline/copy_frame.png")
@@ -18,6 +18,9 @@ var _current_tileset_name_filter: String
 @onready var name_line_edit := %NameLineEdit as LineEdit
 @onready var license_text_edit := %LicenseTextEdit as TextEdit
 @onready var user_data_text_edit := %UserDataTextEdit as TextEdit
+
+@onready var gallery_container := %GalleryContainer as VBoxContainer
+@onready var gallery_import_check_box := %GalleryImportCheckBox as CheckBox
 
 @onready var tilesets_container := %TilesetsContainer as VBoxContainer
 @onready var tilesets_list := %TilesetsList as Tree
@@ -51,6 +54,7 @@ func _on_visibility_changed() -> void:
 	name_line_edit.text = project.name
 	license_text_edit.text = project.license
 	user_data_text_edit.text = project.user_data
+	gallery_import_check_box.set_pressed_no_signal(project.gallery_import_enabled)
 	filter_by_name_edit.text = ""
 	display_name_value_label.text = project.author_display_name
 	real_name_value_label.text = project.author_real_name
@@ -66,6 +70,7 @@ func _on_list_item_selected(index: int) -> void:
 	general_container.hide()
 	tilesets_container.hide()
 	author_container.hide()
+	gallery_container.hide()
 	match index:
 		Tabs.GENERAL:
 			general_container.show()
@@ -73,6 +78,8 @@ func _on_list_item_selected(index: int) -> void:
 			tilesets_container.show()
 		Tabs.AUTHOR:
 			author_container.show()
+		Tabs.GALLERY:
+			gallery_container.show()
 
 
 func _on_filter_by_name_line_edit_text_changed(new_text: String) -> void:
@@ -197,6 +204,20 @@ func _on_license_text_edit_text_changed() -> void:
 
 func _on_user_data_text_edit_text_changed() -> void:
 	Global.current_project.user_data = user_data_text_edit.text
+
+
+## This is a file-wide opt-in, independent of per-layer gallery settings.
+## Undo/redo marks the project dirty so the permission is written on save.
+func _on_gallery_import_check_box_toggled(allowed: bool) -> void:
+	var project := Global.current_project
+	if project.gallery_import_enabled == allowed:
+		return
+	project.undo_redo.create_action("Change Gallery Import Permission")
+	project.undo_redo.add_do_property(project, "gallery_import_enabled", allowed)
+	project.undo_redo.add_undo_property(project, "gallery_import_enabled", project.gallery_import_enabled)
+	project.undo_redo.add_do_method(Global.undo_or_redo.bind(false))
+	project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true))
+	project.undo_redo.commit_action()
 
 
 func _on_tilesets_list_button_clicked(item: TreeItem, column: int, id: int, _mbi: int) -> void:
