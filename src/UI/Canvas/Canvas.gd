@@ -360,6 +360,8 @@ func _input(event: InputEvent) -> void:
 
 ## These numbers measure CPU call times, NOT asynchronous GPU execution.
 func begin_brush_profile() -> void:
+	# A lost mouse-release must not leak a previous stroke's group textures.
+	clear_brush_group_caches()
 	brush_profile_active = true
 	brush_profile_texture_us = 0
 	brush_profile_texture_calls = 0
@@ -367,8 +369,15 @@ func begin_brush_profile() -> void:
 	brush_profile_layers_calls = 0
 
 
+func clear_brush_group_caches() -> void:
+	for layer in Global.current_project.layers:
+		if layer is GroupLayer:
+			(layer as GroupLayer).clear_stroke_blend_cache()
+
+
 func finish_brush_profile() -> Dictionary:
 	brush_profile_active = false
+	clear_brush_group_caches()
 	return {
 		"texture_us": brush_profile_texture_us,
 		"texture_calls": brush_profile_texture_calls,
@@ -662,6 +671,10 @@ func draw_layers(force_recreate := false, allow_playback_cache := false) -> void
 			var update_started_us := (
 				Time.get_ticks_usec() if _benchmark_canvas_sample_active else 0
 			)
+			# Each non-pass-through group needs one composite per redraw,
+			# even when several changed cels belong to it. Hidden child textures
+			# do not need an individual upload to the outer canvas.
+			var updated_groups: Dictionary[int, bool] = {}
 			for i in project.layers.size():
 				var layer := project.layers[i]
 				if not update_all_layers:
@@ -685,11 +698,18 @@ func draw_layers(force_recreate := false, allow_playback_cache := false) -> void
 										include = true
 						if not include:
 							continue
+				var parent_layer := layer.get_blender_ancestor()
+				if not update_all_layers and layer != parent_layer:
+					# This child is already represented by its parent's flattened
+					# texture. Updating its hidden texture every dab is wasted work.
+					if not updated_groups.has(parent_layer.index):
+						_update_texture_array_layer(project, parent_layer, Image.new(), true)
+						updated_groups[parent_layer.index] = true
+					continue
 				var cel_image := Image.new()
 				_update_texture_array_layer(project, layer, cel_image, true)
-				var parent_layer := layer.get_blender_ancestor()
 				if layer != parent_layer:
-					# True when the layer has parents. In that case, update its top-most parent.
+					# Keep existing full-refresh behavior for blend-mode/metadata edits.
 					_update_texture_array_layer(project, parent_layer, Image.new(), true)
 			if _benchmark_canvas_sample_active:
 				_benchmark_prepare_us += Time.get_ticks_usec() - update_started_us
