@@ -1059,15 +1059,16 @@ func handle_draw(position: Vector2i, event: InputEvent) -> void:
 		elif active_button == MOUSE_BUTTON_RIGHT:
 			_slots[active_button].tool_node.cancel_tool()
 			active_button = -1
-	if Input.is_action_pressed(&"change_layer_automatically", true):
-		if event.is_action(&"activate_left_tool"):
-			if _slots[MOUSE_BUTTON_LEFT].tool_node is not BaseSelectionTool:
-				change_layer_automatically(draw_pos)
-				return
-		elif event.is_action(&"activate_right_tool"):
-			if _slots[MOUSE_BUTTON_RIGHT].tool_node is not BaseSelectionTool:
-				change_layer_automatically(draw_pos)
-				return
+	# The user's configured layer-pick shortcut takes priority over selection
+	# modifiers (Shift/Ctrl/Ctrl+Shift), even while a selection tool is active.
+	# Handle only the initial click; do not run the picker a second time on release.
+	if Input.is_action_pressed(&"change_layer_automatically", true) and active_button == -1:
+		if event.is_action_pressed(&"activate_left_tool"):
+			change_layer_automatically(draw_pos)
+			return
+		elif event.is_action_pressed(&"activate_right_tool"):
+			change_layer_automatically(draw_pos)
+			return
 
 	if event.is_action_pressed(&"activate_left_tool") and active_button == -1 and not pen_inverted:
 		active_button = MOUSE_BUTTON_LEFT
