@@ -1,7 +1,9 @@
 class_name LayerButton
 extends HBoxContainer
 
-enum MenuOptions { PROPERTIES, CLIPPING_MASK, FLATTEN, FLATTEN_VISIBLE }
+enum MenuOptions { PROPERTIES, CLIPPING_MASK, FLATTEN, FLATTEN_VISIBLE, GALLERY_SETTINGS }
+
+const GALLERY_SETTINGS_SCENE := preload("res://src/UI/Timeline/GalleryLayerSettings.tscn")
 
 const HIERARCHY_DEPTH_PIXEL_SHIFT := 24
 const ARRAY_TEXTURE_TYPES: Array[Texture2D] = [
@@ -660,6 +662,17 @@ func _on_popup_menu_id_pressed(id: int) -> void:
 	elif id == MenuOptions.FLATTEN_VISIBLE:
 		var indices := _get_layer_indices()
 		Global.animation_timeline.flatten_layers.call_deferred(indices, true)
+	elif id == MenuOptions.GALLERY_SETTINGS:
+		_open_gallery_settings(layer)
+
+
+func _open_gallery_settings(layer: BaseLayer) -> void:
+	# One shared dialog, rather than one Window per timeline row.
+	var dialog := Global.control.find_child("GalleryLayerSettings", true, false) as GalleryLayerSettings
+	if not is_instance_valid(dialog):
+		dialog = GALLERY_SETTINGS_SCENE.instantiate() as GalleryLayerSettings
+		Global.control.get_node("Dialogs").add_child(dialog)
+	dialog.open_for_layer(layer)
 
 
 func _get_layer_indices() -> PackedInt32Array:
