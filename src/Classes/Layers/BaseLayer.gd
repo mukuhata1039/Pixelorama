@@ -85,6 +85,9 @@ var cel_link_sets: Array[Dictionary] = []  ## Each Dictionary represents a cel's
 var effects: Array[LayerEffect]  ## An array for non-destructive effects of the layer.
 var effects_enabled := true  ## If [code]true[/code], the effects are being applied.
 var user_data := ""  ## User defined data, set in the layer properties.
+## Gallery-only metadata. Kept separate from user_data so regular notes are untouched.
+## Missing settings inherit from the parent; the importer decides the root default.
+var gallery_settings: Dictionary = {}
 ## The color of the layer's button in the timeline. By default, it's the theme button color.
 var ui_color := Color(0, 0, 0, 0):
 	set(value):
@@ -405,6 +408,8 @@ func serialize() -> Dictionary:
 	}
 	if not user_data.is_empty():
 		dict["user_data"] = user_data
+	if not gallery_settings.is_empty():
+		dict["gallery_settings"] = gallery_settings.duplicate(true)
 	if not cel_link_sets.is_empty():
 		var cels := []  # Cels array for easy finding of the frame index for link_set saving
 		for frame in project.frames:
@@ -437,6 +442,11 @@ func deserialize(dict: Dictionary) -> void:
 	drawing_color_locked = dict.get("drawing_color_locked", false)
 	visibility_target = dict.get("visibility_target", false)
 	user_data = dict.get("user_data", user_data)
+	var saved_gallery_settings = dict.get("gallery_settings", {})
+	if saved_gallery_settings is Dictionary:
+		gallery_settings = saved_gallery_settings.duplicate(true)
+	else:
+		gallery_settings = {}
 	if dict.has("ui_color"):
 		var tmp_ui_color = dict.ui_color
 		if typeof(tmp_ui_color) == TYPE_STRING:
