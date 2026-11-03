@@ -93,6 +93,8 @@ var fps := 6.0:
 var include_blended_images := false
 var license := ""  ## The license of the project, set in the project properties.
 var user_data := ""  ## User defined data, set in the project properties.
+## Explicit opt-in for Godot gallery import. Defaults to false for all projects.
+var gallery_import_enabled := false
 var author_display_name := ""  ## The displayed name of the project author.
 var author_real_name := ""  ## The real name of the project author.
 var author_contact := ""  ## The contact info of the project author.
@@ -354,6 +356,7 @@ func serialize() -> Dictionary:
 		"include_blended_images": include_blended_images,
 		"license": license,
 		"user_data": user_data,
+		"gallery_import_enabled": gallery_import_enabled,
 		"author_display_name": author_display_name,
 		"author_real_name": author_real_name,
 		"author_contact": author_contact,
@@ -602,6 +605,7 @@ func deserialize(dict: Dictionary, zip_reader: ZIPReader = null, file: FileAcces
 	author_contact = dict.get("author_contact", "")
 	author_company = dict.get("author_company", "")
 	user_data = dict.get("user_data", user_data)
+	gallery_import_enabled = bool(dict.get("gallery_import_enabled", false))
 	var loaded_current_frame = dict.get("current_frame", current_frame)
 	var loaded_current_layer = dict.get("current_layer", current_layer)
 	_deserialize_metadata(self, dict)
