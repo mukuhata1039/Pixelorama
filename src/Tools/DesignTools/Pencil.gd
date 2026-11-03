@@ -189,6 +189,10 @@ func draw_start(pos: Vector2i) -> void:
 	pos = snap_position(pos)
 	_shift_click_press_pos = pos
 	_shift_click_uses_anchor = false
+	# Active Shift-drag reuses _line_polylines, so its next hover preview
+	# must rebuild the outline even if the cursor ends at the same pixel.
+	_hover_line_start = Vector2i(Vector2.INF)
+	_hover_line_end = Vector2i(Vector2.INF)
 	super.draw_start(pos)
 
 	Global.transform_content_confirmed.emit()
