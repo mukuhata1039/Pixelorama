@@ -179,6 +179,9 @@ func _notification(what: int) -> void:
 		_brush_size_drag_captured_left_mouse = false
 		# A release event may be lost when the window loses focus.
 		_quick_right_color_picker_active = false
+		if brush_profile_active:
+			brush_profile_active = false
+			clear_brush_group_caches()
 
 
 ## Mouse actions are routed to the original drawing tool before quick tool
