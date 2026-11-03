@@ -13,6 +13,12 @@ func apply_selection(pos: Vector2i) -> void:
 	if !_add and !_subtract and !_intersect:
 		Global.canvas.selection.clear_selection()
 	if _intersect:
+		# Intersecting an empty selection cannot select any pixels.
+		if not project.has_selection:
+			return
+		# is_pixel_selected() looks up the selection rect for every flood-filled pixel.
+		# Cache it once to avoid an extremely expensive scan per pixel.
+		previous_selection_map.lock_selection_rect(project, true)
 		project.selection_map.clear()
 
 	var cel := project.get_current_cel()
@@ -23,6 +29,8 @@ func apply_selection(pos: Vector2i) -> void:
 	for mirror_pos in Tools.get_mirrored_positions(pos):
 		_flood_fill(mirror_pos, cel_image, project, previous_selection_map)
 
+	if _intersect:
+		previous_selection_map.lock_selection_rect(project, false)
 	Global.canvas.selection.commit_undo("Select", undo_data)
 
 
