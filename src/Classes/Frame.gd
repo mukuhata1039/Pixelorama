@@ -6,6 +6,9 @@ extends RefCounted
 var cels: Array[BaseCel]  ## The array containing all of the frame's [BaseCel]s. One for each layer.
 var duration := 1.0  ## The duration multiplier. This allows for individual frame timing.
 var user_data := ""  ## User defined data, set in the frame properties.
+## Fixed frame-header marker palette. -1 means no marker.
+const MARKER_COLOR_COUNT := 8
+var marker_color := -1
 
 
 func _init(_cels: Array[BaseCel] = [], _duration := 1.0) -> void:

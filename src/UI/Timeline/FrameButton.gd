@@ -7,8 +7,21 @@ enum { PROPERTIES, REMOVE, CLONE, MOVE_LEFT, MOVE_RIGHT, NEW_TAG, IMPORT_TAG, RE
 const COMPACT_FONT_SIZE := 11
 const COMPACT_HORIZONTAL_TEXT_MARGIN := 1.0
 const COMPACT_STYLEBOX_NAMES := [&"normal", &"hover", &"pressed"]
+const MARKER_FONT_COLORS := [
+	&"font_color", &"font_hover_color", &"font_pressed_color", &"font_hover_pressed_color"
+]
+const MARKER_TEXT_COLOR := Color("19232d")
+const MARKER_COLORS := [
+	Color("e9a83b"), Color("4fa6d8"), Color("64b989"), Color("be83d8"),
+	Color("e07980"), Color("d5c153"), Color("d88f59"), Color("9296a5")
+]
+const MARKER_COLOR_NAMES := [
+	"Yellow", "Blue", "Green", "Purple", "Red", "Lime", "Orange", "Gray"
+]
+static var _marker_icons: Array[Texture2D] = []
 
 var frame := 0
+var _marker_color_menu: PopupMenu
 const HEADER_DRAG_BORDER := 5.0
 var _drag_started_on_selected_border := false
 
@@ -45,6 +58,95 @@ func apply_compact_layout(enabled: bool) -> void:
 	else:
 		remove_theme_font_size_override(&"font_size")
 		alignment = HORIZONTAL_ALIGNMENT_RIGHT if frame >= 99 else HORIZONTAL_ALIGNMENT_CENTER
+	# Marker colors affect only the frame-number background; never the cels.
+	for font_color_name: StringName in MARKER_FONT_COLORS:
+		remove_theme_color_override(font_color_name)
+	var marker := get_marker_color()
+	if marker.a > 0.0:
+		for style_name: StringName in COMPACT_STYLEBOX_NAMES:
+			var stylebox := get_theme_stylebox(style_name).duplicate() as StyleBox
+			if stylebox is StyleBoxFlat:
+				var background := marker.lightened(0.08) if style_name == &"hover" else marker
+				(stylebox as StyleBoxFlat).bg_color = background
+				add_theme_stylebox_override(style_name, stylebox)
+		for font_color_name: StringName in MARKER_FONT_COLORS:
+			add_theme_color_override(font_color_name, MARKER_TEXT_COLOR)
+
+
+func get_marker_color() -> Color:
+	var project := Global.current_project
+	if project == null or frame < 0 or frame >= project.frames.size():
+		return Color.TRANSPARENT
+	var marker_index: int = project.frames[frame].marker_color
+	if marker_index < 0 or marker_index >= MARKER_COLORS.size():
+		return Color.TRANSPARENT
+	return MARKER_COLORS[marker_index]
+
+
+## Create the submenu only on first use; large timelines need not build hundreds of palettes.
+func _ensure_marker_color_menu() -> void:
+	if is_instance_valid(_marker_color_menu):
+		return
+	_marker_color_menu = PopupMenu.new()
+	_marker_color_menu.name = "MarkerColors"
+	popup_menu.add_child(_marker_color_menu)
+	popup_menu.add_separator()
+	popup_menu.add_submenu_node_item(tr("Marker Color"), _marker_color_menu)
+	for i in MARKER_COLORS.size():
+		_marker_color_menu.add_icon_radio_check_item(
+			_get_marker_icon(i), tr(MARKER_COLOR_NAMES[i]), i
+		)
+	_marker_color_menu.add_separator()
+	_marker_color_menu.add_radio_check_item(tr("Clear Marker Color"), MARKER_COLORS.size())
+	_marker_color_menu.id_pressed.connect(_on_marker_color_chosen)
+
+
+func _get_marker_icon(index: int) -> Texture2D:
+	if _marker_icons.is_empty():
+		for color in MARKER_COLORS:
+			var image := Image.create(12, 12, false, Image.FORMAT_RGBA8)
+			image.fill(color)
+			_marker_icons.append(ImageTexture.create_from_image(image))
+	return _marker_icons[index]
+
+
+func _update_marker_menu_checks() -> void:
+	var indices := _get_frame_indices()
+	var project := Global.current_project
+	var current_color: int = project.frames[indices[0]].marker_color
+	for frame_index in indices:
+		if project.frames[frame_index].marker_color != current_color:
+			current_color = -2  # Mixed colors: leave all options unchecked.
+			break
+	for i in MARKER_COLORS.size():
+		_marker_color_menu.set_item_checked(i, current_color == i)
+	_marker_color_menu.set_item_checked(MARKER_COLORS.size() + 1, current_color == -1)
+
+
+func _on_marker_color_chosen(id: int) -> void:
+	var project := Global.current_project
+	var color_index := id if id >= 0 and id < MARKER_COLORS.size() else -1
+	var changed_indices := PackedInt32Array()
+	for frame_index in _get_frame_indices():
+		if project.frames[frame_index].marker_color != color_index:
+			changed_indices.append(frame_index)
+	if changed_indices.is_empty():
+		return
+	project.undo_redo.create_action("Set Frame Marker Color")
+	for frame_index in changed_indices:
+		var frame_class: Frame = project.frames[frame_index]
+		project.undo_redo.add_do_property(frame_class, "marker_color", color_index)
+		project.undo_redo.add_undo_property(frame_class, "marker_color", frame_class.marker_color)
+	project.undo_redo.add_do_method(
+		Global.animation_timeline.refresh_frame_marker_buttons.bind(project, changed_indices)
+	)
+	project.undo_redo.add_undo_method(
+		Global.animation_timeline.refresh_frame_marker_buttons.bind(project, changed_indices)
+	)
+	project.undo_redo.add_do_method(Global.undo_or_redo.bind(false, -1, -1, project))
+	project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true, -1, -1, project))
+	project.undo_redo.commit_action()
+
 
 func _update_tooltip() -> void:
 	var frame_class := Global.current_project.frames[frame]
@@ -54,6 +156,10 @@ func _update_tooltip() -> void:
 	if "." in duration_str:  # If its a decimal value
 		duration_str = "%.2f" % duration_sec  # Up to 2 decimal places
 	tooltip_text = "%s: %sx (%s sec)" % [tr("Duration"), str(duration), duration_str]
+	if frame_class.marker_color >= 0 and frame_class.marker_color < MARKER_COLORS.size():
+		tooltip_text += "\n%s: %s" % [
+			tr("Marker Color"), tr(MARKER_COLOR_NAMES[frame_class.marker_color])
+		]
 
 
 func _button_pressed() -> void:
@@ -98,6 +204,8 @@ func _button_pressed() -> void:
 				popup_menu.set_item_disabled(MOVE_LEFT, false)
 			if frame < Global.current_project.frames.size() - 1:
 				popup_menu.set_item_disabled(MOVE_RIGHT, false)
+		_ensure_marker_color_menu()
+		_update_marker_menu_checks()
 		popup_menu.popup_on_parent(Rect2(get_global_mouse_position(), Vector2.ONE))
 		button_pressed = !button_pressed
 	elif Input.is_action_just_released("middle_mouse"):

@@ -4291,3 +4291,21 @@ msgstr "2つのマーカーの間だけ再生します。アニメーション�
 
 msgid "Drag the playback range markers. This range overrides animation tags when enabled."
 msgstr "マーカーをドラッグして再生範囲を指定します。有効にするとアニメーションタグより優先されます。"
+
+msgid "Marker Color"
+msgstr "マーカー色"
+
+msgid "Clear Marker Color"
+msgstr "マーカー色を解除"
+
+msgid "Set Frame Marker Color"
+msgstr "フレームのマーカー色を設定"
+
+msgid "Yellow"
+msgstr "黄色"
+
+msgid "Lime"
+msgstr "黄緑色"
+
+msgid "Orange"
+msgstr "オレンジ"
