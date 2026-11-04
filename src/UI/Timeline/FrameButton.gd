@@ -83,6 +83,70 @@ func get_marker_color() -> Color:
 	return MARKER_COLORS[marker_index]
 
 
+## Create the submenu only on first use; large timelines need not build hundreds of palettes.
+func _ensure_marker_color_menu() -> void:
+	if is_instance_valid(_marker_color_menu):
+		return
+	_marker_color_menu = PopupMenu.new()
+	_marker_color_menu.name = "MarkerColors"
+	popup_menu.add_child(_marker_color_menu)
+	popup_menu.add_separator()
+	popup_menu.add_submenu_node_item(tr("Marker Color"), _marker_color_menu)
+	for i in MARKER_COLORS.size():
+		_marker_color_menu.add_icon_radio_check_item(
+			_get_marker_icon(i), tr(MARKER_COLOR_NAMES[i]), i
+		)
+	_marker_color_menu.add_separator()
+	_marker_color_menu.add_radio_check_item(tr("Clear Marker Color"), MARKER_COLORS.size())
+	_marker_color_menu.id_pressed.connect(_on_marker_color_chosen)
+
+
+func _get_marker_icon(index: int) -> Texture2D:
+	if _marker_icons.is_empty():
+		for color in MARKER_COLORS:
+			var image := Image.create(12, 12, false, Image.FORMAT_RGBA8)
+			image.fill(color)
+			_marker_icons.append(ImageTexture.create_from_image(image))
+	return _marker_icons[index]
+
+
+func _update_marker_menu_checks() -> void:
+	var indices := _get_frame_indices()
+	var project := Global.current_project
+	var current_color: int = project.frames[indices[0]].marker_color
+	for frame_index in indices:
+		if project.frames[frame_index].marker_color != current_color:
+			current_color = -2  # Mixed colors: leave all options unchecked.
+			break
+	for i in MARKER_COLORS.size():
+		_marker_color_menu.set_item_checked(i, current_color == i)
+	_marker_color_menu.set_item_checked(MARKER_COLORS.size() + 1, current_color == -1)
+
+
+func _on_marker_color_chosen(id: int) -> void:
+	var project := Global.current_project
+	var color_index := id if id >= 0 and id < MARKER_COLORS.size() else -1
+	var changed_indices := PackedInt32Array()
+	for frame_index in _get_frame_indices():
+		if project.frames[frame_index].marker_color != color_index:
+			changed_indices.append(frame_index)
+	if changed_indices.is_empty():
+		return
+	project.undo_redo.create_action("Set Frame Marker Color")
+	for frame_index in changed_indices:
+		var frame_class: Frame = project.frames[frame_index]
+		project.undo_redo.add_do_property(frame_class, "marker_color", color_index)
+		project.undo_redo.add_undo_property(frame_class, "marker_color", frame_class.marker_color)
+	project.undo_redo.add_do_method(
+		Global.animation_timeline.refresh_frame_marker_buttons.bind(project, changed_indices)
+	)
+	project.undo_redo.add_undo_method(
+		Global.animation_timeline.refresh_frame_marker_buttons.bind(project, changed_indices)
+	)
+	project.undo_redo.add_do_method(Global.undo_or_redo.bind(false, -1, -1, project))
+	project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true, -1, -1, project))
+	project.undo_redo.commit_action()
+
 func _update_tooltip() -> void:
 	var frame_class := Global.current_project.frames[frame]
 	var duration := frame_class.duration
@@ -137,6 +201,8 @@ func _button_pressed() -> void:
 				popup_menu.set_item_disabled(MOVE_LEFT, false)
 			if frame < Global.current_project.frames.size() - 1:
 				popup_menu.set_item_disabled(MOVE_RIGHT, false)
+		_ensure_marker_color_menu()
+		_update_marker_menu_checks()
 		popup_menu.popup_on_parent(Rect2(get_global_mouse_position(), Vector2.ONE))
 		button_pressed = !button_pressed
 	elif Input.is_action_just_released("middle_mouse"):
