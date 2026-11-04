@@ -4163,3 +4163,21 @@ msgstr ""
 #: src/UI/TilesPanel.tscn
 msgid "Probability:"
 msgstr ""
+
+msgid "Marker Color"
+msgstr ""
+
+msgid "Clear Marker Color"
+msgstr ""
+
+msgid "Set Frame Marker Color"
+msgstr ""
+
+msgid "Yellow"
+msgstr ""
+
+msgid "Lime"
+msgstr ""
+
+msgid "Orange"
+msgstr ""
