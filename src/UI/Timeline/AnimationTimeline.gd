@@ -1268,6 +1268,7 @@ func copy_frames(
 		copied_frames.append(new_frame)
 
 		new_frame.duration = src_frame.duration
+		new_frame.marker_color = src_frame.marker_color
 		for l in range(project.layers.size()):
 			if [f, l] in project.selected_cels:
 				last_focus_cels.append([copied_indices[indices.find(f)], l])
@@ -2574,6 +2575,17 @@ func _refresh_timeline_selection_appearance() -> void:
 	_timeline_selection_cache_valid = true
 
 
+## Refresh only the requested marker styleboxes, then restore the selection borders.
+func refresh_frame_marker_buttons(project: Project, indices: PackedInt32Array) -> void:
+	if project != Global.current_project:
+		return
+	for frame_index in indices:
+		if frame_index < 0 or frame_index >= frame_hbox.get_child_count():
+			continue
+		frame_hbox.get_child(frame_index).apply_compact_layout(compact_timeline)
+	_refresh_timeline_selection_appearance()
+
+
 func _set_header_selection_style(
 	button: Button,
 	active: bool,
@@ -2606,6 +2618,10 @@ func _set_header_selection_style(
 		return
 	var style := source.duplicate() as StyleBoxFlat
 	style.bg_color = (normal as StyleBoxFlat).bg_color.lerp(ACTIVE_GUIDE_COLOR, 0.75)
+	if is_frame_header and button.has_method("get_marker_color"):
+		var marker: Color = button.call("get_marker_color")
+		if marker.a > 0.0:
+			style.bg_color = marker.lerp(ACTIVE_GUIDE_COLOR, 0.3)
 	style.border_width_left = 0
 	style.border_width_right = 0
 	style.border_width_top = 0
