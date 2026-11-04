@@ -64,7 +64,7 @@ func apply_compact_layout(enabled: bool) -> void:
 	var marker := get_marker_color()
 	if marker.a > 0.0:
 		for style_name: StringName in COMPACT_STYLEBOX_NAMES:
-			var stylebox := get_theme_stylebox(style_name).duplicate()
+			var stylebox := get_theme_stylebox(style_name).duplicate() as StyleBox
 			if stylebox is StyleBoxFlat:
 				var background := marker.lightened(0.08) if style_name == &"hover" else marker
 				(stylebox as StyleBoxFlat).bg_color = background
