@@ -2707,6 +2707,8 @@ func _update_frame_ui() -> void:
 	for f in project.frames.size():  # Update the frames and frame buttons
 		frame_hbox.get_child(f).frame = f
 		frame_hbox.get_child(f).text = str(f + 1)
+		# Frame indices can shift on insert/remove/move; refresh their marker backgrounds.
+		frame_hbox.get_child(f).apply_compact_layout(compact_timeline)
 
 	for l in project.layers.size():  # Update the cel buttons
 		update_cel_button_ui(l)
