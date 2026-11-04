@@ -7,8 +7,21 @@ enum { PROPERTIES, REMOVE, CLONE, MOVE_LEFT, MOVE_RIGHT, NEW_TAG, IMPORT_TAG, RE
 const COMPACT_FONT_SIZE := 11
 const COMPACT_HORIZONTAL_TEXT_MARGIN := 1.0
 const COMPACT_STYLEBOX_NAMES := [&"normal", &"hover", &"pressed"]
+const MARKER_FONT_COLORS := [
+	&"font_color", &"font_hover_color", &"font_pressed_color", &"font_hover_pressed_color"
+]
+const MARKER_TEXT_COLOR := Color("19232d")
+const MARKER_COLORS := [
+	Color("e9a83b"), Color("4fa6d8"), Color("64b989"), Color("be83d8"),
+	Color("e07980"), Color("d5c153"), Color("d88f59"), Color("9296a5")
+]
+const MARKER_COLOR_NAMES := [
+	"Yellow", "Blue", "Green", "Purple", "Red", "Lime", "Orange", "Gray"
+]
+static var _marker_icons: Array[Texture2D] = []
 
 var frame := 0
+var _marker_color_menu: PopupMenu
 const HEADER_DRAG_BORDER := 5.0
 var _drag_started_on_selected_border := false
 
@@ -45,6 +58,30 @@ func apply_compact_layout(enabled: bool) -> void:
 	else:
 		remove_theme_font_size_override(&"font_size")
 		alignment = HORIZONTAL_ALIGNMENT_RIGHT if frame >= 99 else HORIZONTAL_ALIGNMENT_CENTER
+	# Marker colors affect only the frame-number background; never the cels.
+	for font_color_name: StringName in MARKER_FONT_COLORS:
+		remove_theme_color_override(font_color_name)
+	var marker := get_marker_color()
+	if marker.a > 0.0:
+		for style_name: StringName in COMPACT_STYLEBOX_NAMES:
+			var stylebox := get_theme_stylebox(style_name).duplicate()
+			if stylebox is StyleBoxFlat:
+				var background := marker.lightened(0.08) if style_name == &"hover" else marker
+				(stylebox as StyleBoxFlat).bg_color = background
+				add_theme_stylebox_override(style_name, stylebox)
+		for font_color_name: StringName in MARKER_FONT_COLORS:
+			add_theme_color_override(font_color_name, MARKER_TEXT_COLOR)
+
+
+func get_marker_color() -> Color:
+	var project := Global.current_project
+	if project == null or frame < 0 or frame >= project.frames.size():
+		return Color.TRANSPARENT
+	var marker_index: int = project.frames[frame].marker_color
+	if marker_index < 0 or marker_index >= MARKER_COLORS.size():
+		return Color.TRANSPARENT
+	return MARKER_COLORS[marker_index]
+
 
 func _update_tooltip() -> void:
 	var frame_class := Global.current_project.frames[frame]
@@ -54,6 +91,8 @@ func _update_tooltip() -> void:
 	if "." in duration_str:  # If its a decimal value
 		duration_str = "%.2f" % duration_sec  # Up to 2 decimal places
 	tooltip_text = "%s: %sx (%s sec)" % [tr("Duration"), str(duration), duration_str]
+	if frame_class.marker_color >= 0 and frame_class.marker_color < MARKER_COLORS.size():
+		tooltip_text += "\n%s: %s" % [tr("Marker Color"), tr(MARKER_COLOR_NAMES[frame_class.marker_color])]
 
 
 func _button_pressed() -> void:
