@@ -147,6 +147,7 @@ func _on_marker_color_chosen(id: int) -> void:
 	project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true, -1, -1, project))
 	project.undo_redo.commit_action()
 
+
 func _update_tooltip() -> void:
 	var frame_class := Global.current_project.frames[frame]
 	var duration := frame_class.duration
@@ -156,7 +157,9 @@ func _update_tooltip() -> void:
 		duration_str = "%.2f" % duration_sec  # Up to 2 decimal places
 	tooltip_text = "%s: %sx (%s sec)" % [tr("Duration"), str(duration), duration_str]
 	if frame_class.marker_color >= 0 and frame_class.marker_color < MARKER_COLORS.size():
-		tooltip_text += "\n%s: %s" % [tr("Marker Color"), tr(MARKER_COLOR_NAMES[frame_class.marker_color])]
+		tooltip_text += "\n%s: %s" % [
+			tr("Marker Color"), tr(MARKER_COLOR_NAMES[frame_class.marker_color])
+		]
 
 
 func _button_pressed() -> void:
