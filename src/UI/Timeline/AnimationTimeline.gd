@@ -3007,8 +3007,12 @@ func _on_global_lock_button_pressed() -> void:
 		_toggle_layer_buttons()
 
 
-func _on_clear_layer_references_button_pressed() -> void:
-	Global.control.call("clear_layer_references")
+func _on_clear_visibility_references_button_pressed() -> void:
+	Global.control.call("clear_target_visibility_references")
+
+
+func _on_clear_anywhere_clip_references_button_pressed() -> void:
+	Global.control.call("clear_anywhere_clip_references")
 
 
 func _on_global_expand_button_pressed() -> void:
