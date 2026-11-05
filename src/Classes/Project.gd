@@ -776,6 +776,30 @@ func get_anywhere_clip_raster_mask() -> Image:
 	return mask
 
 
+## Shared shader-compatible selection image: explicit selection intersected with
+## the temporary binary clipping reference, without changing saved selection.
+func get_effective_draw_selection() -> Image:
+	if is_anywhere_clip_masking():
+		return get_anywhere_clip_raster_mask()
+	if has_selection:
+		return selection_map.return_cropped_copy(self, size)
+	var image := Image.create_empty(size.x, size.y, false, Image.FORMAT_RGBA8)
+	image.fill(Color.WHITE)
+	return image
+
+
+func get_anywhere_clip_rect() -> Rect2i:
+	if not is_anywhere_clip_masking():
+		return Rect2i()
+	var reference := anywhere_clip_source
+	if reference == layers[current_layer]:
+		return Rect2i()
+	var cel := frames[current_frame].cels[reference.index] as PixelCel
+	return Rect2i(cel.offset, cel.get_image().get_size()).intersection(
+		Rect2i(Vector2i.ZERO, size)
+	)
+
+
 func can_pixel_get_drawn(pixel: Vector2i, image := selection_map) -> bool:
 	if pixel.x < 0 or pixel.y < 0 or pixel.x >= size.x or pixel.y >= size.y:
 		return false
