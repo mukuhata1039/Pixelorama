@@ -58,9 +58,11 @@ var layers: Array[BaseLayer] = []
 var current_frame := 0
 var current_layer := 0
 var selected_cels := [[0, 0]]  ## Array of Arrays of 2 integers (frame & layer)
-## Transient hold-only drawing restriction. Never saved in .pxo.
+## Transient toggle-only drawing restriction. Never saved in .pxo.
 var anywhere_clip_active := false
-var anywhere_clip_source: PixelLayer
+var _anywhere_clip_raster: Image
+var _anywhere_clip_frame := -1
+var _anywhere_clip_layer := -1
 ## Array that contains the order of the [BaseLayer] indices that are being drawn.
 ## Takes into account each [BaseCel]'s invidiual z-index. If all z-indexes are 0, then the
 ## array just contains the indices of the layers in increasing order.
@@ -145,6 +147,9 @@ func _init(_frames: Array[Frame] = [], _name := tr("untitled"), _size := Vector2
 	selection_map.copy_from(Image.create(size.x, size.y, false, Image.FORMAT_LA8))
 	Global.tabs.add_tab(name)
 	undo_redo.max_steps = Global.max_undo_steps
+	layers_updated.connect(invalidate_anywhere_clip_mask)
+	frames_updated.connect(invalidate_anywhere_clip_mask)
+	resized.connect(invalidate_anywhere_clip_mask)
 
 	x_symmetry_point = size.x - 1
 	y_symmetry_point = size.y - 1
@@ -720,75 +725,99 @@ func is_empty() -> bool:
 	)
 
 
-## The reference is independent of layer order, visibility and clipping masks.
-## Only one pixel layer may be marked at a time; its per-frame source alpha
-## supplies a binary shape, without affecting the selection outline.
-func get_anywhere_clip_reference() -> PixelLayer:
+## Layer and folder references can be combined. The mask is the *union*
+## of their visible pixel shapes, not an alpha multiplier.
+func get_anywhere_clip_references() -> Array[BaseLayer]:
+	var references: Array[BaseLayer] = []
 	for layer in layers:
-		if layer is PixelLayer and layer.anywhere_clip_target:
-			return layer as PixelLayer
-	return null
+		if layer.anywhere_clip_target and (layer is PixelLayer or layer is GroupLayer):
+			references.append(layer)
+	return references
 
 
 func is_anywhere_clip_masking() -> bool:
-	return (
-		anywhere_clip_active and is_instance_valid(anywhere_clip_source)
-		and layers.has(anywhere_clip_source)
-	)
+	return anywhere_clip_active and not get_anywhere_clip_references().is_empty()
 
 
-func _is_anywhere_clip_pixel_allowed(pixel: Vector2i) -> bool:
-	var reference := anywhere_clip_source
-	if (
-		not is_instance_valid(reference) or not layers.has(reference)
-		or current_layer < 0 or current_layer >= layers.size()
-	):
-		return false
-	if reference.index < 0 or reference.index >= layers.size():
-		return false
-	if reference == layers[current_layer]:
-		return false
-	if current_frame < 0 or current_frame >= frames.size():
-		return false
-	var cel := frames[current_frame].cels[reference.index]
-	if not cel is PixelCel:
-		return false
-	var image := cel.get_image()
-	var local := pixel - cel.offset
-	if local.x < 0 or local.y < 0 or local.x >= image.get_width() or local.y >= image.get_height():
-		return false
-	return image.get_pixelv(local).a > 0.0
+func invalidate_anywhere_clip_mask() -> void:
+	_anywhere_clip_raster = null
+	_anywhere_clip_frame = -1
+	_anywhere_clip_layer = -1
 
 
-## Binary raster mask for operations which use Image blits or shaders, such as
-## bucket fill. Never modifies selection_map or draws a marquee on the canvas.
+## Build the source mask only once per frame/active layer and invalidate it on
+## reference edits or structural changes. Crucially a GROUP is blended using
+## Pixelorama's own compositor, so the mask honors real clipping, effects and
+## hidden children. Pixels clipped outside the base shape are NOT included.
 func get_anywhere_clip_raster_mask() -> Image:
+	if (
+		is_instance_valid(_anywhere_clip_raster)
+		and _anywhere_clip_frame == current_frame
+		and _anywhere_clip_layer == current_layer
+		and _anywhere_clip_raster.get_size() == size
+	):
+		return _anywhere_clip_raster
 	var mask := Image.create_empty(size.x, size.y, false, Image.FORMAT_RGBA8)
 	mask.fill(Color.TRANSPARENT)
-	if not is_anywhere_clip_masking():
+	if not anywhere_clip_active or current_frame < 0 or current_frame >= frames.size():
 		return mask
-	var reference := anywhere_clip_source
-	if reference == layers[current_layer]:
+	if current_layer < 0 or current_layer >= layers.size():
 		return mask
-	var cel := frames[current_frame].cels[reference.index] as PixelCel
-	var source := cel.get_image()
-	var area := Rect2i(cel.offset, source.get_size()).intersection(Rect2i(Vector2i.ZERO, size))
-	for y in range(area.position.y, area.end.y):
-		for x in range(area.position.x, area.end.x):
-			var pixel := Vector2i(x, y)
-			if source.get_pixelv(pixel - cel.offset).a <= 0.0:
+	var canvas_bounds := Rect2i(Vector2i.ZERO, size)
+	var frame := frames[current_frame]
+	for reference in get_anywhere_clip_references():
+		# Never let a layer use its own unmasked pixels as the reference.
+		if reference == layers[current_layer]:
+			continue
+		var source_image: Image
+		var source_offset := Vector2i.ZERO
+		if reference is GroupLayer:
+			# This is the group's COMPOSITED result, not the raw union of
+			# child pixels. Real clipping inside the folder stays clipped.
+			if not reference.is_visible_in_hierarchy():
 				continue
-			if has_selection and not selection_map.is_pixel_selected(pixel):
+			source_image = (reference as GroupLayer).blend_children(frame)
+		elif reference is PixelLayer:
+			var source_cel := frame.cels[reference.index] as PixelCel
+			if not is_instance_valid(source_cel):
 				continue
-			mask.set_pixelv(pixel, Color.WHITE)
+			source_image = source_cel.get_image()
+			source_offset = source_cel.offset
+		if not is_instance_valid(source_image):
+			continue
+		var source_rect := Rect2i(source_offset, source_image.get_size())
+		var region := source_rect.intersection(canvas_bounds)
+		for y in range(region.position.y, region.end.y):
+			for x in range(region.position.x, region.end.x):
+				var canvas_pos := Vector2i(x, y)
+				if source_image.get_pixelv(canvas_pos - source_offset).a > 0.0:
+					mask.set_pixelv(canvas_pos, Color.WHITE)
+	_anywhere_clip_raster = mask
+	_anywhere_clip_frame = current_frame
+	_anywhere_clip_layer = current_layer
 	return mask
 
 
-## Shared shader-compatible selection image: explicit selection intersected with
-## the temporary binary clipping reference, without changing saved selection.
+func _is_anywhere_clip_pixel_allowed(pixel: Vector2i) -> bool:
+	var mask := get_anywhere_clip_raster_mask()
+	return mask.get_pixelv(pixel).a > 0.0
+
+
+## Intersect the temporary references with any real selection only for shader
+## and image fill operations; do not change the true selection or its outline.
 func get_effective_draw_selection() -> Image:
 	if anywhere_clip_active:
-		return get_anywhere_clip_raster_mask()
+		var mask := get_anywhere_clip_raster_mask()
+		if not has_selection:
+			return mask
+		var intersection := mask.duplicate()
+		var used := mask.get_used_rect()
+		for y in range(used.position.y, used.end.y):
+			for x in range(used.position.x, used.end.x):
+				var pos := Vector2i(x, y)
+				if not selection_map.is_pixel_selected(pos):
+					intersection.set_pixelv(pos, Color.TRANSPARENT)
+		return intersection
 	if has_selection:
 		return selection_map.return_cropped_copy(self, size)
 	var image := Image.create_empty(size.x, size.y, false, Image.FORMAT_RGBA8)
@@ -797,16 +826,9 @@ func get_effective_draw_selection() -> Image:
 
 
 func get_anywhere_clip_rect() -> Rect2i:
-	if not is_anywhere_clip_masking():
+	if not anywhere_clip_active:
 		return Rect2i()
-	var reference := anywhere_clip_source
-	if reference == layers[current_layer]:
-		return Rect2i()
-	var cel := frames[current_frame].cels[reference.index] as PixelCel
-	return Rect2i(cel.offset, cel.get_image().get_size()).intersection(
-		Rect2i(Vector2i.ZERO, size)
-	)
-
+	return get_anywhere_clip_raster_mask().get_used_rect()
 
 func can_pixel_get_drawn(pixel: Vector2i, image := selection_map) -> bool:
 	if pixel.x < 0 or pixel.y < 0 or pixel.x >= size.x or pixel.y >= size.y:
