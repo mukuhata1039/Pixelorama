@@ -12,7 +12,7 @@ var _target_layer: PixelLayer
 
 @onready var help_label := $VBox/Help as Label
 @onready var scope_label := $VBox/ScopeLabel as Label
-@onready var color_button := %ColorButton as ColorPickerButton
+@onready var color_picker := %ColorPicker as ColorPicker
 @onready var alpha_slider := %AlphaSlider as HSlider
 @onready var alpha_label := %AlphaLabel as Label
 @onready var scope_button := %ScopeButton as OptionButton
@@ -26,7 +26,7 @@ func _ready() -> void:
 	about_to_popup.connect(_prepare)
 	confirmed.connect(_apply)
 	visibility_changed.connect(_on_visibility_changed)
-	color_button.color_changed.connect(_on_color_changed)
+	color_picker.color_changed.connect(_on_color_changed)
 	alpha_slider.value_changed.connect(_on_alpha_changed)
 	scope_button.item_selected.connect(_on_scope_changed)
 	previous_frame.pressed.connect(_change_preview_frame.bind(-1))
@@ -54,7 +54,7 @@ func _prepare() -> void:
 	)
 	if not editing_layer:
 		base_color.a = 1.0
-	color_button.color = base_color
+	color_picker.color = base_color
 	alpha_slider.set_value_no_signal(roundi(base_color.a * 100.0))
 	alpha_label.text = "%d%%" % roundi(base_color.a * 100.0)
 	# Layer-icon mode always targets every frame, regardless of timeline selection.
@@ -104,8 +104,8 @@ func _refresh_preview() -> void:
 	if not is_instance_valid(_project):
 		return
 	_targets = _get_target_indices()
-	var alpha_percent := roundi(color_button.color.a * 100.0)
-	alpha_slider.set_value_no_signal(alpha_percent)
+	var alpha_percent := roundi(alpha_slider.value)
+	var selected_color := _get_selected_color()
 	alpha_label.text = "%d%%" % alpha_percent
 	var unsupported := _project.is_indexed()
 	if unsupported:
@@ -115,7 +115,7 @@ func _refresh_preview() -> void:
 	get_ok_button().disabled = (
 		unsupported
 		or _targets.is_empty()
-		or (is_instance_valid(_target_layer) and color_button.color.a <= 0.0)
+		or (is_instance_valid(_target_layer) and selected_color.a <= 0.0)
 	)
 	previous_frame.disabled = _project.frames.size() <= 1
 	next_frame.disabled = _project.frames.size() <= 1
@@ -123,18 +123,23 @@ func _refresh_preview() -> void:
 		Global.canvas.clear_live_recolor_preview()
 	else:
 		Global.canvas.set_live_recolor_preview(
-			_project, _targets, color_button.color, is_instance_valid(_target_layer)
+			_project, _targets, selected_color, is_instance_valid(_target_layer)
 		)
+
+
+## Use one external opacity slider rather than a second alpha slider in the picker.
+## The picker edits RGB/HSV; the slider supplies the saved and previewed alpha.
+func _get_selected_color() -> Color:
+	var chosen := color_picker.color
+	chosen.a = alpha_slider.value / 100.0
+	return chosen
 
 
 func _on_color_changed(_color: Color) -> void:
 	_refresh_preview()
 
 
-func _on_alpha_changed(value: float) -> void:
-	var color := color_button.color
-	color.a = value / 100.0
-	color_button.color = color
+func _on_alpha_changed(_value: float) -> void:
 	_refresh_preview()
 
 
@@ -162,6 +167,7 @@ func _apply() -> void:
 		return
 	# The preview must be disabled before the real images are written.
 	Global.canvas.clear_live_recolor_preview()
+	var selected_color := _get_selected_color()
 	var selected: Dictionary = {}
 	for pair in targets:
 		selected[_project.frames[pair[0]].cels[pair[1]]] = true
@@ -189,7 +195,7 @@ func _apply() -> void:
 				replacement,
 				RECOLOR_SHADER,
 				{
-					"target_color": color_button.color,
+					"target_color": selected_color,
 					"preserve_alpha": is_instance_valid(_target_layer),
 				},
 				replacement.get_size()
@@ -213,7 +219,7 @@ func _apply() -> void:
 		var old_color: Color = editing_layer.drawing_color
 		var was_locked: bool = editing_layer.drawing_color_locked
 		undo_redo.add_do_method(
-			_set_layer_locked_color.bind(editing_layer, color_button.color, true)
+			_set_layer_locked_color.bind(editing_layer, selected_color, true)
 		)
 		undo_redo.add_undo_method(
 			_set_layer_locked_color.bind(editing_layer, old_color, was_locked)
