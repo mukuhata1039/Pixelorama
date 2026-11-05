@@ -850,6 +850,19 @@ func edit_menu_id_pressed(id: int) -> void:
 			_handle_metadata(id, edit_menu)
 
 
+## Reuse the undimmed Edit > Recolor dialog for right-clicking a color-lock icon.
+## The clicked layer remains the target even if a different layer is active.
+func open_layer_recolor(layer: PixelLayer) -> void:
+	if not is_instance_valid(layer) or layer.project != Global.current_project:
+		return
+	if not is_instance_valid(recolor_cels_dialog.node):
+		recolor_cels_dialog.instantiate_scene()
+	if not is_instance_valid(recolor_cels_dialog.node):
+		return
+	recolor_cels_dialog.node.set("requested_layer", layer)
+	recolor_cels_dialog.popup()
+
+
 func view_menu_id_pressed(id: int) -> void:
 	match id:
 		Global.ViewMenu.CENTER_CANVAS:

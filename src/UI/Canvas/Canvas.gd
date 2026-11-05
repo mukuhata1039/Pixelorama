@@ -51,6 +51,7 @@ var layer_metadata_texture := ImageTexture.new()
 var live_recolor_project: Project
 var live_recolor_targets: Dictionary = {}
 var live_recolor_color := Color.BLACK
+var live_recolor_preserve_alpha := false
 var live_recolor_enabled := false
 
 @onready var currently_visible_frame := $CurrentlyVisibleFrame as SubViewport
@@ -517,12 +518,15 @@ func camera_zoom(project := Global.current_project) -> void:
 
 
 ## Update only rendered images; original cel pixel data stays untouched.
-func set_live_recolor_preview(project: Project, targets: Array, color: Color) -> void:
+func set_live_recolor_preview(
+	project: Project, targets: Array, color: Color, preserve_alpha := false
+) -> void:
 	live_recolor_project = project
 	live_recolor_targets.clear()
 	for target in targets:
 		live_recolor_targets[Vector2i(target[0], target[1])] = true
 	live_recolor_color = color
+	live_recolor_preserve_alpha = preserve_alpha
 	live_recolor_enabled = not live_recolor_targets.is_empty()
 	update_all_layers = true
 	queue_redraw()
@@ -532,6 +536,7 @@ func clear_live_recolor_preview() -> void:
 	if not live_recolor_enabled:
 		return
 	live_recolor_enabled = false
+	live_recolor_preserve_alpha = false
 	live_recolor_targets.clear()
 	live_recolor_project = null
 	update_all_layers = true
@@ -550,7 +555,9 @@ func apply_live_recolor_preview(
 		return
 	var generator := ShaderImageEffect.new()
 	generator.generate_image(
-		image, LIVE_RECOLOR_SHADER, {"target_color": live_recolor_color}, image.get_size()
+		image, LIVE_RECOLOR_SHADER,
+		{"target_color": live_recolor_color, "preserve_alpha": live_recolor_preserve_alpha},
+		image.get_size()
 	)
 
 

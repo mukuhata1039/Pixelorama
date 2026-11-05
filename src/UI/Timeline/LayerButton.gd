@@ -138,13 +138,15 @@ func _setup_drawing_color_lock_button(layer: BaseLayer) -> void:
 	drawing_color_lock_button.name = "DrawingColorLockButton"
 	drawing_color_lock_button.tooltip_text = (
 		"Lock this layer to the current drawing color and alpha. "
-		+ "Only that color and transparency can be selected."
+		+ "Only that color and transparency can be selected. "
+		+ "Right-click to recolor all frames of this layer."
 	)
 	drawing_color_lock_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	drawing_color_lock_button.add_to_group("UIButtons")
 	$HBoxContainer.add_child(drawing_color_lock_button)
 	drawing_color_lock_button.draw.connect(_draw_drawing_color_lock_indicator)
 	drawing_color_lock_button.pressed.connect(_on_drawing_color_lock_pressed)
+	drawing_color_lock_button.gui_input.connect(_on_drawing_color_lock_gui_input)
 	layer.drawing_color_lock_changed.connect(drawing_color_lock_button.queue_redraw)
 
 
@@ -162,6 +164,24 @@ func _draw_drawing_color_lock_indicator() -> void:
 	var across := Rect2(center + Vector2(-5, -2), Vector2(10, 4))
 	drawing_color_lock_button.draw_rect(upright, marker_color, locked, 1.0)
 	drawing_color_lock_button.draw_rect(across, marker_color, locked, 1.0)
+
+
+## Right-click edits the layer itself, without activating or selecting its cels.
+func _on_drawing_color_lock_gui_input(event: InputEvent) -> void:
+	if not event is InputEventMouseButton:
+		return
+	if event.button_index != MOUSE_BUTTON_RIGHT or not event.pressed:
+		return
+	drawing_color_lock_button.accept_event()
+	var project := Global.current_project
+	if not is_instance_valid(project) or layer_index < 0 or layer_index >= project.layers.size():
+		return
+	var layer := project.layers[layer_index] as PixelLayer
+	if not is_instance_valid(layer):
+		return
+	var top_menu := Global.control.find_child("TopMenuContainer", true, false)
+	if is_instance_valid(top_menu):
+		top_menu.call("open_layer_recolor", layer)
 
 
 func _on_drawing_color_lock_pressed() -> void:
