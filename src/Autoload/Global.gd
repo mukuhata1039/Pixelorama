@@ -1278,6 +1278,9 @@ func undo_or_redo(
 		general_undo(project)
 	else:
 		general_redo(project)
+	# A reference layer or folder may have changed its visible shape.
+	# Refresh lazily on the next drawing operation, not once per brush dab.
+	project.invalidate_anywhere_clip_mask()
 	var action_name := project.undo_redo.get_current_action_name()
 	if (
 		action_name
