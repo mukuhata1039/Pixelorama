@@ -560,30 +560,49 @@ func stop_anywhere_clipping() -> void:
 	_anywhere_clip_hold_meta = false
 
 
-## The toolbar's clear button removes *references* for both features.
-## It deliberately does not unhide layers hidden by the persistent toggle.
-func clear_layer_references() -> void:
+## Clear only the hidden-layer references, and reveal the formerly targeted layers.
+## A separate button handles the unrelated anywhere-clipping reference.
+func clear_target_visibility_references() -> void:
 	_restore_target_visibility_hold()
-	stop_anywhere_clipping()
 	var project := Global.current_project
-	var affected: Array[BaseLayer] = []
+	var targets: Array[BaseLayer] = []
 	for layer in project.layers:
-		if layer.visibility_target or layer.anywhere_clip_target:
-			affected.append(layer)
-	if affected.is_empty():
-		return
-	project.undo_redo.create_action("Clear Layer References")
-	for layer in affected:
 		if layer.visibility_target:
-			project.undo_redo.add_do_property(layer, "visibility_target", false)
-			project.undo_redo.add_undo_property(layer, "visibility_target", true)
-		if layer.anywhere_clip_target:
-			project.undo_redo.add_do_property(layer, "anywhere_clip_target", false)
-			project.undo_redo.add_undo_property(layer, "anywhere_clip_target", true)
+			targets.append(layer)
+	if targets.is_empty():
+		return
+	project.undo_redo.create_action("Clear Visibility References")
+	for layer in targets:
+		project.undo_redo.add_do_property(layer, "visibility_target", false)
+		project.undo_redo.add_undo_property(layer, "visibility_target", true)
+		if not layer.visible:
+			project.undo_redo.add_do_property(layer, "visible", true)
+			project.undo_redo.add_undo_property(layer, "visible", false)
+	project.undo_redo.add_do_method(_redraw_target_visibility)
+	project.undo_redo.add_undo_method(_redraw_target_visibility)
 	project.undo_redo.add_do_method(Global.undo_or_redo.bind(false))
 	project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true))
 	project.undo_redo.commit_action()
 
+
+## Clear the clipping reference independently, without changing layer visibility
+## or any pixels already painted under the temporary mask.
+func clear_anywhere_clip_references() -> void:
+	stop_anywhere_clipping()
+	var project := Global.current_project
+	var targets: Array[BaseLayer] = []
+	for layer in project.layers:
+		if layer.anywhere_clip_target:
+			targets.append(layer)
+	if targets.is_empty():
+		return
+	project.undo_redo.create_action("Clear Anywhere Clipping References")
+	for layer in targets:
+		project.undo_redo.add_do_property(layer, "anywhere_clip_target", false)
+		project.undo_redo.add_undo_property(layer, "anywhere_clip_target", true)
+	project.undo_redo.add_do_method(Global.undo_or_redo.bind(false))
+	project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true))
+	project.undo_redo.commit_action()
 
 func _project_switched() -> void:
 	_restore_target_visibility_hold()
