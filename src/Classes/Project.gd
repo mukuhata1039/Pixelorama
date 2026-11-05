@@ -1017,6 +1017,15 @@ func _z_index_sort(a: int, b: int, frame_index: int) -> bool:
 
 # indices should be in ascending order
 func add_frames(new_frames: Array, indices: PackedInt32Array) -> void:
+	# A manually enabled 1..1 range in a one-frame project covers its
+	# entire timeline. Preserve that full-range intent when frames are added
+	# (including multi-PNG drops), but do not grow a partial custom range.
+	var old_last_frame := frames.size() - 1
+	var extend_full_range := (
+		not frames.is_empty()
+		and playback_range_start == 0
+		and (playback_range_end < 0 or playback_range_end >= old_last_frame)
+	)
 	Global.transform_content_confirmed.emit(self)
 	selected_cels.clear()
 	for i in new_frames.size():
@@ -1030,6 +1039,9 @@ func add_frames(new_frames: Array, indices: PackedInt32Array) -> void:
 		# Add frame
 		frames.insert(indices[i], new_frames[i])
 		Global.animation_timeline.project_frame_added(indices[i])
+	if extend_full_range and frames.size() > old_last_frame + 1:
+		# -1 follows the actual last frame as the timeline expands again.
+		playback_range_end = -1
 	frames_updated.emit()
 
 
