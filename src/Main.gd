@@ -40,12 +40,8 @@ var _target_hold_ctrl := false
 var _target_hold_shift := false
 var _target_hold_alt := false
 var _target_hold_meta := false
-## Separate transient drawing restriction; does not affect the real selection.
-var _anywhere_clip_hold_project: Project
-var _anywhere_clip_hold_ctrl := false
-var _anywhere_clip_hold_shift := false
-var _anywhere_clip_hold_alt := false
-var _anywhere_clip_hold_meta := false
+## A toggled, temporary drawing restriction. Not saved in the project.
+var _anywhere_clip_toggle_project: Project
 var _aseprite_cursors := {}
 ## -1 = no cel drag; 1 = move cels; 2 = copy cels.
 var _cel_drag_cursor_mode := -1
@@ -296,12 +292,10 @@ func _process(_delta: float) -> void:
 			or not _target_visibility_hold_modifiers_pressed()
 		):
 			_restore_target_visibility_hold()
-	if is_instance_valid(_anywhere_clip_hold_project):
+	if is_instance_valid(_anywhere_clip_toggle_project):
 		if (
-			Global.current_project != _anywhere_clip_hold_project
-			or not Input.is_action_pressed(&"anywhere_clip_hold")
-			or not _anywhere_clip_modifiers_pressed()
-			or not _anywhere_clip_hold_project.layers.has(_anywhere_clip_hold_project.anywhere_clip_source)
+			Global.current_project != _anywhere_clip_toggle_project
+			or not _anywhere_clip_toggle_project.layers.has(_anywhere_clip_toggle_project.anywhere_clip_source)
 		):
 			stop_anywhere_clipping()
 	var is_rotating_view := false
@@ -376,15 +370,15 @@ func _process(_delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if event.is_action_released(&"target_layer_visibility_hold"):
 		_restore_target_visibility_hold()
-	if event.is_action_released(&"anywhere_clip_hold"):
-		stop_anywhere_clipping()
 	if _can_use_target_visibility_shortcut():
 		if event.is_action_pressed(&"target_layer_visibility_toggle"):
 			_toggle_target_layer_visibility()
 		elif event.is_action_pressed(&"target_layer_visibility_hold"):
 			_start_target_visibility_hold(event)
-		elif event.is_action_pressed(&"anywhere_clip_hold"):
-			_start_anywhere_clipping(event)
+		elif event.is_action_pressed(&"anywhere_clip_hold") and not (
+			event is InputEventKey and event.echo
+		):
+			_toggle_anywhere_clipping()
 	if event.is_action_pressed(&"layer_visibility"):
 		for selected_cel in Global.current_project.selected_cels:
 			var layer := Global.current_project.layers[selected_cel[1]]
@@ -521,44 +515,27 @@ func _restore_target_visibility_hold() -> void:
 	_redraw_target_visibility()
 
 
-## Hold-to-draw: only the current pixel layer is affected, using the saved
-## reference layer as a binary alpha shape. No actual clipping link is created.
-func _start_anywhere_clipping(event: InputEvent) -> void:
-	if is_instance_valid(_anywhere_clip_hold_project):
+## Toggle the temporary drawing restriction. Keep the existing action ID to
+## preserve shortcuts already assigned while it was configured as hold-only.
+## It never creates a permanent clipping relationship or changes pixel alpha.
+func _toggle_anywhere_clipping() -> void:
+	if is_instance_valid(_anywhere_clip_toggle_project):
+		stop_anywhere_clipping()
 		return
 	var project := Global.current_project
 	var reference := project.get_anywhere_clip_reference()
 	if reference == null or project.layers[project.current_layer] == reference:
 		return
-	_anywhere_clip_hold_project = project
+	_anywhere_clip_toggle_project = project
 	project.anywhere_clip_source = reference
 	project.anywhere_clip_active = true
-	if event is InputEventWithModifiers:
-		_anywhere_clip_hold_ctrl = event.ctrl_pressed
-		_anywhere_clip_hold_shift = event.shift_pressed
-		_anywhere_clip_hold_alt = event.alt_pressed
-		_anywhere_clip_hold_meta = event.meta_pressed
-
-
-func _anywhere_clip_modifiers_pressed() -> bool:
-	return (
-		(not _anywhere_clip_hold_ctrl or Input.is_key_pressed(KEY_CTRL))
-		and (not _anywhere_clip_hold_shift or Input.is_key_pressed(KEY_SHIFT))
-		and (not _anywhere_clip_hold_alt or Input.is_key_pressed(KEY_ALT))
-		and (not _anywhere_clip_hold_meta or Input.is_key_pressed(KEY_META))
-	)
 
 
 func stop_anywhere_clipping() -> void:
-	if is_instance_valid(_anywhere_clip_hold_project):
-		_anywhere_clip_hold_project.anywhere_clip_active = false
-		_anywhere_clip_hold_project.anywhere_clip_source = null
-	_anywhere_clip_hold_project = null
-	_anywhere_clip_hold_ctrl = false
-	_anywhere_clip_hold_shift = false
-	_anywhere_clip_hold_alt = false
-	_anywhere_clip_hold_meta = false
-
+	if is_instance_valid(_anywhere_clip_toggle_project):
+		_anywhere_clip_toggle_project.anywhere_clip_active = false
+		_anywhere_clip_toggle_project.anywhere_clip_source = null
+	_anywhere_clip_toggle_project = null
 
 ## Clear only the hidden-layer references, and reveal the formerly targeted layers.
 ## A separate button handles the unrelated anywhere-clipping reference.
@@ -895,7 +872,6 @@ func _notification(what: int) -> void:
 		# pause the application
 		NOTIFICATION_APPLICATION_FOCUS_OUT:
 			_restore_target_visibility_hold()
-			stop_anywhere_clipping()
 			if Global.pause_when_unfocused:
 				get_tree().paused = true
 		NOTIFICATION_WM_MOUSE_EXIT:
