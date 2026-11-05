@@ -306,7 +306,7 @@ func _on_anywhere_clip_button_pressed() -> void:
 		return
 	var was_target := anywhere_clip_layer.anywhere_clip_target
 	# Never retain a stale mask if its reference changes while holding the key.
-	Global.control.stop_anywhere_clipping()
+	Global.control.call("stop_anywhere_clipping")
 	for layer in project.layers:
 		if layer.anywhere_clip_target:
 			layer.anywhere_clip_target = false
