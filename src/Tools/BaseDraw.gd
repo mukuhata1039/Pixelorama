@@ -695,8 +695,8 @@ func _native_brush_skip_reason() -> String:
 		return "反転・対称"
 	if _stroke_project.has_selection:
 		return "選択範囲"
-	if _stroke_project.anywhere_clip_active:
-		return "どこからでもクリッピング"
+	if _stroke_project.anywhere_clip_active and _brush.type == Brushes.DITHER:
+		return "ディザ用参照マスク"
 	if _stroke_project.tiles.mode != Tiles.MODE.NONE:
 		return "タイルモード"
 	if _stroke_images.is_empty():
@@ -831,6 +831,25 @@ func _filter_native_alpha_mask_rects(rects: Array[Rect2i]) -> Array[Rect2i]:
 	return accepted
 
 
+## Convert the binary reference into contiguous native fill runs. This keeps
+## large opaque pencils/erasers fast instead of doing one Image.set_pixel per dot.
+func _clip_native_brush_rects(rects: Array[Rect2i]) -> Array[Rect2i]:
+	var accepted: Array[Rect2i] = []
+	for rect in rects:
+		for y in range(rect.position.y, rect.end.y):
+			var run_start := -1
+			for x in range(rect.position.x, rect.end.x):
+				if _stroke_project.can_pixel_get_drawn(Vector2i(x, y)):
+					if run_start == -1:
+						run_start = x
+				elif run_start != -1:
+					accepted.append(Rect2i(run_start, y, x - run_start, 1))
+					run_start = -1
+			if run_start != -1:
+				accepted.append(Rect2i(run_start, y, rect.end.x - run_start, 1))
+	return accepted
+
+
 func _paint_native_brush_rects(rects: Array[Rect2i]) -> void:
 	if rects.is_empty():
 		return
@@ -838,6 +857,10 @@ func _paint_native_brush_rects(rects: Array[Rect2i]) -> void:
 	var paint_rects := rects if _brush_density == 100 else _sample_density_rects(rects)
 	if paint_rects.is_empty():
 		return
+	if _stroke_project.anywhere_clip_active:
+		paint_rects = _clip_native_brush_rects(paint_rects)
+		if paint_rects.is_empty():
+			return
 	# Both the full eraser and the fully transparent pencil clear RGBA.
 	# Blending a transparent source would otherwise have no effect.
 	var selected_color := Color(tool_slot.color.to_html())
