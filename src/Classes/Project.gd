@@ -757,13 +757,15 @@ func get_anywhere_clip_raster_mask() -> Image:
 		and _anywhere_clip_raster.get_size() == size
 	):
 		return _anywhere_clip_raster
-	var empty_mask := Image.create_empty(size.x, size.y, false, Image.FORMAT_RGBA8)
-	empty_mask.fill(Color.TRANSPARENT)
-	if not anywhere_clip_active or current_frame < 0 or current_frame >= frames.size():
+	if (
+		not anywhere_clip_active
+		or current_frame < 0 or current_frame >= frames.size()
+		or current_layer < 0 or current_layer >= layers.size()
+	):
+		var empty_mask := Image.create_empty(size.x, size.y, false, Image.FORMAT_RGBA8)
+		empty_mask.fill(Color.TRANSPARENT)
 		return empty_mask
-	if current_layer < 0 or current_layer >= layers.size():
-		return empty_mask
-	# Direct PackedByteArray alpha writes avoid hundreds of thousands of
+	# Direct PackedByteArray alpha writes avoid hundreds of
 	# Image.get_pixelv/set_pixelv calls on large animation canvases.
 	var mask_data := PackedByteArray()
 	mask_data.resize(size.x * size.y * 4)
