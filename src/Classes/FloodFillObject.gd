@@ -48,8 +48,15 @@ func _compute_segments_for_image(
 	var y_range := PackedInt32Array([0, image.get_height()])
 	_area_end_idx = image.get_height() - 1
 	_area_start_idx = 0
-	if selection_matters and project.has_selection:
-		var selection_rect := project.selection_map.get_selection_rect(project)
+	if selection_matters and (project.has_selection or project.is_anywhere_clip_masking()):
+		var selection_rect := (
+			project.selection_map.get_selection_rect(project)
+			if project.has_selection else Rect2i(Vector2i.ZERO, project.size)
+		)
+		if project.is_anywhere_clip_masking():
+			selection_rect = selection_rect.intersection(project.get_anywhere_clip_rect())
+		if not selection_rect.has_area():
+			return
 		_area_start_idx = selection_rect.position.y
 		_area_end_idx = selection_rect.end.y - 1
 		y_range = [selection_rect.position.y, selection_rect.end.y]
@@ -95,7 +102,7 @@ func _flood_line_around_point(
 		return pos.x + 1
 	var west := pos
 	var east := pos
-	if selection_matters and project.has_selection:
+	if selection_matters and (project.has_selection or project.is_anywhere_clip_masking()):
 		while (
 			project.can_pixel_get_drawn(west)
 			&& DrawingAlgos.similar_colors(image.get_pixelv(west), src_color, tolerance)
