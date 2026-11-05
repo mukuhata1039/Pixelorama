@@ -6,7 +6,12 @@ const RECOLOR_SHADER := preload("res://src/Shaders/LiveRecolor.gdshader")
 
 var _project: Project
 var _targets: Array = []
+## Set before popup by TopMenuContainer to enable whole-layer recoloring.
+var requested_layer: PixelLayer
+var _target_layer: PixelLayer
 
+@onready var help_label := $VBox/Help as Label
+@onready var scope_label := $VBox/ScopeLabel as Label
 @onready var color_button := %ColorButton as ColorPickerButton
 @onready var alpha_slider := %AlphaSlider as HSlider
 @onready var alpha_label := %AlphaLabel as Label
@@ -33,13 +38,27 @@ func _prepare() -> void:
 	_project = Global.current_project
 	if _project == null:
 		return
-	var base_color := Tools.get_assigned_color(MOUSE_BUTTON_LEFT)
-	base_color.a = 1.0
+	_target_layer = requested_layer if is_instance_valid(requested_layer) else null
+	requested_layer = null
+	var editing_layer := is_instance_valid(_target_layer)
+	title = "Change layer color" if editing_layer else "Recolor drawn pixels"
+	help_label.text = (
+		"Replace this layer's drawn pixels in every frame, preserving each pixel's transparency."
+		if editing_layer else "Replace every nontransparent pixel with the chosen color."
+	)
+	scope_label.visible = not editing_layer
+	scope_button.visible = not editing_layer
+	var base_color := (
+		_target_layer.drawing_color
+		if editing_layer else Tools.get_assigned_color(MOUSE_BUTTON_LEFT)
+	)
+	if not editing_layer:
+		base_color.a = 1.0
 	color_button.color = base_color
-	alpha_slider.set_value_no_signal(100.0)
-	alpha_label.text = "100%"
-	# Multi-cell mode is most useful when several timeline cels are selected.
-	scope_button.select(1 if _project.selected_cels.size() > 1 else 0)
+	alpha_slider.set_value_no_signal(roundi(base_color.a * 100.0))
+	alpha_label.text = "%d%%" % roundi(base_color.a * 100.0)
+	# Layer-icon mode always targets every frame, regardless of timeline selection.
+	scope_button.select(2 if editing_layer else (1 if _project.selected_cels.size() > 1 else 0))
 	_refresh_preview()
 
 
@@ -47,16 +66,22 @@ func _get_target_indices() -> Array:
 	var target_indices: Array = []
 	if not is_instance_valid(_project):
 		return target_indices
-	match scope_button.selected:
-		0:
-			target_indices.append([_project.current_frame, _project.current_layer])
-		1:
-			for pair in _project.selected_cels:
-				if not target_indices.has(pair):
-					target_indices.append(pair.duplicate())
-		2:
-			for frame_index in _project.frames.size():
-				target_indices.append([frame_index, _project.current_layer])
+	if is_instance_valid(_target_layer):
+		if _target_layer.project != _project or not _project.layers.has(_target_layer):
+			return target_indices
+		for frame_index in _project.frames.size():
+			target_indices.append([frame_index, _target_layer.index])
+	else:
+		match scope_button.selected:
+			0:
+				target_indices.append([_project.current_frame, _project.current_layer])
+			1:
+				for pair in _project.selected_cels:
+					if not target_indices.has(pair):
+						target_indices.append(pair.duplicate())
+			2:
+				for frame_index in _project.frames.size():
+					target_indices.append([frame_index, _project.current_layer])
 	var result: Array = []
 	for pair in target_indices:
 		if pair[0] < 0 or pair[0] >= _project.frames.size():
@@ -64,7 +89,7 @@ func _get_target_indices() -> Array:
 		if pair[1] < 0 or pair[1] >= _project.layers.size():
 			continue
 		var layer := _project.layers[pair[1]]
-		if not layer is PixelLayer or not layer.can_layer_get_drawn():
+		if not layer is PixelLayer or (not is_instance_valid(_target_layer) and not layer.can_layer_get_drawn()):
 			continue
 		var cel := _project.frames[pair[0]].cels[pair[1]]
 		if not cel is PixelCel or cel is CelTileMap:
@@ -85,13 +110,16 @@ func _refresh_preview() -> void:
 		affected_label.text = tr("Indexed-color projects are not supported.")
 	else:
 		affected_label.text = tr("Affected cels: %d") % _targets.size()
-	get_ok_button().disabled = unsupported or _targets.is_empty()
+	get_ok_button().disabled = (unsupported or _targets.is_empty()
+		or (is_instance_valid(_target_layer) and color_button.color.a <= 0.0))
 	previous_frame.disabled = _project.frames.size() <= 1
 	next_frame.disabled = _project.frames.size() <= 1
 	if unsupported or _targets.is_empty():
 		Global.canvas.clear_live_recolor_preview()
 	else:
-		Global.canvas.set_live_recolor_preview(_project, _targets, color_button.color)
+		Global.canvas.set_live_recolor_preview(
+			_project, _targets, color_button.color, is_instance_valid(_target_layer)
+		)
 
 
 func _on_color_changed(_color: Color) -> void:
@@ -154,7 +182,9 @@ func _apply() -> void:
 			var generator := ShaderImageEffect.new()
 			generator.generate_image(
 				replacement, RECOLOR_SHADER,
-				{"target_color": color_button.color}, replacement.get_size()
+				{"target_color": color_button.color,
+				"preserve_alpha": is_instance_valid(_target_layer)},
+				replacement.get_size()
 			)
 			if not split_link:
 				reused_images[image_key] = replacement
@@ -168,12 +198,30 @@ func _apply() -> void:
 			"split_link": split_link,
 		})
 	var undo_redo := _project.undo_redo
-	undo_redo.create_action("Draw")
+	var editing_layer := _target_layer if is_instance_valid(_target_layer) else null
+	undo_redo.create_action("Change Layer Color" if editing_layer != null else "Draw")
 	undo_redo.add_do_method(_set_recolored_contents.bind(entries, true))
+	if editing_layer != null:
+		var old_color: Color = editing_layer.drawing_color
+		var was_locked: bool = editing_layer.drawing_color_locked
+		undo_redo.add_do_method(_set_layer_locked_color.bind(
+			editing_layer, color_button.color, true
+		))
+		undo_redo.add_undo_method(_set_layer_locked_color.bind(
+			editing_layer, old_color, was_locked
+		))
 	undo_redo.add_do_method(Global.undo_or_redo.bind(false, -1, -1, _project))
 	undo_redo.add_undo_method(Global.undo_or_redo.bind(true, -1, -1, _project))
 	undo_redo.add_undo_method(_set_recolored_contents.bind(entries, false))
 	undo_redo.commit_action()
+
+
+func _set_layer_locked_color(layer: PixelLayer, color: Color, locked: bool) -> void:
+	if not is_instance_valid(layer):
+		return
+	layer.drawing_color = color
+	layer.drawing_color_locked = locked
+	Tools.apply_layer_drawing_color_lock()
 
 
 func _set_recolored_contents(entries: Array[Dictionary], apply_new: bool) -> void:
