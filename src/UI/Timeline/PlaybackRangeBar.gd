@@ -6,7 +6,8 @@ const START_COLOR := Color("f0bf64")
 const END_COLOR := Color("7fc6f1")
 const INACTIVE_COLOR := Color(0.6, 0.6, 0.6, 0.45)
 
-var _dragging_handle := -1  ## 0: start, 1: end; -1: none.
+var _dragging_handle := -1  ## -2: overlapping handles; -1: none; 0: start; 1: end.
+var _drag_origin_x := 0.0
 
 
 func _frame_center(frame_index: int) -> float:
@@ -81,15 +82,36 @@ func _gui_input(event: InputEvent) -> void:
 			var bounds := _bounds()
 			var start_distance: float = absf(event.position.x - _frame_center(bounds.x))
 			var end_distance: float = absf(event.position.x - _frame_center(bounds.y))
-			# Nearest marker is also directly draggable from anywhere on the ruler.
-			_dragging_handle = 0 if start_distance <= end_distance else 1
-			_set_boundary(_frame_at_x(event.position.x))
+			# With identical endpoints, picking the start handle on a tie
+			# prevents the interval from ever growing to the right.
+			# Resolve a click on the shared marker once its drag direction is known.
+			if bounds.x == bounds.y:
+				var center := _frame_center(bounds.x)
+				_drag_origin_x = event.position.x
+				if event.position.x > center:
+					_dragging_handle = 1
+				elif event.position.x < center:
+					_dragging_handle = 0
+				else:
+					_dragging_handle = -2
+			else:
+				# Nearest marker is draggable from anywhere on the ruler.
+				_dragging_handle = 0 if start_distance <= end_distance else 1
+			if _dragging_handle >= 0:
+				_set_boundary(_frame_at_x(event.position.x))
 		else:
 			_dragging_handle = -1
 		accept_event()
-	elif event is InputEventMouseMotion and _dragging_handle >= 0:
+	elif event is InputEventMouseMotion and _dragging_handle != -1:
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-			_set_boundary(_frame_at_x(event.position.x))
+			if _dragging_handle == -2:
+				# Drag right to move the end, left to move the start.
+				if event.position.x > _drag_origin_x:
+					_dragging_handle = 1
+				elif event.position.x < _drag_origin_x:
+					_dragging_handle = 0
+			if _dragging_handle >= 0:
+				_set_boundary(_frame_at_x(event.position.x))
 		else:
 			_dragging_handle = -1
 		accept_event()
