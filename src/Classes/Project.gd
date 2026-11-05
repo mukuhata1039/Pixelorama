@@ -757,12 +757,16 @@ func get_anywhere_clip_raster_mask() -> Image:
 		and _anywhere_clip_raster.get_size() == size
 	):
 		return _anywhere_clip_raster
-	var mask := Image.create_empty(size.x, size.y, false, Image.FORMAT_RGBA8)
-	mask.fill(Color.TRANSPARENT)
+	var empty_mask := Image.create_empty(size.x, size.y, false, Image.FORMAT_RGBA8)
+	empty_mask.fill(Color.TRANSPARENT)
 	if not anywhere_clip_active or current_frame < 0 or current_frame >= frames.size():
-		return mask
+		return empty_mask
 	if current_layer < 0 or current_layer >= layers.size():
-		return mask
+		return empty_mask
+	# Direct PackedByteArray alpha writes avoid hundreds of thousands of
+	# Image.get_pixelv/set_pixelv calls on large animation canvases.
+	var mask_data := PackedByteArray()
+	mask_data.resize(size.x * size.y * 4)
 	var canvas_bounds := Rect2i(Vector2i.ZERO, size)
 	var frame := frames[current_frame]
 	for reference in get_anywhere_clip_references():
@@ -787,11 +791,23 @@ func get_anywhere_clip_raster_mask() -> Image:
 			continue
 		var source_rect := Rect2i(source_offset, source_image.get_size())
 		var region := source_rect.intersection(canvas_bounds)
+		if not region.has_area():
+			continue
+		var scan_image := source_image
+		if source_image.get_format() != Image.FORMAT_RGBA8:
+			scan_image = source_image.duplicate()
+			scan_image.convert(Image.FORMAT_RGBA8)
+		var source_data := scan_image.get_data()
+		var source_width := scan_image.get_width()
 		for y in range(region.position.y, region.end.y):
+			var from_row := (y - source_offset.y) * source_width * 4
+			var to_row := y * size.x * 4
 			for x in range(region.position.x, region.end.x):
-				var canvas_pos := Vector2i(x, y)
-				if source_image.get_pixelv(canvas_pos - source_offset).a > 0.0:
-					mask.set_pixelv(canvas_pos, Color.WHITE)
+				if source_data[from_row + (x - source_offset.x) * 4 + 3] > 0:
+					mask_data[to_row + x * 4 + 3] = 255
+	var mask := Image.create_from_data(
+		size.x, size.y, false, Image.FORMAT_RGBA8, mask_data
+	)
 	_anywhere_clip_raster = mask
 	_anywhere_clip_frame = current_frame
 	_anywhere_clip_layer = current_layer
