@@ -271,9 +271,9 @@ func _select_segments(
 func _set_bit(
 	p: Vector2i, mask: SelectionMap, selection_map: SelectionMap, map_is_invisible: bool
 ) -> void:
-	if (map_is_invisible or selection_map.is_pixel_selected(p)) and (
-		Global.current_project.can_pixel_get_drawn(p)
-	):
+	if not Global.current_project.can_pixel_get_drawn(p):
+		return
+	if map_is_invisible or selection_map.is_pixel_selected(p):
 		mask.select_pixel(p, true)
 
 
