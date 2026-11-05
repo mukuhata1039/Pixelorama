@@ -731,12 +731,20 @@ func get_anywhere_clip_reference() -> PixelLayer:
 
 
 func is_anywhere_clip_masking() -> bool:
-	return anywhere_clip_active and is_instance_valid(anywhere_clip_source)
+	return (
+		anywhere_clip_active and is_instance_valid(anywhere_clip_source)
+		and layers.has(anywhere_clip_source)
+	)
 
 
 func _is_anywhere_clip_pixel_allowed(pixel: Vector2i) -> bool:
 	var reference := anywhere_clip_source
-	if not is_instance_valid(reference) or current_layer < 0 or current_layer >= layers.size():
+	if (
+		not is_instance_valid(reference) or not layers.has(reference)
+		or current_layer < 0 or current_layer >= layers.size()
+	):
+		return false
+	if reference.index < 0 or reference.index >= layers.size():
 		return false
 	if reference == layers[current_layer]:
 		return false
@@ -779,7 +787,7 @@ func get_anywhere_clip_raster_mask() -> Image:
 ## Shared shader-compatible selection image: explicit selection intersected with
 ## the temporary binary clipping reference, without changing saved selection.
 func get_effective_draw_selection() -> Image:
-	if is_anywhere_clip_masking():
+	if anywhere_clip_active:
 		return get_anywhere_clip_raster_mask()
 	if has_selection:
 		return selection_map.return_cropped_copy(self, size)
