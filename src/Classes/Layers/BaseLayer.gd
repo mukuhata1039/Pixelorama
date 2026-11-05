@@ -53,6 +53,8 @@ var parent: BaseLayer  ## Parent of the layer.
 var visible := true:  ## Sets visibility of the layer.
 	set(value):
 		visible = value
+		if is_instance_valid(project) and project.anywhere_clip_active:
+			project.invalidate_anywhere_clip_mask()
 		visibility_changed.emit()
 var locked := false:  ## Images of a locked layer won't be overritten.
 	set(value):
@@ -64,7 +66,11 @@ var new_cels_linked := false  ## Determines if new cel of the layer should be li
 var hidden_by_other_layer := false
 var ignore_onion := false  ## Determines if the layer is visible in onion skinning
 var blend_mode := BlendModes.NORMAL  ## Blend mode of the current layer.
-var clipping_mask := false  ## If [code]true[/code], the layer acts as a clipping mask.
+var clipping_mask := false:  ## If [code]true[/code], the layer acts as a clipping mask.
+	set(value):
+		clipping_mask = value
+		if is_instance_valid(project) and project.anywhere_clip_active:
+			project.invalidate_anywhere_clip_mask()
 var opacity := 1.0  ## The opacity of the layer, affects all frames that belong to that layer.
 ## Aseprite-inspired restriction: this includes the exact alpha of the paint color.
 ## Whether target-visibility shortcuts affect this layer, regardless of active cel.
