@@ -36,7 +36,7 @@ var drawing_color_lock_button: Button
 var target_visibility_button: Button
 var target_visibility_layer: BaseLayer
 var anywhere_clip_button: Button
-var anywhere_clip_layer: PixelLayer
+var anywhere_clip_layer: BaseLayer
 @onready var properties: AcceptDialog = Global.control.find_child("LayerProperties")
 @onready var main_button := %LayerMainButton as Button
 @onready var expand_button := %ExpandButton as BaseButton
@@ -75,7 +75,7 @@ func _ready() -> void:
 		var action_spacer := _add_control_spacer("LayerActionSpacer")
 		$HBoxContainer.move_child(action_spacer, linked_button.get_index())
 	_setup_target_visibility_button(layer)
-	if layer is PixelLayer:
+	if layer is PixelLayer or layer is GroupLayer:
 		_setup_anywhere_clip_button(layer)
 	else:
 		_add_control_spacer("AnywhereClipSpacer")
@@ -262,14 +262,14 @@ func _on_target_visibility_button_pressed() -> void:
 	project.has_changed = true
 
 
-## The second reference pin picks the shape used by the anywhere-clip hold shortcut.
-## Keep one shape reference at a time, regardless of group or layer order.
-func _setup_anywhere_clip_button(layer: PixelLayer) -> void:
+## The second reference pin contributes the layer/folder to a binary union mask.
+## Each pin can be enabled independently, regardless of group or layer order.
+func _setup_anywhere_clip_button(layer: BaseLayer) -> void:
 	anywhere_clip_layer = layer
 	anywhere_clip_button = Button.new()
 	anywhere_clip_button.name = "AnywhereClipReferenceButton"
 	anywhere_clip_button.tooltip_text = tr(
-		"Use this layer as the anywhere-clipping reference"
+		"Use this layer or folder as the anywhere-clipping reference"
 	)
 	anywhere_clip_button.toggle_mode = true
 	anywhere_clip_button.set_pressed_no_signal(layer.anywhere_clip_target)
@@ -312,14 +312,7 @@ func _on_anywhere_clip_button_pressed() -> void:
 	var project := anywhere_clip_layer.project
 	if project != Global.current_project:
 		return
-	var was_target := anywhere_clip_layer.anywhere_clip_target
-	# Never retain a stale mask if its reference changes while holding the key.
-	Global.control.call("stop_anywhere_clipping")
-	for layer in project.layers:
-		if layer.anywhere_clip_target:
-			layer.anywhere_clip_target = false
-	if not was_target:
-		anywhere_clip_layer.anywhere_clip_target = true
+	anywhere_clip_layer.anywhere_clip_target = not anywhere_clip_layer.anywhere_clip_target
 	project.has_changed = true
 
 
