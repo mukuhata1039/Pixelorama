@@ -295,7 +295,7 @@ func _process(_delta: float) -> void:
 	if is_instance_valid(_anywhere_clip_toggle_project):
 		if (
 			Global.current_project != _anywhere_clip_toggle_project
-			or not _anywhere_clip_toggle_project.layers.has(_anywhere_clip_toggle_project.anywhere_clip_source)
+			or _anywhere_clip_toggle_project.get_anywhere_clip_references().is_empty()
 		):
 			stop_anywhere_clipping()
 	var is_rotating_view := false
@@ -523,18 +523,22 @@ func _toggle_anywhere_clipping() -> void:
 		stop_anywhere_clipping()
 		return
 	var project := Global.current_project
-	var reference := project.get_anywhere_clip_reference()
-	if reference == null or project.layers[project.current_layer] == reference:
+	var has_usable_reference := false
+	for reference in project.get_anywhere_clip_references():
+		if reference != project.layers[project.current_layer]:
+			has_usable_reference = true
+			break
+	if not has_usable_reference:
 		return
 	_anywhere_clip_toggle_project = project
-	project.anywhere_clip_source = reference
 	project.anywhere_clip_active = true
+	project.invalidate_anywhere_clip_mask()
 
 
 func stop_anywhere_clipping() -> void:
 	if is_instance_valid(_anywhere_clip_toggle_project):
 		_anywhere_clip_toggle_project.anywhere_clip_active = false
-		_anywhere_clip_toggle_project.anywhere_clip_source = null
+		_anywhere_clip_toggle_project.invalidate_anywhere_clip_mask()
 	_anywhere_clip_toggle_project = null
 
 ## Clear only the hidden-layer references, and reveal the formerly targeted layers.
