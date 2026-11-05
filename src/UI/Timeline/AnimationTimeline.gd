@@ -2054,7 +2054,7 @@ func flatten_layers(
 	for frame_index in project.frames.size():
 		var frame := project.frames[frame_index]
 		var textures: Array[Image] = []
-		var metadata_image := Image.create(indices.size(), 4, false, Image.FORMAT_R8)
+		var metadata_image := Image.create(indices.size(), 4, false, Image.FORMAT_RG8)
 		for i in indices.size():
 			var layer_index := indices[i]
 			var current_layer := project.layers[layer_index]

@@ -643,7 +643,7 @@ func draw_layers(force_recreate := false, allow_playback_cache := false) -> void
 			textures.resize(project.layers.size())
 			# Nx4 texture, where N is the number of layers and the first row are
 			# blend modes, second opacities, third clipping mask flags.
-			layer_metadata_image = Image.create(project.layers.size(), 4, false, Image.FORMAT_R8)
+			layer_metadata_image = Image.create(project.layers.size(), 4, false, Image.FORMAT_RG8)
 			var prepare_started_us := (
 				Time.get_ticks_usec() if _benchmark_canvas_sample_active else 0
 			)
