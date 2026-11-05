@@ -80,6 +80,8 @@ var anywhere_clip_target := false:
 		if anywhere_clip_target == value:
 			return
 		anywhere_clip_target = value
+		if is_instance_valid(project):
+			project.invalidate_anywhere_clip_mask()
 		anywhere_clip_target_changed.emit()
 var drawing_color_locked := false:
 	set(value):
