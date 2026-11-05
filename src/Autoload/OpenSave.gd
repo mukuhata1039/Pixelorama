@@ -1556,18 +1556,22 @@ func _process(_delta: float) -> void:
 	if _autosave_thread != null:
 		if _autosave_thread.is_alive():
 			return
-		var result: Dictionary = _autosave_thread.wait_to_finish()
+		var result = _autosave_thread.wait_to_finish()
 		_autosave_thread = null
 		var finished_project: Project = null
 		if _autosave_project_ref != null:
 			finished_project = _autosave_project_ref.get_ref() as Project
-		if result.get("ok", false):
+		if result is Dictionary and result.get("ok", false):
 			if is_instance_valid(finished_project):
 				finished_project.autosave_saved_revision = _autosave_revision
 				finished_project.autosave_saved_undo_version = _autosave_undo_version
 			Global.notification_label("Backup saved")
 		else:
-			push_error("Automatic backup failed: %s" % result.get("error", "unknown"))
+			var reason: String = (
+				str(result.get("error", "unknown")) if result is Dictionary
+				else "Worker returned no result"
+			)
+			push_error("Automatic backup failed: %s" % reason)
 			Global.notification_label("Backup failed")
 		_autosave_project_ref = null
 
@@ -1577,6 +1581,7 @@ func _process(_delta: float) -> void:
 	# the user is holding down a drawing button. Wait until editing is idle.
 	if (
 		Global.canvas.brush_profile_active
+		or Global.animation_timeline.is_animation_running
 		or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 		or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
 	):
