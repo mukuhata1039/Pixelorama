@@ -19,40 +19,6 @@ var preview_dialogs := []  ## Array of preview dialogs
 var last_dialog_option := 0
 var autosave_timer: Timer
 
-## The backup uses detached byte arrays, never live Images or Project objects
-## on the worker thread. ZIP compression and file I/O can therefore run
-## without blocking brush strokes or risking concurrent project mutations.
-class BackupArchive:
-	extends RefCounted
-
-	var entries: Array[Dictionary] = []
-	var _file_name := ""
-
-	func open(_path: String) -> Error:
-		return OK
-
-	func start_file(path: String) -> Error:
-		_file_name = path
-		return OK
-
-	func write_file(data: PackedByteArray) -> Error:
-		entries.append({"name": _file_name, "bytes": data})
-		return OK
-
-	func close_file() -> Error:
-		return OK
-
-	func close() -> Error:
-		return OK
-
-
-var _autosave_thread: Thread
-var _autosave_project_ref: WeakRef
-var _autosave_revision := -1
-var _autosave_undo_version := -1
-var _autosave_requested := false
-var _autosave_next_project_index := 0
-
 # custom importer related dictionaries (received from extensions)
 var custom_import_names := {}  ## Contains importer names as keys and ids as values
 var custom_importer_scenes := {}  ## Contains ids keys and import option preloads as values
@@ -626,13 +592,8 @@ func save_pxo_file(path: String, autosave: bool, project := Global.current_proje
 	var temp_path := path
 	if FileAccess.file_exists(path) and not OS.get_name() == "Android":
 		temp_path = path + "1"
-	# Manual saves keep the existing synchronous, full-preview path. Autosaves
-	# collect detached bytes here and compress them on a worker afterwards.
-	var background_backup := autosave and not OS.has_feature("web")
-	if background_backup and _autosave_thread != null:
-		return false
-	var zip_packer = BackupArchive.new() if background_backup else ZIPPacker.new()
-	var err = zip_packer.open(temp_path)
+	var zip_packer := ZIPPacker.new()
+	var err := zip_packer.open(temp_path)
 	if err != OK:
 		Global.popup_error(tr("File failed to save. Error code %s (%s)") % [err, error_string(err)])
 		if temp_path.is_valid_filename():
@@ -651,14 +612,8 @@ func save_pxo_file(path: String, autosave: bool, project := Global.current_proje
 	var current_frame := project.frames[project.current_frame]
 	# Generate a preview image of the current frame.
 	# File managers can later use this as a thumbnail for pxo files.
-	var preview := Image.new()
-	if autosave:
-		# Recovery reads data.json and per-cel images, not preview.png.
-		# Skip the expensive full-frame blend for automatic backups.
-		preview = Image.create(1, 1, false, Image.FORMAT_RGBA8)
-	else:
-		preview = project.new_empty_image()
-		DrawingAlgos.blend_layers(preview, current_frame, Vector2i.ZERO, project)
+	var preview := project.new_empty_image()
+	DrawingAlgos.blend_layers(preview, current_frame, Vector2i.ZERO, project)
 	var new_width := preview.get_width()
 	var new_height := preview.get_height()
 	var aspect_ratio := float(new_width) / float(new_height)
@@ -760,38 +715,6 @@ func save_pxo_file(path: String, autosave: bool, project := Global.current_proje
 			zip_packer.write_file(tmp_wav.get_buffer(tmp_wav.get_length()))
 			zip_packer.close_file()
 	zip_packer.close()
-
-	if background_backup:
-		# The main thread has finished reading all project resources. Only
-		# copied strings and PackedByteArrays cross the thread boundary.
-		var staging_path := BACKUPS_DIRECTORY.path_join(
-			".autosave-%d.tmp" % OS.get_process_id()
-		)
-		var job := {
-			"path": path,
-			"temp_path": staging_path,
-			"entries": zip_packer.entries
-		}
-		_autosave_revision = project.autosave_revision
-		_autosave_undo_version = project.undo_redo.get_version()
-		_autosave_project_ref = weakref(project)
-		var worker := Thread.new()
-		var thread_err := worker.start(_write_autosave_job.bind(job))
-		if thread_err != OK:
-			# Keep autosave functional even on platforms without threads.
-			var fallback_result: Dictionary = _write_autosave_job(job)
-			if not fallback_result.get("ok", false):
-				push_error("Automatic backup failed: %s" % fallback_result.get("error", "unknown"))
-				Global.notification_label("Backup failed")
-				_autosave_project_ref = null
-				return false
-			project.autosave_saved_revision = _autosave_revision
-			project.autosave_saved_undo_version = _autosave_undo_version
-			_autosave_project_ref = null
-			Global.notification_label("Backup saved")
-		else:
-			_autosave_thread = worker
-		return true
 
 	if temp_path != path:
 		# Rename the new file to its proper name and remove the old file, if it exists.
@@ -1500,132 +1423,10 @@ func enforce_backed_sessions_limit() -> void:
 			old_folders.remove_at(0)
 
 
-## Compress only detached byte arrays on a worker; never touch Project,
-## Image, scene-tree nodes, or editor UI from this function.
-func _write_autosave_job(job: Dictionary) -> Dictionary:
-	var staging_path: String = job["temp_path"]
-	var output_path: String = job["path"]
-	var writer := ZIPPacker.new()
-	writer.compression_level = ZIPPacker.COMPRESSION_FAST
-	var err := writer.open(staging_path)
-	if err != OK:
-		return {"ok": false, "error": error_string(err)}
-	for entry: Dictionary in job["entries"]:
-		err = writer.start_file(entry["name"])
-		if err == OK:
-			err = writer.write_file(entry["bytes"])
-		if err == OK:
-			err = writer.close_file()
-		if err != OK:
-			writer.close()
-			DirAccess.remove_absolute(staging_path)
-			return {"ok": false, "error": error_string(err)}
-	err = writer.close()
-	if err != OK:
-		DirAccess.remove_absolute(staging_path)
-		return {"ok": false, "error": error_string(err)}
-
-	# Validate the temporary archive before replacing the last good backup.
-	var reader := ZIPReader.new()
-	err = reader.open(staging_path)
-	if err != OK:
-		DirAccess.remove_absolute(staging_path)
-		return {"ok": false, "error": "Generated backup ZIP cannot be opened"}
-	var saved_names := {}
-	for name in reader.get_files():
-		saved_names[name] = true
-	var is_complete := saved_names.has("data.json") and saved_names.has("mimetype")
-	if is_complete:
-		for entry: Dictionary in job["entries"]:
-			if not saved_names.has(entry["name"]):
-				is_complete = false
-				break
-	reader.close()
-	if not is_complete:
-		DirAccess.remove_absolute(staging_path)
-		return {"ok": false, "error": "Generated backup ZIP is incomplete"}
-
-	err = DirAccess.rename_absolute(staging_path, output_path)
-	if err != OK:
-		DirAccess.remove_absolute(staging_path)
-		return {"ok": false, "error": error_string(err)}
-	return {"ok": true}
-
-
-func _process(_delta: float) -> void:
-	if _autosave_thread != null:
-		if _autosave_thread.is_alive():
-			return
-		var result = _autosave_thread.wait_to_finish()
-		_autosave_thread = null
-		var finished_project: Project = null
-		if _autosave_project_ref != null:
-			finished_project = _autosave_project_ref.get_ref() as Project
-		if result is Dictionary and result.get("ok", false):
-			if is_instance_valid(finished_project):
-				finished_project.autosave_saved_revision = _autosave_revision
-				finished_project.autosave_saved_undo_version = _autosave_undo_version
-			Global.notification_label("Backup saved")
-		else:
-			var reason: String = (
-				str(result.get("error", "unknown")) if result is Dictionary
-				else "Worker returned no result"
-			)
-			push_error("Automatic backup failed: %s" % reason)
-			Global.notification_label("Backup failed")
-		_autosave_project_ref = null
-
-	if not _autosave_requested or not Global.enable_autosave:
-		return
-	# The editor must never capture partially drawn pixels or serialize while
-	# the user is holding down a drawing button. Wait until editing is idle.
-	if (
-		Global.canvas.brush_profile_active
-		or Global.animation_timeline.is_animation_running
-		or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-		or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
-	):
-		return
-	while _autosave_next_project_index < Global.projects.size():
-		var project := Global.projects[_autosave_next_project_index] as Project
-		_autosave_next_project_index += 1
-		if not project.has_changed:
-			continue
-		var version := project.undo_redo.get_version()
-		if (
-			project.autosave_saved_revision == project.autosave_revision
-			and project.autosave_saved_undo_version == version
-		):
-			continue
-		if project.backup_path.is_empty():
-			var p_name: String = project.export_profile.file_name
-			project.backup_path = current_session_backup.path_join(
-				"(" + p_name + " backup)-" + str(Time.get_unix_time_from_system())
-				+ "-%s" % (_autosave_next_project_index - 1)
-			)
-		if not DirAccess.dir_exists_absolute(current_session_backup):
-			DirAccess.make_dir_recursive_absolute(current_session_backup)
-		save_pxo_file(project.backup_path, true, project)
-		# Snapshot one project at a time to avoid long main-thread stalls.
-		return
-	_autosave_requested = false
-	_autosave_next_project_index = 0
-
-
-func _exit_tree() -> void:
-	# The editor may quit while the worker is writing a recovery file.
-	# Wait for the worker to finish so a valid previous backup stays intact.
-	if _autosave_thread != null:
-		_autosave_thread.wait_to_finish()
-		_autosave_thread = null
-
-
 func update_autosave() -> void:
 	if not is_instance_valid(autosave_timer):
 		return
 	autosave_timer.stop()
-	if not Global.enable_autosave:
-		_autosave_requested = false
 	# Interval parameter is in minutes, wait_time is seconds
 	autosave_timer.wait_time = Global.autosave_interval * 60
 	if Global.enable_autosave:
@@ -1633,10 +1434,16 @@ func update_autosave() -> void:
 
 
 func _on_Autosave_timeout() -> void:
-	# A timer tick schedules work rather than blocking the drawing thread.
-	# Deferred jobs stay pending while the brush is down or a ZIP is writing.
-	_autosave_requested = true
-	_autosave_next_project_index = 0
+	for i in Global.projects.size():
+		var project := Global.projects[i]
+		var p_name: String = project.export_profile.file_name
+		if project.backup_path.is_empty():
+			project.backup_path = (current_session_backup.path_join(
+				"(" + p_name + " backup)-" + str(Time.get_unix_time_from_system()) + "-%s" % i
+			))
+		if not DirAccess.dir_exists_absolute(current_session_backup):
+			DirAccess.make_dir_recursive_absolute(current_session_backup)
+		save_pxo_file(project.backup_path, true, project)
 
 
 func save_project_to_recent_list(path: String) -> void:
