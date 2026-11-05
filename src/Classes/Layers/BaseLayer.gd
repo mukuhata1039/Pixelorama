@@ -86,21 +86,6 @@ var clipping_inherited := false:
 			project.invalidate_anywhere_clip_mask()
 		clipping_mode_changed.emit()
 
-## Only direct sibling pixel layers may be a normal clipping base.
-## A group or tilemap between siblings is a boundary, not a mask source.
-func get_previous_clipping_sibling() -> PixelLayer:
-	if not self is PixelLayer or self is LayerTileMap:
-		return null
-	if not is_instance_valid(project):
-		return null
-	for previous_index in range(index - 1, -1, -1):
-		var candidate := project.layers[previous_index]
-		if candidate.parent != parent:
-			continue
-		if candidate is PixelLayer and not candidate is LayerTileMap:
-			return candidate as PixelLayer
-		return null
-	return null
 var opacity := 1.0:  ## The opacity of the layer, affects all frames that belong to that layer.
 	set(value):
 		opacity = value
@@ -183,6 +168,23 @@ func get_children(recursive: bool) -> Array[BaseLayer]:
 			if project.layers[i].parent == self:
 				children.append(project.layers[i])
 	return children
+
+
+## Only direct sibling pixel layers may be a normal clipping base.
+## A group or tilemap between siblings is a boundary, not a mask source.
+func get_previous_clipping_sibling() -> BaseLayer:
+	if not self is PixelLayer or self is LayerTileMap:
+		return null
+	if not is_instance_valid(project):
+		return null
+	for previous_index in range(index - 1, -1, -1):
+		var candidate := project.layers[previous_index]
+		if candidate.parent != parent:
+			continue
+		if candidate is PixelLayer and not candidate is LayerTileMap:
+			return candidate
+		return null
+	return null
 
 
 ## Returns the number of child nodes.
