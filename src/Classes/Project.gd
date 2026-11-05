@@ -782,6 +782,11 @@ func get_anywhere_clip_raster_mask() -> Image:
 			# child pixels. Real clipping inside the folder stays clipped.
 			if not reference.is_visible_in_hierarchy():
 				continue
+			var group_opacity := frame.cels[reference.index].get_final_opacity(reference)
+			for ancestor in reference.get_ancestors():
+				group_opacity *= frame.cels[ancestor.index].get_final_opacity(ancestor)
+			if group_opacity <= 0.0:
+				continue
 			source_image = (reference as GroupLayer).blend_children(frame)
 		elif reference is PixelLayer:
 			var source_cel := frame.cels[reference.index] as PixelCel
