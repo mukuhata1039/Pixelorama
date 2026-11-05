@@ -897,8 +897,6 @@ layout_mode = 2
 tooltip_text = "Clear visibility references and show their layers"
 focus_mode = 0
 mouse_default_cursor_shape = 2
-theme_override_font_sizes/font_size = 11
-text = "V×"
 
 [node name="ClearAnywhereClipReferencesButton" type="Button" parent="TimelineContainer/MainBodyPanel/MainBodyVBoxContainer/MarginContainer/LayerFrameHeaderHSplit/LayerHeaderContainer" groups=["UIButtons"]]
 unique_name_in_owner = true
@@ -907,8 +905,6 @@ layout_mode = 2
 tooltip_text = "Clear anywhere-clipping references"
 focus_mode = 0
 mouse_default_cursor_shape = 2
-theme_override_font_sizes/font_size = 11
-text = "C×"
 
 [node name="MarginContainer" type="MarginContainer" parent="TimelineContainer/MainBodyPanel/MainBodyVBoxContainer/MarginContainer/LayerFrameHeaderHSplit/LayerHeaderContainer" unique_id=735902255]
 layout_mode = 2
