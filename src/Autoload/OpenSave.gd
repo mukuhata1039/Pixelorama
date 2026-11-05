@@ -626,7 +626,10 @@ func save_pxo_file(path: String, autosave: bool, project := Global.current_proje
 	var temp_path := path
 	if FileAccess.file_exists(path) and not OS.get_name() == "Android":
 		temp_path = path + "1"
-	var zip_packer := ZIPPacker.new()
+	# Manual saves keep the existing synchronous, full-preview path. Autosaves
+	# collect detached bytes here and compress them on a worker afterwards.
+	var background_backup := autosave and not OS.has_feature("web")
+	var zip_packer = BackupArchive.new() if background_backup else ZIPPacker.new()
 	var err := zip_packer.open(temp_path)
 	if err != OK:
 		Global.popup_error(tr("File failed to save. Error code %s (%s)") % [err, error_string(err)])
@@ -646,8 +649,14 @@ func save_pxo_file(path: String, autosave: bool, project := Global.current_proje
 	var current_frame := project.frames[project.current_frame]
 	# Generate a preview image of the current frame.
 	# File managers can later use this as a thumbnail for pxo files.
-	var preview := project.new_empty_image()
-	DrawingAlgos.blend_layers(preview, current_frame, Vector2i.ZERO, project)
+	var preview := Image.new()
+	if autosave:
+		# Recovery reads data.json and per-cel images, not preview.png.
+		# Skip the expensive full-frame blend for automatic backups.
+		preview = Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	else:
+		preview = project.new_empty_image()
+		DrawingAlgos.blend_layers(preview, current_frame, Vector2i.ZERO, project)
 	var new_width := preview.get_width()
 	var new_height := preview.get_height()
 	var aspect_ratio := float(new_width) / float(new_height)
@@ -749,6 +758,35 @@ func save_pxo_file(path: String, autosave: bool, project := Global.current_proje
 			zip_packer.write_file(tmp_wav.get_buffer(tmp_wav.get_length()))
 			zip_packer.close_file()
 	zip_packer.close()
+
+	if background_backup:
+		# The main thread has finished reading all project resources. Only
+		# copied strings and PackedByteArrays cross the thread boundary.
+		var staging_path := BACKUPS_DIRECTORY.path_join(
+			".autosave-%d.tmp" % OS.get_process_id()
+		)
+		var job := {
+			"path": path,
+			"temp_path": staging_path,
+			"entries": zip_packer.entries
+		}
+		_autosave_revision = project.autosave_revision
+		_autosave_undo_version = project.undo_redo.get_version()
+		_autosave_project_ref = weakref(project)
+		var worker := Thread.new()
+		var thread_err := worker.start(_write_autosave_job.bind(job))
+		if thread_err != OK:
+			# Keep autosave functional even on platforms without threads.
+			var fallback_result: Dictionary = _write_autosave_job(job)
+			if not fallback_result.get("ok", false):
+				push_error("Automatic backup failed: %s" % fallback_result.get("error", "unknown"))
+				return false
+			project.autosave_saved_revision = _autosave_revision
+			project.autosave_saved_undo_version = _autosave_undo_version
+			Global.notification_label("Backup saved")
+		else:
+			_autosave_thread = worker
+		return true
 
 	if temp_path != path:
 		# Rename the new file to its proper name and remove the old file, if it exists.
