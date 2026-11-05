@@ -301,6 +301,7 @@ func _process(_delta: float) -> void:
 			Global.current_project != _anywhere_clip_hold_project
 			or not Input.is_action_pressed(&"anywhere_clip_hold")
 			or not _anywhere_clip_modifiers_pressed()
+			or not _anywhere_clip_hold_project.layers.has(_anywhere_clip_hold_project.anywhere_clip_source)
 		):
 			stop_anywhere_clipping()
 	var is_rotating_view := false
