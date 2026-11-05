@@ -103,15 +103,15 @@ func draw_start(pos: Vector2i) -> void:
 	_offset = pos
 	_drawing = true
 	_selection_tex = ImageTexture.new()
-	if project.has_selection:
-		var selection := project.selection_map.return_cropped_copy(project, project.size)
-		_selection_tex = ImageTexture.create_from_image(selection)
+	if project.has_selection or project.is_anywhere_clip_masking():
+		_selection_tex = ImageTexture.create_from_image(project.get_effective_draw_selection())
 	if _fill_area == FillArea.AREA:
 		var draw_mask := SelectionMap.new()
 		draw_mask.copy_from(project.selection_map)
 		draw_mask.clear()
 		var flood_fill_object := FloodFillObject.new()
 		flood_fill_object.tolerance = _tolerance
+		flood_fill_object.selection_matters = true
 		flood_fill_object.flood_fill(
 			pos, source_image, draw_mask, project, _select_segments.bind(project.selection_map)
 		)
@@ -271,7 +271,9 @@ func _select_segments(
 func _set_bit(
 	p: Vector2i, mask: SelectionMap, selection_map: SelectionMap, map_is_invisible: bool
 ) -> void:
-	if map_is_invisible or selection_map.is_pixel_selected(p):
+	if (map_is_invisible or selection_map.is_pixel_selected(p)) and (
+		Global.current_project.can_pixel_get_drawn(p)
+	):
 		mask.select_pixel(p, true)
 
 
