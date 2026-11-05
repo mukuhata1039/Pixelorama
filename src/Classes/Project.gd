@@ -765,13 +765,24 @@ func get_anywhere_clip_raster_mask() -> Image:
 		var empty_mask := Image.create_empty(size.x, size.y, false, Image.FORMAT_RGBA8)
 		empty_mask.fill(Color.TRANSPARENT)
 		return empty_mask
+	var references := get_anywhere_clip_references()
+	# Editing the sole reference itself should remain unrestricted.
+	if references.is_empty() or (
+		references.size() == 1 and references[0] == layers[current_layer]
+	):
+		var unrestricted := Image.create_empty(size.x, size.y, false, Image.FORMAT_RGBA8)
+		unrestricted.fill(Color.WHITE)
+		_anywhere_clip_raster = unrestricted
+		_anywhere_clip_frame = current_frame
+		_anywhere_clip_layer = current_layer
+		return unrestricted
 	# Direct PackedByteArray alpha writes avoid hundreds of
 	# Image.get_pixelv/set_pixelv calls on large animation canvases.
 	var mask_data := PackedByteArray()
 	mask_data.resize(size.x * size.y * 4)
 	var canvas_bounds := Rect2i(Vector2i.ZERO, size)
 	var frame := frames[current_frame]
-	for reference in get_anywhere_clip_references():
+	for reference in references:
 		# Never let a layer use its own unmasked pixels as the reference.
 		if reference == layers[current_layer]:
 			continue
