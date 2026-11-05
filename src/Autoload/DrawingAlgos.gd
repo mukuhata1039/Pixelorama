@@ -134,13 +134,15 @@ func set_layer_metadata_image(
 		image.set_pixel(index, 1, Color(opacity, 0.0, 0.0, 0.0))
 	else:
 		image.set_pixel(index, 1, Color())
-	# Off=0, C (chain)=1, I (inherit original base)=0.75, skip=0.2.
-	# Group layers never act as a normal clipping-mask source.
-	if layer is PixelLayer and not layer is LayerTileMap and layer.clipping_mask:
-		var clip_value := 0.75 if layer.clipping_inherited else 1.0
+	# Off=0, C=1, I=0.75, ineligible non-pixel sibling=0.4,
+	# already-composited group child=0.2. Groups cannot be mask sources.
+	if layer is PixelLayer and not layer is LayerTileMap:
+		var clip_value := 0.0
+		if layer.clipping_mask:
+			clip_value = 0.75 if layer.clipping_inherited else 1.0
 		image.set_pixel(index, 2, Color(clip_value, 0.0, 0.0, 0.0))
 	else:
-		image.set_pixel(index, 2, Color.BLACK)
+		image.set_pixel(index, 2, Color(0.4, 0.0, 0.0, 0.0))
 	# Encode direct-parent identity in row 3 (16 bits, root=0). It is
 	# important that pass-through groups do not leak clipping across folders.
 	var scope_id := layer.parent.index + 1 if is_instance_valid(layer.parent) else 0
