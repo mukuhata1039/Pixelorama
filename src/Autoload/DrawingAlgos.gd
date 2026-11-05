@@ -61,8 +61,9 @@ func blend_layers(
 	project.order_layers(frame_index)
 	var textures: Array[Image] = []
 	# One column per displayed layer: row 0 = blend mode, row 1 = opacity,
-	# row 2 = clipping / internal group-child flag. Row 3 is unused.
-	var metadata_image := Image.create(project.layers.size(), 4, false, Image.FORMAT_R8)
+	# Row 2 encodes Off/C/I, or a skipped inner-group child. Row 3 stores
+	# the parent group id as two bytes to enforce sibling-only clipping.
+	var metadata_image := Image.create(project.layers.size(), 4, false, Image.FORMAT_RG8)
 	for i in project.layers.size():
 		var ordered_index := project.ordered_layers[i]
 		var layer := project.layers[ordered_index]
@@ -133,11 +134,19 @@ func set_layer_metadata_image(
 		image.set_pixel(index, 1, Color(opacity, 0.0, 0.0, 0.0))
 	else:
 		image.set_pixel(index, 1, Color())
-	# Store the clipping mask boolean
-	if layer.clipping_mask:
-		image.set_pixel(index, 2, Color.RED)
+	# Off=0, C (chain)=1, I (inherit original base)=0.75, skip=0.2.
+	# Group layers never act as a normal clipping-mask source.
+	if layer is PixelLayer and not layer is LayerTileMap and layer.clipping_mask:
+		var clip_value := 0.75 if layer.clipping_inherited else 1.0
+		image.set_pixel(index, 2, Color(clip_value, 0.0, 0.0, 0.0))
 	else:
 		image.set_pixel(index, 2, Color.BLACK)
+	# Encode direct-parent identity in row 3 (16 bits, root=0). It is
+	# important that pass-through groups do not leak clipping across folders.
+	var scope_id := layer.parent.index + 1 if is_instance_valid(layer.parent) else 0
+	image.set_pixel(
+		index, 3, Color(float(scope_id & 255) / 255.0, float((scope_id >> 8) & 255) / 255.0)
+	)
 	# Skip children only in the outer canvas blend: a non-pass-through group
 	# already contains them. When blending *inside* that group they must remain
 	# active and retain their own clipping flags.
