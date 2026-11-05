@@ -782,9 +782,12 @@ func save_pxo_file(path: String, autosave: bool, project := Global.current_proje
 			var fallback_result: Dictionary = _write_autosave_job(job)
 			if not fallback_result.get("ok", false):
 				push_error("Automatic backup failed: %s" % fallback_result.get("error", "unknown"))
+				Global.notification_label("Backup failed")
+				_autosave_project_ref = null
 				return false
 			project.autosave_saved_revision = _autosave_revision
 			project.autosave_saved_undo_version = _autosave_undo_version
+			_autosave_project_ref = null
 			Global.notification_label("Backup saved")
 		else:
 			_autosave_thread = worker
@@ -1565,6 +1568,7 @@ func _process(_delta: float) -> void:
 			Global.notification_label("Backup saved")
 		else:
 			push_error("Automatic backup failed: %s" % result.get("error", "unknown"))
+			Global.notification_label("Backup failed")
 		_autosave_project_ref = null
 
 	if not _autosave_requested or not Global.enable_autosave:
