@@ -324,13 +324,8 @@ func fill_in_color(pos: Vector2i) -> void:
 			if pattern_size.x == 0 or pattern_size.y == 0:
 				return
 
-		var selection: Image
+		var selection: Image = project.get_effective_draw_selection()
 		var selection_tex: ImageTexture
-		if project.has_selection:
-			selection = project.selection_map.return_cropped_copy(project, project.size)
-		else:
-			selection = project.new_empty_image()
-			selection.fill(Color(1, 1, 1, 1))
 
 		selection_tex = ImageTexture.create_from_image(selection)
 
@@ -373,12 +368,10 @@ func fill_in_selection() -> void:
 	var project := Global.current_project
 	var cels := _get_selected_draw_cels(false)
 	if _fill_with == FillWith.COLOR or _pattern == null:
-		if project.has_selection:
+		if project.has_selection or project.is_anywhere_clip_masking():
 			var filler := project.new_empty_image()
 			filler.fill(tool_slot.color)
-			var selection_map_copy := project.selection_map.return_cropped_copy(
-				project, project.size
-			)
+			var selection_map_copy := project.get_effective_draw_selection()
 			var rect := selection_map_copy.get_used_rect()
 			for cel: PixelCel in cels:
 				var image := project.crop_image_to_project_size(cel.get_image(), cel.offset)
@@ -406,13 +399,8 @@ func fill_in_selection() -> void:
 		if pattern_size.x == 0 or pattern_size.y == 0:
 			return
 
-		var selection: Image
+		var selection: Image = project.get_effective_draw_selection()
 		var selection_tex: ImageTexture
-		if project.has_selection:
-			selection = project.selection_map.return_cropped_copy(project, project.size)
-		else:
-			selection = project.new_empty_image()
-			selection.fill(Color(1, 1, 1, 1))
 
 		selection_tex = ImageTexture.create_from_image(selection)
 
@@ -444,7 +432,7 @@ func _flood_fill(pos: Vector2i) -> void:
 	# implements the floodfill routine by Shawn Hargreaves
 	# from https://www1.udel.edu/CIS/software/dist/allegro-4.2.1/src/flood.c
 	var project := Global.current_project
-	if project.has_selection:
+	if project.has_selection or project.is_anywhere_clip_masking():
 		project.selection_map.lock_selection_rect(project, true)
 	if Tools.is_placing_tiles():
 		var paint_index := TileSetPanel.selected_tile_index
@@ -469,7 +457,7 @@ func _flood_fill(pos: Vector2i) -> void:
 				paint_index = TileSetPanel.selected_tile_index
 			if TileSetPanel.autotiling_enabled and paint_index != 0:
 				tilemap_cel.autotile([cell_pos], paint_index == 0)
-		if project.has_selection:
+		if project.has_selection or project.is_anywhere_clip_masking():
 			project.selection_map.lock_selection_rect(project, false)
 		return
 
@@ -491,12 +479,10 @@ func _flood_fill(pos: Vector2i) -> void:
 				continue
 			# Fill all area if it's completely empty and _fill_merged_area = false
 			if image.get_used_rect().size == Vector2i.ZERO and not _fill_merged_area:
-				if project.has_selection:
+				if project.has_selection or project.is_anywhere_clip_masking():
 					var filler := project.new_empty_image()
 					filler.fill(tool_slot.color)
-					var selection_map_copy := project.selection_map.return_cropped_copy(
-						project, project.size
-					)
+					var selection_map_copy := project.get_effective_draw_selection()
 					var rect := selection_map_copy.get_used_rect()
 					if tool_slot.color.a > 0.0 and tool_slot.color.a < 1.0:
 						image.blend_rect_mask(filler, selection_map_copy, rect, rect.position)
@@ -519,7 +505,7 @@ func _flood_fill(pos: Vector2i) -> void:
 			# end early if we are filling with an empty pattern
 			var pattern_size := _pattern.image.get_size()
 			if pattern_size.x == 0 or pattern_size.y == 0:
-				if project.has_selection:
+				if project.has_selection or project.is_anywhere_clip_masking():
 					project.selection_map.lock_selection_rect(project, false)
 				return
 		var source_image := image
@@ -530,7 +516,7 @@ func _flood_fill(pos: Vector2i) -> void:
 		flood_fill_object.selection_matters = true
 		flood_fill_object.flood_fill(pos, source_image, image, project, _color_segments)
 		cel.blit_image_to_cel(image)
-	if project.has_selection:
+	if project.has_selection or project.is_anywhere_clip_masking():
 		project.selection_map.lock_selection_rect(project, false)
 
 

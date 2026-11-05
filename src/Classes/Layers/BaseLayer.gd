@@ -11,6 +11,7 @@ signal effect_removed(effect: LayerEffect)  ## Emits when an effect is removed f
 signal ui_color_changed  ## Emits when [member ui_color] is changed.
 signal drawing_color_lock_changed  ## A layer's allowed drawing color or lock has changed.
 signal visibility_target_changed  ## A shortcut visibility target was enabled or disabled.
+signal anywhere_clip_target_changed  ## The temporary drawing-mask reference changed.
 
 ## All currently supported layer blend modes between two layers. The upper layer
 ## is the blend layer, and the bottom layer is the base layer.
@@ -73,6 +74,13 @@ var visibility_target := false:
 			return
 		visibility_target = value
 		visibility_target_changed.emit()
+## When true, this layer can serve as the binary alpha reference for drawing.
+var anywhere_clip_target := false:
+	set(value):
+		if anywhere_clip_target == value:
+			return
+		anywhere_clip_target = value
+		anywhere_clip_target_changed.emit()
 var drawing_color_locked := false:
 	set(value):
 		drawing_color_locked = value
@@ -400,6 +408,7 @@ func serialize() -> Dictionary:
 		"opacity": opacity,
 		"drawing_color_locked": drawing_color_locked,
 		"visibility_target": visibility_target,
+		"anywhere_clip_target": anywhere_clip_target,
 		"drawing_color": "#" + drawing_color.to_html(true),
 		"ui_color": ui_color,
 		"parent": parent.index if is_instance_valid(parent) else -1,
@@ -441,6 +450,7 @@ func deserialize(dict: Dictionary) -> void:
 			drawing_color = Color(encoded)
 	drawing_color_locked = dict.get("drawing_color_locked", false)
 	visibility_target = dict.get("visibility_target", false)
+	anywhere_clip_target = dict.get("anywhere_clip_target", false)
 	user_data = dict.get("user_data", user_data)
 	var saved_gallery_settings = dict.get("gallery_settings", {})
 	if saved_gallery_settings is Dictionary:

@@ -35,6 +35,8 @@ var _old_camera_auto_release_gui_focus: bool
 var drawing_color_lock_button: Button
 var target_visibility_button: Button
 var target_visibility_layer: BaseLayer
+var anywhere_clip_button: Button
+var anywhere_clip_layer: PixelLayer
 @onready var properties: AcceptDialog = Global.control.find_child("LayerProperties")
 @onready var main_button := %LayerMainButton as Button
 @onready var expand_button := %ExpandButton as BaseButton
@@ -78,6 +80,10 @@ func _ready() -> void:
 		var action_spacer := _add_control_spacer("LayerActionSpacer")
 		$HBoxContainer.move_child(action_spacer, linked_button.get_index())
 	_setup_target_visibility_button(layer)
+	if layer is PixelLayer:
+		_setup_anywhere_clip_button(layer)
+	else:
+		_add_control_spacer("AnywhereClipSpacer")
 	for ancestor in layer.get_ancestors():
 		ancestor.ui_color_changed.connect(func(): layer_ui_color.color = layer.get_ui_color())
 	if layer is PixelLayer:
@@ -251,13 +257,71 @@ func _on_target_visibility_button_pressed() -> void:
 	project.has_changed = true
 
 
+## The second reference pin picks the shape used by the anywhere-clip hold shortcut.
+## Keep one shape reference at a time, regardless of group or layer order.
+func _setup_anywhere_clip_button(layer: PixelLayer) -> void:
+	anywhere_clip_layer = layer
+	anywhere_clip_button = Button.new()
+	anywhere_clip_button.name = "AnywhereClipReferenceButton"
+	anywhere_clip_button.tooltip_text = tr(
+		"Use this layer as the anywhere-clipping reference"
+	)
+	anywhere_clip_button.toggle_mode = true
+	anywhere_clip_button.set_pressed_no_signal(layer.anywhere_clip_target)
+	anywhere_clip_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	anywhere_clip_button.add_to_group("UIButtons")
+	$HBoxContainer.add_child(anywhere_clip_button)
+	anywhere_clip_button.draw.connect(_draw_anywhere_clip_indicator)
+	anywhere_clip_button.pressed.connect(_on_anywhere_clip_button_pressed)
+	layer.anywhere_clip_target_changed.connect(_update_anywhere_clip_button)
+
+
+func _update_anywhere_clip_button() -> void:
+	if not is_instance_valid(anywhere_clip_button):
+		return
+	if not is_instance_valid(anywhere_clip_layer):
+		return
+	anywhere_clip_button.set_pressed_no_signal(anywhere_clip_layer.anywhere_clip_target)
+	anywhere_clip_button.queue_redraw()
+
+
+func _draw_anywhere_clip_indicator() -> void:
+	if not is_instance_valid(anywhere_clip_button) or not is_instance_valid(anywhere_clip_layer):
+		return
+	var center := anywhere_clip_button.size / 2.0
+	var ink := (
+		Color(0.34, 0.81, 0.90) if anywhere_clip_layer.anywhere_clip_target
+		else Color(0.53, 0.53, 0.53)
+	)
+	# A masked square with a diagonal stroke; distinct from the visibility pin.
+	anywhere_clip_button.draw_rect(Rect2(center + Vector2(-5, -5), Vector2(10, 10)), ink, false, 1.5)
+	anywhere_clip_button.draw_line(center + Vector2(-3, 3), center + Vector2(3, -3), ink, 2.0)
+
+
+func _on_anywhere_clip_button_pressed() -> void:
+	if not is_instance_valid(anywhere_clip_layer):
+		return
+	var project := anywhere_clip_layer.project
+	if project != Global.current_project:
+		return
+	var was_target := anywhere_clip_layer.anywhere_clip_target
+	# Never retain a stale mask if its reference changes while holding the key.
+	Global.control.call("stop_anywhere_clipping")
+	for layer in project.layers:
+		if layer.anywhere_clip_target:
+			layer.anywhere_clip_target = false
+	if not was_target:
+		anywhere_clip_layer.anywhere_clip_target = true
+	project.has_changed = true
+
+
 ## Keep every layer control usable at 20px, including group and link buttons.
 func apply_compact_layout(enabled: bool) -> void:
 	var buttons := $HBoxContainer as HBoxContainer
 	var button_size := Vector2(20, 20) if enabled else Vector2(28, 22)
-	# Fixed columns: visibility, lock, link/expand, drawing-color lock, pin.
+	# Fixed columns: visibility, lock, link, color-lock, visibility pin, clipping pin.
 	# Never let the presence of an action icon move the hierarchy/name column.
-	buttons.custom_minimum_size.x = 5 * int(button_size.x)
+	buttons.custom_minimum_size.x = 6 * int(button_size.x)
 	var half_icon := 9.0 if enabled else 11.0
 	for child in buttons.get_children():
 		if not child is Control:
@@ -310,6 +374,8 @@ func apply_compact_layout(enabled: bool) -> void:
 		drawing_color_lock_button.queue_redraw()
 	if is_instance_valid(target_visibility_button):
 		target_visibility_button.queue_redraw()
+	if is_instance_valid(anywhere_clip_button):
+		anywhere_clip_button.queue_redraw()
 
 
 func _on_cel_switched() -> void:

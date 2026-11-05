@@ -58,6 +58,9 @@ var layers: Array[BaseLayer] = []
 var current_frame := 0
 var current_layer := 0
 var selected_cels := [[0, 0]]  ## Array of Arrays of 2 integers (frame & layer)
+## Transient hold-only drawing restriction. Never saved in .pxo.
+var anywhere_clip_active := false
+var anywhere_clip_source: PixelLayer
 ## Array that contains the order of the [BaseLayer] indices that are being drawn.
 ## Takes into account each [BaseCel]'s invidiual z-index. If all z-indexes are 0, then the
 ## array just contains the indices of the layers in increasing order.
@@ -717,17 +720,104 @@ func is_empty() -> bool:
 	)
 
 
+## The reference is independent of layer order, visibility and clipping masks.
+## Only one pixel layer may be marked at a time; its per-frame source alpha
+## supplies a binary shape, without affecting the selection outline.
+func get_anywhere_clip_reference() -> PixelLayer:
+	for layer in layers:
+		if layer is PixelLayer and layer.anywhere_clip_target:
+			return layer as PixelLayer
+	return null
+
+
+func is_anywhere_clip_masking() -> bool:
+	return (
+		anywhere_clip_active and is_instance_valid(anywhere_clip_source)
+		and layers.has(anywhere_clip_source)
+	)
+
+
+func _is_anywhere_clip_pixel_allowed(pixel: Vector2i) -> bool:
+	var reference := anywhere_clip_source
+	if (
+		not is_instance_valid(reference) or not layers.has(reference)
+		or current_layer < 0 or current_layer >= layers.size()
+	):
+		return false
+	if reference.index < 0 or reference.index >= layers.size():
+		return false
+	if reference == layers[current_layer]:
+		return false
+	if current_frame < 0 or current_frame >= frames.size():
+		return false
+	var cel := frames[current_frame].cels[reference.index]
+	if not cel is PixelCel:
+		return false
+	var image := cel.get_image()
+	var local := pixel - cel.offset
+	if local.x < 0 or local.y < 0 or local.x >= image.get_width() or local.y >= image.get_height():
+		return false
+	return image.get_pixelv(local).a > 0.0
+
+
+## Binary raster mask for operations which use Image blits or shaders, such as
+## bucket fill. Never modifies selection_map or draws a marquee on the canvas.
+func get_anywhere_clip_raster_mask() -> Image:
+	var mask := Image.create_empty(size.x, size.y, false, Image.FORMAT_RGBA8)
+	mask.fill(Color.TRANSPARENT)
+	if not is_anywhere_clip_masking():
+		return mask
+	var reference := anywhere_clip_source
+	if reference == layers[current_layer]:
+		return mask
+	var cel := frames[current_frame].cels[reference.index] as PixelCel
+	var source := cel.get_image()
+	var area := Rect2i(cel.offset, source.get_size()).intersection(Rect2i(Vector2i.ZERO, size))
+	for y in range(area.position.y, area.end.y):
+		for x in range(area.position.x, area.end.x):
+			var pixel := Vector2i(x, y)
+			if source.get_pixelv(pixel - cel.offset).a <= 0.0:
+				continue
+			if has_selection and not selection_map.is_pixel_selected(pixel):
+				continue
+			mask.set_pixelv(pixel, Color.WHITE)
+	return mask
+
+
+## Shared shader-compatible selection image: explicit selection intersected with
+## the temporary binary clipping reference, without changing saved selection.
+func get_effective_draw_selection() -> Image:
+	if anywhere_clip_active:
+		return get_anywhere_clip_raster_mask()
+	if has_selection:
+		return selection_map.return_cropped_copy(self, size)
+	var image := Image.create_empty(size.x, size.y, false, Image.FORMAT_RGBA8)
+	image.fill(Color.WHITE)
+	return image
+
+
+func get_anywhere_clip_rect() -> Rect2i:
+	if not is_anywhere_clip_masking():
+		return Rect2i()
+	var reference := anywhere_clip_source
+	if reference == layers[current_layer]:
+		return Rect2i()
+	var cel := frames[current_frame].cels[reference.index] as PixelCel
+	return Rect2i(cel.offset, cel.get_image().get_size()).intersection(
+		Rect2i(Vector2i.ZERO, size)
+	)
+
+
 func can_pixel_get_drawn(pixel: Vector2i, image := selection_map) -> bool:
 	if pixel.x < 0 or pixel.y < 0 or pixel.x >= size.x or pixel.y >= size.y:
 		return false
-
-	if tiles.mode != Tiles.MODE.NONE and !tiles.has_point(pixel):
+	if tiles.mode != Tiles.MODE.NONE and not tiles.has_point(pixel):
 		return false
-
-	if has_selection:
-		return image.is_pixel_selected(pixel)
-	else:
-		return true
+	if has_selection and not image.is_pixel_selected(pixel):
+		return false
+	if anywhere_clip_active and not _is_anywhere_clip_pixel_allowed(pixel):
+		return false
+	return true
 
 
 ## Loops through all of the cels until it finds a drawable (non-[GroupCel]) [BaseCel]

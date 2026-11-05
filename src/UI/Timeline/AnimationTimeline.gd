@@ -3007,6 +3007,14 @@ func _on_global_lock_button_pressed() -> void:
 		_toggle_layer_buttons()
 
 
+func _on_clear_visibility_references_button_pressed() -> void:
+	Global.control.call("clear_target_visibility_references")
+
+
+func _on_clear_anywhere_clip_references_button_pressed() -> void:
+	Global.control.call("clear_anywhere_clip_references")
+
+
 func _on_global_expand_button_pressed() -> void:
 	var expand := !global_layer_expand
 	for layer_button: LayerButton in layer_vbox.get_children():
