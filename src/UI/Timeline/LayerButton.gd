@@ -69,11 +69,6 @@ func _ready() -> void:
 	layer.visibility_changed.connect(_on_layer_visibility_changed)
 	layer.locked_changed.connect(update_buttons)
 	layer.ui_color_changed.connect(func(): layer_ui_color.color = layer.get_ui_color())
-	if layer is PixelLayer:
-		_setup_drawing_color_lock_button(layer)
-	else:
-		# Keep the color-lock slot even when the layer cannot use this tool.
-		_add_control_spacer("DrawingColorLockSpacer")
 	if not layer is PixelLayer and not layer is GroupLayer:
 		# Pixel layers use LinkButton; groups use ExpandButton. Other types
 		# need an empty action slot so the name starts at the same x position.
@@ -84,6 +79,11 @@ func _ready() -> void:
 		_setup_anywhere_clip_button(layer)
 	else:
 		_add_control_spacer("AnywhereClipSpacer")
+	# The color-lock button is the rightmost action in every layer row.
+	if layer is PixelLayer:
+		_setup_drawing_color_lock_button(layer)
+	else:
+		_add_control_spacer("DrawingColorLockSpacer")
 	for ancestor in layer.get_ancestors():
 		ancestor.ui_color_changed.connect(func(): layer_ui_color.color = layer.get_ui_color())
 	if layer is PixelLayer:
@@ -132,7 +132,7 @@ func _add_control_spacer(spacer_name: String) -> Control:
 	return spacer
 
 
-## Add Aseprite-like color lock after eye, padlock and link/group controls.
+## Place the color-lock action at the far right of the layer action strip.
 func _setup_drawing_color_lock_button(layer: BaseLayer) -> void:
 	drawing_color_lock_button = Button.new()
 	drawing_color_lock_button.name = "DrawingColorLockButton"
@@ -192,7 +192,7 @@ func _on_drawing_color_lock_pressed() -> void:
 		_select_current_layer()
 
 
-## Place the per-layer target pin immediately after the color-lock control.
+## The per-layer visibility reference pin precedes the clipping and color-lock buttons.
 ## This button never changes the active layer or the timeline cel selection.
 func _setup_target_visibility_button(layer: BaseLayer) -> void:
 	target_visibility_layer = layer
@@ -220,32 +220,37 @@ func _update_target_visibility_button() -> void:
 	target_visibility_button.queue_redraw()
 
 
-func _draw_target_visibility_indicator() -> void:
-	if not is_instance_valid(target_visibility_button):
-		return
-	if not is_instance_valid(target_visibility_layer):
-		return
-	var center := target_visibility_button.size / 2.0
-	var pin_color := (
-		Color(1.0, 0.78, 0.22) if target_visibility_layer.visibility_target else Color(0.53, 0.53, 0.53)
-	)
-	# Compact thumbtack shape; highlighted and depressed when selected.
-	target_visibility_button.draw_rect(
-		Rect2(center + Vector2(-4, -5), Vector2(8, 3)), pin_color, true
-	)
-	target_visibility_button.draw_line(
+## Use identical icon geometry in the layer row and the corresponding reset
+## button, overlaying a slash only on the reset variant.
+static func draw_visibility_reference_icon(
+	button: Control, selected := false, crossed_out := false
+) -> void:
+	var center := button.size / 2.0
+	var pin_color := Color(1.0, 0.78, 0.22) if selected else Color(0.53, 0.53, 0.53)
+	button.draw_rect(Rect2(center + Vector2(-4, -5), Vector2(8, 3)), pin_color, true)
+	button.draw_line(
 		center + Vector2(-3, -2), center + Vector2(3, -2), pin_color, 2.0
 	)
-	target_visibility_button.draw_line(
-		center + Vector2(0, -2), center + Vector2(0, 6), pin_color, 2.0
-	)
-	target_visibility_button.draw_line(
-		center + Vector2(-2, 3), center + Vector2(0, 6), pin_color, 1.0
-	)
-	target_visibility_button.draw_line(
-		center + Vector2(2, 3), center + Vector2(0, 6), pin_color, 1.0
-	)
+	button.draw_line(center + Vector2(0, -2), center + Vector2(0, 6), pin_color, 2.0)
+	button.draw_line(center + Vector2(-2, 3), center + Vector2(0, 6), pin_color, 1.0)
+	button.draw_line(center + Vector2(2, 3), center + Vector2(0, 6), pin_color, 1.0)
+	if crossed_out:
+		_draw_reference_cancel_slash(button, center)
 
+
+static func _draw_reference_cancel_slash(button: Control, center: Vector2) -> void:
+	# Opposite diagonal to the clipping icon's interior stroke, with a dark
+	# outline to keep the cancellation legible against all themes.
+	var start := center + Vector2(-7, -7)
+	var finish := center + Vector2(7, 7)
+	button.draw_line(start, finish, Color(0.12, 0.12, 0.12), 4.0)
+	button.draw_line(start, finish, Color(1.0, 0.37, 0.39), 2.0)
+
+
+func _draw_target_visibility_indicator() -> void:
+	if not is_instance_valid(target_visibility_button) or not is_instance_valid(target_visibility_layer):
+		return
+	draw_visibility_reference_icon(target_visibility_button, target_visibility_layer.visibility_target)
 
 func _on_target_visibility_button_pressed() -> void:
 	if not is_instance_valid(target_visibility_layer):
@@ -285,18 +290,21 @@ func _update_anywhere_clip_button() -> void:
 	anywhere_clip_button.queue_redraw()
 
 
+static func draw_anywhere_clip_reference_icon(
+	button: Control, selected := false, crossed_out := false
+) -> void:
+	var center := button.size / 2.0
+	var ink := Color(0.34, 0.81, 0.90) if selected else Color(0.53, 0.53, 0.53)
+	button.draw_rect(Rect2(center + Vector2(-5, -5), Vector2(10, 10)), ink, false, 1.5)
+	button.draw_line(center + Vector2(-3, 3), center + Vector2(3, -3), ink, 2.0)
+	if crossed_out:
+		_draw_reference_cancel_slash(button, center)
+
+
 func _draw_anywhere_clip_indicator() -> void:
 	if not is_instance_valid(anywhere_clip_button) or not is_instance_valid(anywhere_clip_layer):
 		return
-	var center := anywhere_clip_button.size / 2.0
-	var ink := (
-		Color(0.34, 0.81, 0.90) if anywhere_clip_layer.anywhere_clip_target
-		else Color(0.53, 0.53, 0.53)
-	)
-	# A masked square with a diagonal stroke; distinct from the visibility pin.
-	anywhere_clip_button.draw_rect(Rect2(center + Vector2(-5, -5), Vector2(10, 10)), ink, false, 1.5)
-	anywhere_clip_button.draw_line(center + Vector2(-3, 3), center + Vector2(3, -3), ink, 2.0)
-
+	draw_anywhere_clip_reference_icon(anywhere_clip_button, anywhere_clip_layer.anywhere_clip_target)
 
 func _on_anywhere_clip_button_pressed() -> void:
 	if not is_instance_valid(anywhere_clip_layer):
@@ -319,7 +327,7 @@ func _on_anywhere_clip_button_pressed() -> void:
 func apply_compact_layout(enabled: bool) -> void:
 	var buttons := $HBoxContainer as HBoxContainer
 	var button_size := Vector2(20, 20) if enabled else Vector2(28, 22)
-	# Fixed columns: visibility, lock, link, color-lock, visibility pin, clipping pin.
+	# Fixed columns: visibility, lock, link, visibility pin, clipping pin, color-lock.
 	# Never let the presence of an action icon move the hierarchy/name column.
 	buttons.custom_minimum_size.x = 6 * int(button_size.x)
 	var half_icon := 9.0 if enabled else 11.0
