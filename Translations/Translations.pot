@@ -4181,3 +4181,15 @@ msgstr ""
 
 msgid "Orange"
 msgstr ""
+
+msgid "Anywhere clipping (hold)"
+msgstr ""
+
+msgid "Use this layer as the anywhere-clipping reference"
+msgstr ""
+
+msgid "Clear visibility and anywhere-clipping layer references"
+msgstr ""
+
+msgid "Clear Layer References"
+msgstr ""
