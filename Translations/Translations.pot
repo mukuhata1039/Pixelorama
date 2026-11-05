@@ -4193,3 +4193,15 @@ msgstr ""
 
 msgid "Clear Layer References"
 msgstr ""
+
+msgid "Clear visibility references and show their layers"
+msgstr ""
+
+msgid "Clear anywhere-clipping references"
+msgstr ""
+
+msgid "Clear Visibility References"
+msgstr ""
+
+msgid "Clear Anywhere Clipping References"
+msgstr ""
