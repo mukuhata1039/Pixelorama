@@ -53,6 +53,8 @@ var parent: BaseLayer  ## Parent of the layer.
 var visible := true:  ## Sets visibility of the layer.
 	set(value):
 		visible = value
+		if is_instance_valid(project) and project.anywhere_clip_active:
+			project.invalidate_anywhere_clip_mask()
 		visibility_changed.emit()
 var locked := false:  ## Images of a locked layer won't be overritten.
 	set(value):
@@ -64,8 +66,16 @@ var new_cels_linked := false  ## Determines if new cel of the layer should be li
 var hidden_by_other_layer := false
 var ignore_onion := false  ## Determines if the layer is visible in onion skinning
 var blend_mode := BlendModes.NORMAL  ## Blend mode of the current layer.
-var clipping_mask := false  ## If [code]true[/code], the layer acts as a clipping mask.
-var opacity := 1.0  ## The opacity of the layer, affects all frames that belong to that layer.
+var clipping_mask := false:  ## If [code]true[/code], the layer acts as a clipping mask.
+	set(value):
+		clipping_mask = value
+		if is_instance_valid(project) and project.anywhere_clip_active:
+			project.invalidate_anywhere_clip_mask()
+var opacity := 1.0:  ## The opacity of the layer, affects all frames that belong to that layer.
+	set(value):
+		opacity = value
+		if is_instance_valid(project) and project.anywhere_clip_active:
+			project.invalidate_anywhere_clip_mask()
 ## Aseprite-inspired restriction: this includes the exact alpha of the paint color.
 ## Whether target-visibility shortcuts affect this layer, regardless of active cel.
 var visibility_target := false:
@@ -80,6 +90,8 @@ var anywhere_clip_target := false:
 		if anywhere_clip_target == value:
 			return
 		anywhere_clip_target = value
+		if is_instance_valid(project):
+			project.invalidate_anywhere_clip_mask()
 		anywhere_clip_target_changed.emit()
 var drawing_color_locked := false:
 	set(value):

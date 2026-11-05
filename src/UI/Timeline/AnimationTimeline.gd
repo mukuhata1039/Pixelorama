@@ -132,6 +132,8 @@ var global_layer_expand := true
 @onready var keyframe_timeline_button := %KeyframeTimelineButton as Button
 @onready var blend_modes_button := %BlendModes as OptionButton
 @onready var opacity_slider := %OpacitySlider as ValueSlider
+@onready var clear_visibility_references_button := %ClearVisibilityReferencesButton as Button
+@onready var clear_anywhere_clip_references_button := %ClearAnywhereClipReferencesButton as Button
 @onready var opacity_keyframe_button := %OpacityKeyframeButton as TextureButton
 @onready var frame_scroll_container := %FrameScrollContainer as Control
 @onready var timeline_scroll := %TimelineScroll as ScrollContainer
@@ -157,6 +159,8 @@ var global_layer_expand := true
 
 
 func _ready() -> void:
+	clear_visibility_references_button.draw.connect(_draw_clear_visibility_references_icon)
+	clear_anywhere_clip_references_button.draw.connect(_draw_clear_anywhere_clip_references_icon)
 	var layer_properties_dialog := Global.control.find_child("LayerProperties")
 	layer_properties_dialog.layer_property_changed.connect(_update_layer_settings_ui)
 	layer_container.custom_minimum_size.x = layer_settings_container.size.x + 12
@@ -3005,6 +3009,14 @@ func _on_global_lock_button_pressed() -> void:
 				layer.locked = locked
 		update_global_layer_buttons()
 		_toggle_layer_buttons()
+
+
+func _draw_clear_visibility_references_icon() -> void:
+	LayerButton.draw_visibility_reference_icon(clear_visibility_references_button, true, true)
+
+
+func _draw_clear_anywhere_clip_references_icon() -> void:
+	LayerButton.draw_anywhere_clip_reference_icon(clear_anywhere_clip_references_button, true, true)
 
 
 func _on_clear_visibility_references_button_pressed() -> void:

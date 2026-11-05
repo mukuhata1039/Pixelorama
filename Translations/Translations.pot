@@ -4205,3 +4205,9 @@ msgstr ""
 
 msgid "Clear Anywhere Clipping References"
 msgstr ""
+
+msgid "Anywhere clipping (toggle)"
+msgstr ""
+
+msgid "Use this layer or folder as the anywhere-clipping reference"
+msgstr ""

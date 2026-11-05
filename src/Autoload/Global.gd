@@ -1097,7 +1097,7 @@ func _initialize_keychain() -> void:
 			"Temporarily hide target layers (hold)", "Timeline"
 		),
 		&"anywhere_clip_hold": Keychain.InputAction.new(
-			"Anywhere clipping (hold)", "Timeline"
+			"Anywhere clipping (toggle)", "Timeline"
 		),
 		&"layer_lock": Keychain.InputAction.new("", "Timeline"),
 		&"new_palette": Keychain.InputAction.new("", "Palettes"),
@@ -1278,6 +1278,9 @@ func undo_or_redo(
 		general_undo(project)
 	else:
 		general_redo(project)
+	# A reference layer or folder may have changed its visible shape.
+	# Refresh lazily on the next drawing operation, not once per brush dab.
+	project.invalidate_anywhere_clip_mask()
 	var action_name := project.undo_redo.get_current_action_name()
 	if (
 		action_name
