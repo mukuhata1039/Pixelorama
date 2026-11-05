@@ -419,6 +419,21 @@ func _get_draw_image() -> ImageExtended:
 func _get_selected_draw_cels(include_all_layers := true) -> Array[BaseCel]:
 	var cels: Array[BaseCel]
 	var project := Global.current_project
+	# The temporary mask operates only on the active layer and active frame,
+	# even when unrelated timeline cels are selected.
+	if project.anywhere_clip_active:
+		var active_layer := project.layers[project.current_layer]
+		if not include_all_layers and not active_layer.can_layer_get_drawn():
+			return cels
+		if (
+			not include_all_layers and active_layer.drawing_color_locked
+			and tool_slot.color.a > 0.0 and tool_slot.color != active_layer.drawing_color
+		):
+			return cels
+		var active_cel := project.get_current_cel()
+		if active_cel is PixelCel:
+			cels.append(active_cel)
+		return cels
 	for cel_index in project.selected_cels:
 		var layer := project.layers[cel_index[1]]
 		if not include_all_layers and not layer.can_layer_get_drawn():
