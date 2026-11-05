@@ -1085,6 +1085,10 @@ target_layer_visibility_hold={
 "deadzone": 0.2,
 "events": []
 }
+anywhere_clip_hold={
+"deadzone": 0.2,
+"events": []
+}
 layer_lock={
 "deadzone": 0.2,
 "events": []
