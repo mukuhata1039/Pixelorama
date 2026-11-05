@@ -39,17 +39,11 @@ var color_mode: int = Image.FORMAT_RGBA8:
 				cel.set_indexed_mode(is_indexed())
 		Global.canvas.color_index.queue_redraw()
 var fill_color := Color(0)
-## Local-only counters: avoid rewriting an unchanged project on every autosave tick.
-## They are never persisted in .pxo and cannot affect recovery data.
-var autosave_revision := 0
-var autosave_saved_revision := -1
-var autosave_saved_undo_version := -1
 var has_changed := false:
 	set(value):
 		has_changed = value
 		var tab_index := Global.projects.find(self)
 		if value:
-			autosave_revision += 1
 			Global.project_data_changed.emit(self)
 			Global.tabs.set_tab_title(tab_index, name + "(*)")
 			JavaScriptBridge.eval("setUnsavedChanges(true);")
