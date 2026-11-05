@@ -71,7 +71,11 @@ var clipping_mask := false:  ## If [code]true[/code], the layer acts as a clippi
 		clipping_mask = value
 		if is_instance_valid(project) and project.anywhere_clip_active:
 			project.invalidate_anywhere_clip_mask()
-var opacity := 1.0  ## The opacity of the layer, affects all frames that belong to that layer.
+var opacity := 1.0:  ## The opacity of the layer, affects all frames that belong to that layer.
+	set(value):
+		opacity = value
+		if is_instance_valid(project) and project.anywhere_clip_active:
+			project.invalidate_anywhere_clip_mask()
 ## Aseprite-inspired restriction: this includes the exact alpha of the paint color.
 ## Whether target-visibility shortcuts affect this layer, regardless of active cel.
 var visibility_target := false:
