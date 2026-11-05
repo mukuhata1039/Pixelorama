@@ -147,7 +147,7 @@ func set_layer_metadata_image(
 	# important that pass-through groups do not leak clipping across folders.
 	var scope_id := layer.parent.index + 1 if is_instance_valid(layer.parent) else 0
 	image.set_pixel(
-		index, 3, Color(float(scope_id & 255) / 255.0, float((scope_id >> 8) & 255) / 255.0)
+		index, 3, Color(float(scope_id & 255) / 255.0, float((scope_id >> 8) & 255) / 255.0, 0.0, 0.0)
 	)
 	# Skip children only in the outer canvas blend: a non-pass-through group
 	# already contains them. When blending *inside* that group they must remain
