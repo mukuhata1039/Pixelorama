@@ -4321,3 +4321,15 @@ msgstr "非表示とどこからでもクリッピングの参照先をすべて
 
 msgid "Clear Layer References"
 msgstr "レイヤー参照を一括解除"
+
+msgid "Clear visibility references and show their layers"
+msgstr "非表示の参照をすべて解除して対象レイヤーを表示"
+
+msgid "Clear anywhere-clipping references"
+msgstr "どこからでもクリッピングの参照をすべて解除"
+
+msgid "Clear Visibility References"
+msgstr "非表示の参照を一括解除"
+
+msgid "Clear Anywhere Clipping References"
+msgstr "クリッピングの参照を一括解除"
