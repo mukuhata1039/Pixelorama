@@ -4336,3 +4336,6 @@ msgstr "クリッピングの参照を一括解除"
 
 msgid "Anywhere clipping (toggle)"
 msgstr "どこからでもクリッピング（切り替え）"
+
+msgid "Use this layer or folder as the anywhere-clipping reference"
+msgstr "このレイヤーまたはフォルダを「どこからでもクリッピング」の参照先に指定"
