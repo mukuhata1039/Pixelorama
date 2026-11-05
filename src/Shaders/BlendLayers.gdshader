@@ -5,10 +5,10 @@ const float HCV_EPSILON = 1e-10;
 const float HSL_EPSILON = 1e-10;
 
 uniform sampler2DArray layers : filter_nearest;
-// Nx4 metadata texture (one column per layer):
-// row 0 = blend mode, row 1 = opacity, row 2 = clipping/skip flag.
-// row 2: 0.0 = unclipped base, 1.0 = clipped layer,
-//        0.2 = child already composited into a non-pass-through group.
+// Nx4 metadata texture: blend mode, opacity, clipping flag, group scope.
+// row 2: 0 = off, 1 = C (chain), .75 = I (inherit),
+//        .2 = a child already composited into a non-pass-through group.
+// row 3: .rg holds the direct parent's 16-bit id (root id = 0).
 uniform sampler2D metadata : filter_nearest;
 
 // Conversion functions from
@@ -186,44 +186,47 @@ float border_trim(vec4 color, vec2 uv) {
 }
 
 
-// Find the first non-clipped layer below the current layer. Consecutive
-// clipping layers share that same base; internal group children are skipped.
-int find_clipping_base_layer(int index) {
-	for (int i = index - 1; i > 0; i--) {
-		float clip_state = texelFetch(metadata, ivec2(i, 2), 0).r;
-		if (clip_state < 0.1) {
-			return i;
-		}
-	}
-	return 0;
-}
-
-
+// Normal clipping uses two alpha histories per pixel. C uses the immediately
+// preceding sibling's *clipped* alpha; I reuses the first unclipped base's alpha.
+// The scope id is reset at a folder boundary. Complexity is O(layer count),
+// not a backwards scan of the entire stack for every clipped layer.
 void fragment() {
 	ivec2 metadata_size = textureSize(metadata, 0);
 	float first_opacity = texelFetch(metadata, ivec2(0, 1), 0).r;
 	vec4 result_color = texture(layers, vec3(UV, 0.0));
 	result_color.a = border_trim(result_color, UV);
 	result_color.a *= first_opacity;
-	for(int i = 1; i < metadata_size.x; i++) // Loops through every layer
-	{
+
+	float previous_effective_alpha = result_color.a;
+	float original_base_alpha = result_color.a;
+	vec2 previous_scope = texelFetch(metadata, ivec2(0, 3), 0).rg;
+
+	for (int i = 1; i < metadata_size.x; i++) {
+		float clipping_state = texelFetch(metadata, ivec2(i, 2), 0).r;
+		// Children already composited into their group are not real mask bases.
+		if (clipping_state > 0.1 && clipping_state < 0.4) {
+			continue;
+		}
+
 		float blend_mode_float = texelFetch(metadata, ivec2(i, 0), 0).r;
-		// Blend modes are being stored as integers divided by 255, so convert them back to
-		// their integer form
 		int current_blend_mode = int(floor(blend_mode_float * 255.0));
 		float current_opacity = texelFetch(metadata, ivec2(i, 1), 0).r;
-		vec2 uv = UV;
-		vec4 layer_color = texture(layers, vec3(uv, float(i)));
-		float clipping_mask = texelFetch(metadata, ivec2(i, 2), 0).r;
-		if (clipping_mask > 0.5) {
-			int base_i = find_clipping_base_layer(i);
-			float base_opacity = texelFetch(metadata, ivec2(base_i, 1), 0).r;
-			vec4 base_color = texture(layers, vec3(UV, float(base_i)));
-			// Use the base's visible alpha, including its layer/cel opacity.
-			// An invisible base has zero opacity and hides its clipped layers.
-			layer_color.a *= base_color.a * base_opacity;
+		vec4 layer_color = texture(layers, vec3(UV, float(i)));
+		layer_color.a = border_trim(layer_color, UV);
+		vec2 scope = texelFetch(metadata, ivec2(i, 3), 0).rg;
+		bool same_group = all(lessThan(abs(scope - previous_scope), vec2(0.001)));
+		if (clipping_state > 0.5) {
+			// C = chained intersection, I = inherited alpha of the root base.
+			float mask_alpha = (clipping_state > 0.9)
+				? previous_effective_alpha : original_base_alpha;
+			// A moved/malformed clip cannot reach across group boundaries.
+			layer_color.a *= same_group ? mask_alpha : 0.0;
 		}
-		layer_color.a = border_trim(layer_color, uv);
+		else {
+			original_base_alpha = layer_color.a * current_opacity;
+		}
+		previous_effective_alpha = layer_color.a * current_opacity;
+		previous_scope = scope;
 		result_color = blend(current_blend_mode, layer_color, result_color, current_opacity);
 	}
 	COLOR = result_color;
