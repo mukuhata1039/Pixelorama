@@ -12,6 +12,7 @@ signal ui_color_changed  ## Emits when [member ui_color] is changed.
 signal drawing_color_lock_changed  ## A layer's allowed drawing color or lock has changed.
 signal visibility_target_changed  ## A shortcut visibility target was enabled or disabled.
 signal anywhere_clip_target_changed  ## The temporary drawing-mask reference changed.
+signal clipping_mode_changed  ## The normal clipping mode changed (Off, Chain, Inherit).
 
 ## All currently supported layer blend modes between two layers. The upper layer
 ## is the blend layer, and the bottom layer is the base layer.
@@ -66,11 +67,40 @@ var new_cels_linked := false  ## Determines if new cel of the layer should be li
 var hidden_by_other_layer := false
 var ignore_onion := false  ## Determines if the layer is visible in onion skinning
 var blend_mode := BlendModes.NORMAL  ## Blend mode of the current layer.
-var clipping_mask := false:  ## If [code]true[/code], the layer acts as a clipping mask.
+## Ordinary layer clipping. Off = unclipped; C = intersect the immediately
+## preceding sibling's *effective* alpha; I = inherit the original base alpha.
+var clipping_mask := false:
 	set(value):
+		if clipping_mask == value:
+			return
 		clipping_mask = value
-		if is_instance_valid(project) and project.anywhere_clip_active:
+		if is_instance_valid(project):
 			project.invalidate_anywhere_clip_mask()
+		clipping_mode_changed.emit()
+var clipping_inherited := false:
+	set(value):
+		if clipping_inherited == value:
+			return
+		clipping_inherited = value
+		if is_instance_valid(project):
+			project.invalidate_anywhere_clip_mask()
+		clipping_mode_changed.emit()
+
+## Only direct sibling pixel layers may be a normal clipping base.
+## A group or tilemap between siblings is a boundary, not a mask source.
+func get_previous_clipping_sibling() -> PixelLayer:
+	if not self is PixelLayer or self is LayerTileMap:
+		return null
+	if not is_instance_valid(project):
+		return null
+	for previous_index in range(index - 1, -1, -1):
+		var candidate := project.layers[previous_index]
+		if candidate.parent != parent:
+			continue
+		if candidate is PixelLayer and not candidate is LayerTileMap:
+			return candidate as PixelLayer
+		return null
+	return null
 var opacity := 1.0:  ## The opacity of the layer, affects all frames that belong to that layer.
 	set(value):
 		opacity = value
@@ -417,6 +447,7 @@ func serialize() -> Dictionary:
 		"locked": locked,
 		"blend_mode": blend_mode,
 		"clipping_mask": clipping_mask,
+		"clipping_inherited": clipping_inherited,
 		"opacity": opacity,
 		"drawing_color_locked": drawing_color_locked,
 		"visibility_target": visibility_target,
@@ -450,6 +481,8 @@ func deserialize(dict: Dictionary) -> void:
 	locked = dict.get("locked", false)
 	blend_mode = dict.get("blend_mode", BlendModes.NORMAL)
 	clipping_mask = dict.get("clipping_mask", false)
+	# Existing .pxo files used the original-base behavior: preserve it as I.
+	clipping_inherited = dict.get("clipping_inherited", clipping_mask)
 	opacity = dict.get("opacity", 1.0)
 	var stored_drawing_color = dict.get("drawing_color", Color.BLACK)
 	if stored_drawing_color is Color:
