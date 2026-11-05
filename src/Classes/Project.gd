@@ -60,6 +60,7 @@ var current_layer := 0
 var selected_cels := [[0, 0]]  ## Array of Arrays of 2 integers (frame & layer)
 ## Transient hold-only drawing restriction. Never saved in .pxo.
 var anywhere_clip_active := false
+var anywhere_clip_source: PixelLayer
 ## Array that contains the order of the [BaseLayer] indices that are being drawn.
 ## Takes into account each [BaseCel]'s invidiual z-index. If all z-indexes are 0, then the
 ## array just contains the indices of the layers in increasing order.
@@ -730,12 +731,12 @@ func get_anywhere_clip_reference() -> PixelLayer:
 
 
 func is_anywhere_clip_masking() -> bool:
-	return anywhere_clip_active and get_anywhere_clip_reference() != null
+	return anywhere_clip_active and is_instance_valid(anywhere_clip_source)
 
 
 func _is_anywhere_clip_pixel_allowed(pixel: Vector2i) -> bool:
-	var reference := get_anywhere_clip_reference()
-	if reference == null or current_layer < 0 or current_layer >= layers.size():
+	var reference := anywhere_clip_source
+	if not is_instance_valid(reference) or current_layer < 0 or current_layer >= layers.size():
 		return false
 	if reference == layers[current_layer]:
 		return false
@@ -758,7 +759,7 @@ func get_anywhere_clip_raster_mask() -> Image:
 	mask.fill(Color.TRANSPARENT)
 	if not is_anywhere_clip_masking():
 		return mask
-	var reference := get_anywhere_clip_reference()
+	var reference := anywhere_clip_source
 	if reference == layers[current_layer]:
 		return mask
 	var cel := frames[current_frame].cels[reference.index] as PixelCel
