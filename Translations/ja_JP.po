@@ -4309,3 +4309,15 @@ msgstr "黄緑色"
 
 msgid "Orange"
 msgstr "オレンジ"
+
+msgid "Anywhere clipping (hold)"
+msgstr "どこからでもクリッピング（ホールド）"
+
+msgid "Use this layer as the anywhere-clipping reference"
+msgstr "このレイヤーを「どこからでもクリッピング」の参照先に指定"
+
+msgid "Clear visibility and anywhere-clipping layer references"
+msgstr "非表示とどこからでもクリッピングの参照先をすべて解除"
+
+msgid "Clear Layer References"
+msgstr "レイヤー参照を一括解除"
