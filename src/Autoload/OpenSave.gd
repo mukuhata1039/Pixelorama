@@ -19,6 +19,40 @@ var preview_dialogs := []  ## Array of preview dialogs
 var last_dialog_option := 0
 var autosave_timer: Timer
 
+## The backup uses detached byte arrays, never live Images or Project objects
+## on the worker thread. ZIP compression and file I/O can therefore run
+## without blocking brush strokes or risking concurrent project mutations.
+class BackupArchive:
+	extends RefCounted
+
+	var entries: Array[Dictionary] = []
+	var _file_name := ""
+
+	func open(_path: String) -> Error:
+		return OK
+
+	func start_file(path: String) -> Error:
+		_file_name = path
+		return OK
+
+	func write_file(data: PackedByteArray) -> Error:
+		entries.append({"name": _file_name, "bytes": data})
+		return OK
+
+	func close_file() -> Error:
+		return OK
+
+	func close() -> Error:
+		return OK
+
+
+var _autosave_thread: Thread
+var _autosave_project_ref: WeakRef
+var _autosave_revision := -1
+var _autosave_undo_version := -1
+var _autosave_requested := false
+var _autosave_next_project_index := 0
+
 # custom importer related dictionaries (received from extensions)
 var custom_import_names := {}  ## Contains importer names as keys and ids as values
 var custom_importer_scenes := {}  ## Contains ids keys and import option preloads as values
