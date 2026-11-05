@@ -33,6 +33,7 @@ var audio_player: AudioStreamPlayer
 
 var _old_camera_auto_release_gui_focus: bool
 var drawing_color_lock_button: Button
+var clipping_mode_button: Button
 var target_visibility_button: Button
 var target_visibility_layer: BaseLayer
 var anywhere_clip_button: Button
@@ -79,7 +80,11 @@ func _ready() -> void:
 		_setup_anywhere_clip_button(layer)
 	else:
 		_add_control_spacer("AnywhereClipSpacer")
-	# The color-lock button is the rightmost action in every layer row.
+	# OFF/C/I clipping is immediately left of the rightmost color-lock icon.
+	if layer is PixelLayer and not layer is LayerTileMap:
+		_setup_clipping_mode_button(layer)
+	else:
+		_add_control_spacer("ClippingModeSpacer")
 	if layer is PixelLayer:
 		_setup_drawing_color_lock_button(layer)
 	else:
@@ -130,6 +135,103 @@ func _add_control_spacer(spacer_name: String) -> Control:
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	$HBoxContainer.add_child(spacer)
 	return spacer
+
+
+## Normal clipping is independent of anywhere-clipping drawing references.
+func _setup_clipping_mode_button(layer: BaseLayer) -> void:
+	clipping_mode_button = Button.new()
+	clipping_mode_button.name = "ClippingModeButton"
+	clipping_mode_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	clipping_mode_button.add_to_group("UIButtons")
+	$HBoxContainer.add_child(clipping_mode_button)
+	clipping_mode_button.draw.connect(_draw_clipping_mode_icon)
+	clipping_mode_button.pressed.connect(_cycle_clipping_mode)
+	layer.clipping_mode_changed.connect(_update_clipping_mode_indicator)
+	_update_clipping_mode_indicator()
+
+
+func _get_clipping_mode(layer: BaseLayer) -> int:
+	if not layer.clipping_mask:
+		return 0
+	return 2 if layer.clipping_inherited else 1
+
+
+func _update_clipping_mode_indicator() -> void:
+	if not is_instance_valid(clipping_mode_button):
+		return
+	var project := Global.current_project
+	if not is_instance_valid(project) or layer_index >= project.layers.size():
+		return
+	var mode := _get_clipping_mode(project.layers[layer_index])
+	var mode_names := ["OFF", "C (Chain)", "I (Inherit)"]
+	clipping_mode_button.tooltip_text = (
+		"Normal clipping: %s. Click to cycle OFF / C / I." % mode_names[mode]
+	)
+	clipping_mode_button.queue_redraw()
+	popup_menu.set_item_text(
+		MenuOptions.CLIPPING_MASK, "Clipping: %s (click to cycle)" % mode_names[mode]
+	)
+
+
+func _draw_clipping_mode_icon() -> void:
+	if not is_instance_valid(clipping_mode_button):
+		return
+	var project := Global.current_project
+	if not is_instance_valid(project) or layer_index >= project.layers.size():
+		return
+	var center := clipping_mode_button.size / 2.0
+	var mode := _get_clipping_mode(project.layers[layer_index])
+	if mode == 0:
+		clipping_mode_button.draw_line(
+			center + Vector2(-4, 0), center + Vector2(4, 0), Color(0.49, 0.49, 0.49), 2.0
+		)
+	elif mode == 1:
+		var ink := Color(0.28, 0.74, 0.84)
+		clipping_mode_button.draw_line(
+			center + Vector2(-2, -5), center + Vector2(-5, -5), ink, 2.0
+		)
+		clipping_mode_button.draw_line(
+			center + Vector2(-5, -5), center + Vector2(-5, 5), ink, 2.0
+		)
+		clipping_mode_button.draw_line(
+			center + Vector2(-5, 5), center + Vector2(-2, 5), ink, 2.0
+		)
+	else:
+		var ink := Color(0.90, 0.68, 0.29)
+		clipping_mode_button.draw_line(
+			center + Vector2(-4, -5), center + Vector2(4, -5), ink, 2.0
+		)
+		clipping_mode_button.draw_line(
+			center + Vector2(0, -5), center + Vector2(0, 5), ink, 2.0
+		)
+		clipping_mode_button.draw_line(
+			center + Vector2(-4, 5), center + Vector2(4, 5), ink, 2.0
+		)
+
+
+func _cycle_clipping_mode() -> void:
+	var project := Global.current_project
+	if not is_instance_valid(project) or layer_index >= project.layers.size():
+		return
+	var layer := project.layers[layer_index]
+	if not layer is PixelLayer or layer is LayerTileMap:
+		return
+	var previous_mode := _get_clipping_mode(layer)
+	var can_clip := is_instance_valid(layer.get_previous_clipping_sibling())
+	# Moving/deleting the base must not prevent turning a stale clip off.
+	if not can_clip and previous_mode == 0:
+		return
+	var next_mode := (previous_mode + 1) % 3 if can_clip else 0
+	project.undo_redo.create_action("Change Layer Clipping Mode")
+	project.undo_redo.add_do_property(layer, "clipping_mask", next_mode != 0)
+	project.undo_redo.add_do_property(layer, "clipping_inherited", next_mode == 2)
+	project.undo_redo.add_undo_property(layer, "clipping_mask", layer.clipping_mask)
+	project.undo_redo.add_undo_property(layer, "clipping_inherited", layer.clipping_inherited)
+	project.undo_redo.add_do_method(Global.canvas.draw_layers.bind(true))
+	project.undo_redo.add_undo_method(Global.canvas.draw_layers.bind(true))
+	project.undo_redo.add_do_method(Global.undo_or_redo.bind(false))
+	project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true))
+	project.undo_redo.commit_action()
 
 
 ## Place the color-lock action at the far right of the layer action strip.
@@ -345,9 +447,9 @@ func _on_anywhere_clip_button_pressed() -> void:
 func apply_compact_layout(enabled: bool) -> void:
 	var buttons := $HBoxContainer as HBoxContainer
 	var button_size := Vector2(20, 20) if enabled else Vector2(28, 22)
-	# Fixed columns: visibility, lock, link, visibility pin, clipping pin, color-lock.
+	# Fixed columns: visibility, lock, link, visibility pin, reference pin, C/I, color-lock.
 	# Never let the presence of an action icon move the hierarchy/name column.
-	buttons.custom_minimum_size.x = 6 * int(button_size.x)
+	buttons.custom_minimum_size.x = 7 * int(button_size.x)
 	var half_icon := 9.0 if enabled else 11.0
 	for child in buttons.get_children():
 		if not child is Control:
@@ -398,6 +500,8 @@ func apply_compact_layout(enabled: bool) -> void:
 	$LayerMainButton/LayerName/MarginSpacer.custom_minimum_size.x = 0 if enabled else 4
 	if is_instance_valid(drawing_color_lock_button):
 		drawing_color_lock_button.queue_redraw()
+	if is_instance_valid(clipping_mode_button):
+		clipping_mode_button.queue_redraw()
 	if is_instance_valid(target_visibility_button):
 		target_visibility_button.queue_redraw()
 	if is_instance_valid(anywhere_clip_button):
@@ -500,8 +604,12 @@ func update_buttons() -> void:
 
 	visibility_button.modulate.a = 1
 	lock_button.modulate.a = 1
-	popup_menu.set_item_checked(0, layer.clipping_mask)
-	clipping_mask_icon.visible = layer.clipping_mask
+	# The C/I button is the sole normal clipping marker in the layer row.
+	clipping_mask_icon.visible = false
+	popup_menu.set_item_disabled(
+		MenuOptions.CLIPPING_MASK, not layer is PixelLayer or layer is LayerTileMap
+	)
+	_update_clipping_mode_indicator()
 	if is_instance_valid(layer.parent):
 		if not layer.parent.is_visible_in_hierarchy():
 			visibility_button.modulate.a = 0.33
@@ -743,11 +851,7 @@ func _on_popup_menu_id_pressed(id: int) -> void:
 		properties.layer_indices = _get_layer_indices()
 		properties.popup_centered_clamped()
 	elif id == MenuOptions.CLIPPING_MASK:
-		layer.clipping_mask = not layer.clipping_mask
-		popup_menu.set_item_checked(id, layer.clipping_mask)
-		clipping_mask_icon.visible = layer.clipping_mask
-		Global.canvas.update_all_layers = true
-		Global.canvas.draw_layers()
+		_cycle_clipping_mode()
 	elif id == MenuOptions.FLATTEN:
 		var indices := _get_layer_indices()
 		Global.animation_timeline.flatten_layers.call_deferred(indices, false)
