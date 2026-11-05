@@ -251,8 +251,8 @@ func _remove_custom_condition(key: String) -> void:
 
 func _add_custom_condition() -> void:
 	var key := _custom_condition_line_edit.text.strip_edges().to_lower()
-	if not key.is_valid_identifier():
-		_notice_label.text = "条件IDには英数字とアンダースコアを使用してください。"
+	if not key.is_valid_unicode_identifier():
+		_notice_label.text = "条件IDには文字・数字・アンダースコアを使用してください（日本語も使用できます）。"
 		return
 	if _condition_buttons.has(key):
 		_notice_label.text = "その条件は既にあります。"
@@ -262,6 +262,9 @@ func _add_custom_condition() -> void:
 	_notice_label.text = ""
 
 
+# Custom gallery IDs are user-facing labels too (e.g. 目, 髪, 瞳).
+# Keep them valid for PXO round-trips by following Godot's Unicode
+# identifier rules instead of the deprecated ASCII-only validator.
 func _validate() -> void:
 	if not is_instance_valid(_mode_button) or not is_instance_valid(_group_line_edit):
 		return
@@ -269,9 +272,9 @@ func _validate() -> void:
 	var variant_id := _variant_line_edit.text.strip_edges()
 	var group_invalid := (
 		_mode_button.get_selected_id() == Mode.TOGGLE
-		and not group_id.is_valid_identifier()
+		and not group_id.is_valid_unicode_identifier()
 	)
-	var variant_invalid := not variant_id.is_empty() and not variant_id.is_valid_identifier()
+	var variant_invalid := not variant_id.is_empty() and not variant_id.is_valid_unicode_identifier()
 	get_ok_button().disabled = group_invalid or variant_invalid
 	_refresh_effective_settings()
 
