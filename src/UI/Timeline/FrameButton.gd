@@ -269,9 +269,9 @@ func _gui_input(event: InputEvent) -> void:
 		if not is_instance_valid(project) or project.frames.is_empty():
 			return
 		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			Global.animation_timeline._on_NextFrame_pressed()
+			Global.animation_timeline.call("_on_NextFrame_pressed")
 		else:
-			Global.animation_timeline._on_PreviousFrame_pressed()
+			Global.animation_timeline.call("_on_PreviousFrame_pressed")
 		return
 	if event.button_index != MOUSE_BUTTON_LEFT:
 		return
