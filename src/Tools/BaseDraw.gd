@@ -695,6 +695,8 @@ func _native_brush_skip_reason() -> String:
 		return "反転・対称"
 	if _stroke_project.has_selection:
 		return "選択範囲"
+	if _stroke_project.anywhere_clip_active:
+		return "どこからでもクリッピング"
 	if _stroke_project.tiles.mode != Tiles.MODE.NONE:
 		return "タイルモード"
 	if _stroke_images.is_empty():
@@ -1241,7 +1243,7 @@ func draw_tool_brush(brush_position: Vector2i) -> void:
 
 func remove_unselected_parts_of_brush(brush: Image, dst: Vector2i) -> Image:
 	var project := Global.current_project
-	if !project.has_selection:
+	if !project.has_selection and not project.anywhere_clip_active:
 		return brush
 	var brush_size := brush.get_size()
 	var new_brush := Image.new()
