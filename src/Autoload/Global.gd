@@ -1097,7 +1097,7 @@ func _initialize_keychain() -> void:
 			"Temporarily hide target layers (hold)", "Timeline"
 		),
 		&"anywhere_clip_hold": Keychain.InputAction.new(
-			"Anywhere clipping (hold)", "Timeline"
+			"Anywhere clipping (toggle)", "Timeline"
 		),
 		&"layer_lock": Keychain.InputAction.new("", "Timeline"),
 		&"new_palette": Keychain.InputAction.new("", "Palettes"),
