@@ -40,6 +40,12 @@ var _target_hold_ctrl := false
 var _target_hold_shift := false
 var _target_hold_alt := false
 var _target_hold_meta := false
+## Separate transient drawing restriction; does not affect the real selection.
+var _anywhere_clip_hold_project: Project
+var _anywhere_clip_hold_ctrl := false
+var _anywhere_clip_hold_shift := false
+var _anywhere_clip_hold_alt := false
+var _anywhere_clip_hold_meta := false
 var _aseprite_cursors := {}
 ## -1 = no cel drag; 1 = move cels; 2 = copy cels.
 var _cel_drag_cursor_mode := -1
@@ -290,6 +296,13 @@ func _process(_delta: float) -> void:
 			or not _target_visibility_hold_modifiers_pressed()
 		):
 			_restore_target_visibility_hold()
+	if is_instance_valid(_anywhere_clip_hold_project):
+		if (
+			Global.current_project != _anywhere_clip_hold_project
+			or not Input.is_action_pressed(&"anywhere_clip_hold")
+			or not _anywhere_clip_modifiers_pressed()
+		):
+			stop_anywhere_clipping()
 	var is_rotating_view := false
 	if (
 		Global.can_draw
@@ -362,11 +375,15 @@ func _process(_delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if event.is_action_released(&"target_layer_visibility_hold"):
 		_restore_target_visibility_hold()
+	if event.is_action_released(&"anywhere_clip_hold"):
+		stop_anywhere_clipping()
 	if _can_use_target_visibility_shortcut():
 		if event.is_action_pressed(&"target_layer_visibility_toggle"):
 			_toggle_target_layer_visibility()
 		elif event.is_action_pressed(&"target_layer_visibility_hold"):
 			_start_target_visibility_hold(event)
+		elif event.is_action_pressed(&"anywhere_clip_hold"):
+			_start_anywhere_clipping(event)
 	if event.is_action_pressed(&"layer_visibility"):
 		for selected_cel in Global.current_project.selected_cels:
 			var layer := Global.current_project.layers[selected_cel[1]]
@@ -503,8 +520,73 @@ func _restore_target_visibility_hold() -> void:
 	_redraw_target_visibility()
 
 
+## Hold-to-draw: only the current pixel layer is affected, using the saved
+## reference layer as a binary alpha shape. No actual clipping link is created.
+func _start_anywhere_clipping(event: InputEvent) -> void:
+	if is_instance_valid(_anywhere_clip_hold_project):
+		return
+	var project := Global.current_project
+	var reference := project.get_anywhere_clip_reference()
+	if reference == null or project.layers[project.current_layer] == reference:
+		return
+	_anywhere_clip_hold_project = project
+	project.anywhere_clip_source = reference
+	project.anywhere_clip_active = true
+	if event is InputEventWithModifiers:
+		_anywhere_clip_hold_ctrl = event.ctrl_pressed
+		_anywhere_clip_hold_shift = event.shift_pressed
+		_anywhere_clip_hold_alt = event.alt_pressed
+		_anywhere_clip_hold_meta = event.meta_pressed
+
+
+func _anywhere_clip_modifiers_pressed() -> bool:
+	return (
+		(not _anywhere_clip_hold_ctrl or Input.is_key_pressed(KEY_CTRL))
+		and (not _anywhere_clip_hold_shift or Input.is_key_pressed(KEY_SHIFT))
+		and (not _anywhere_clip_hold_alt or Input.is_key_pressed(KEY_ALT))
+		and (not _anywhere_clip_hold_meta or Input.is_key_pressed(KEY_META))
+	)
+
+
+func stop_anywhere_clipping() -> void:
+	if is_instance_valid(_anywhere_clip_hold_project):
+		_anywhere_clip_hold_project.anywhere_clip_active = false
+		_anywhere_clip_hold_project.anywhere_clip_source = null
+	_anywhere_clip_hold_project = null
+	_anywhere_clip_hold_ctrl = false
+	_anywhere_clip_hold_shift = false
+	_anywhere_clip_hold_alt = false
+	_anywhere_clip_hold_meta = false
+
+
+## The toolbar's clear button removes *references* for both features.
+## It deliberately does not unhide layers hidden by the persistent toggle.
+func clear_layer_references() -> void:
+	_restore_target_visibility_hold()
+	stop_anywhere_clipping()
+	var project := Global.current_project
+	var affected: Array[BaseLayer] = []
+	for layer in project.layers:
+		if layer.visibility_target or layer.anywhere_clip_target:
+			affected.append(layer)
+	if affected.is_empty():
+		return
+	project.undo_redo.create_action("Clear Layer References")
+	for layer in affected:
+		if layer.visibility_target:
+			project.undo_redo.add_do_property(layer, "visibility_target", false)
+			project.undo_redo.add_undo_property(layer, "visibility_target", true)
+		if layer.anywhere_clip_target:
+			project.undo_redo.add_do_property(layer, "anywhere_clip_target", false)
+			project.undo_redo.add_undo_property(layer, "anywhere_clip_target", true)
+	project.undo_redo.add_do_method(Global.undo_or_redo.bind(false))
+	project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true))
+	project.undo_redo.commit_action()
+
+
 func _project_switched() -> void:
 	_restore_target_visibility_hold()
+	stop_anywhere_clipping()
 	if Global.current_project.export_profile.directory_path != "":
 		open_sprite_dialog.current_dir = Global.current_project.export_profile.directory_path
 		save_sprite_dialog.current_dir = Global.current_project.export_profile.directory_path
@@ -793,6 +875,7 @@ func _notification(what: int) -> void:
 		# pause the application
 		NOTIFICATION_APPLICATION_FOCUS_OUT:
 			_restore_target_visibility_hold()
+			stop_anywhere_clipping()
 			if Global.pause_when_unfocused:
 				get_tree().paused = true
 		NOTIFICATION_WM_MOUSE_EXIT:
@@ -1007,6 +1090,7 @@ func _quit() -> void:
 
 
 func _exit_tree() -> void:
+	stop_anywhere_clipping()
 	Global.pixelorama_about_to_close.emit()
 	for project in Global.projects:
 		project.remove()
