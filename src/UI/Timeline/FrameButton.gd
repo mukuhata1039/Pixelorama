@@ -257,7 +257,23 @@ func _is_drag_border(local_pos: Vector2) -> bool:
 
 
 func _gui_input(event: InputEvent) -> void:
-	if not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_LEFT:
+	if not event is InputEventMouseButton:
+		return
+	# Wheel over frame numbers scrubs the active frame instead of scrolling
+	# the timeline horizontally. Elsewhere the usual scroll behavior remains.
+	if event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		accept_event()
+		if not event.pressed:
+			return
+		var project := Global.current_project
+		if not is_instance_valid(project) or project.frames.is_empty():
+			return
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			Global.animation_timeline._on_NextFrame_pressed()
+		else:
+			Global.animation_timeline._on_PreviousFrame_pressed()
+		return
+	if event.button_index != MOUSE_BUTTON_LEFT:
 		return
 	if event.pressed:
 		_drag_started_on_selected_border = _is_drag_border(event.position)
