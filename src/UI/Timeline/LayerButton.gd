@@ -248,9 +248,13 @@ static func _draw_reference_cancel_slash(button: Control, center: Vector2) -> vo
 
 
 func _draw_target_visibility_indicator() -> void:
-	if not is_instance_valid(target_visibility_button) or not is_instance_valid(target_visibility_layer):
+	if (
+		not is_instance_valid(target_visibility_button)
+		or not is_instance_valid(target_visibility_layer)
+	):
 		return
 	draw_visibility_reference_icon(target_visibility_button, target_visibility_layer.visibility_target)
+
 
 func _on_target_visibility_button_pressed() -> void:
 	if not is_instance_valid(target_visibility_layer):
@@ -305,6 +309,7 @@ func _draw_anywhere_clip_indicator() -> void:
 	if not is_instance_valid(anywhere_clip_button) or not is_instance_valid(anywhere_clip_layer):
 		return
 	draw_anywhere_clip_reference_icon(anywhere_clip_button, anywhere_clip_layer.anywhere_clip_target)
+
 
 func _on_anywhere_clip_button_pressed() -> void:
 	if not is_instance_valid(anywhere_clip_layer):
