@@ -89,7 +89,9 @@ func _get_target_indices() -> Array:
 		if pair[1] < 0 or pair[1] >= _project.layers.size():
 			continue
 		var layer := _project.layers[pair[1]]
-		if not layer is PixelLayer or (not is_instance_valid(_target_layer) and not layer.can_layer_get_drawn()):
+		if not layer is PixelLayer:
+			continue
+		if not is_instance_valid(_target_layer) and not layer.can_layer_get_drawn():
 			continue
 		var cel := _project.frames[pair[0]].cels[pair[1]]
 		if not cel is PixelCel or cel is CelTileMap:
@@ -110,8 +112,11 @@ func _refresh_preview() -> void:
 		affected_label.text = tr("Indexed-color projects are not supported.")
 	else:
 		affected_label.text = tr("Affected cels: %d") % _targets.size()
-	get_ok_button().disabled = (unsupported or _targets.is_empty()
-		or (is_instance_valid(_target_layer) and color_button.color.a <= 0.0))
+	get_ok_button().disabled = (
+		unsupported
+		or _targets.is_empty()
+		or (is_instance_valid(_target_layer) and color_button.color.a <= 0.0)
+	)
 	previous_frame.disabled = _project.frames.size() <= 1
 	next_frame.disabled = _project.frames.size() <= 1
 	if unsupported or _targets.is_empty():
@@ -181,9 +186,12 @@ func _apply() -> void:
 			replacement = ImageExtended.create_from_image(old_image)
 			var generator := ShaderImageEffect.new()
 			generator.generate_image(
-				replacement, RECOLOR_SHADER,
-				{"target_color": color_button.color,
-				"preserve_alpha": is_instance_valid(_target_layer)},
+				replacement,
+				RECOLOR_SHADER,
+				{
+					"target_color": color_button.color,
+					"preserve_alpha": is_instance_valid(_target_layer),
+				},
 				replacement.get_size()
 			)
 			if not split_link:
@@ -198,18 +206,18 @@ func _apply() -> void:
 			"split_link": split_link,
 		})
 	var undo_redo := _project.undo_redo
-	var editing_layer := _target_layer if is_instance_valid(_target_layer) else null
+	var editing_layer: PixelLayer = _target_layer if is_instance_valid(_target_layer) else null
 	undo_redo.create_action("Change Layer Color" if editing_layer != null else "Draw")
 	undo_redo.add_do_method(_set_recolored_contents.bind(entries, true))
 	if editing_layer != null:
 		var old_color: Color = editing_layer.drawing_color
 		var was_locked: bool = editing_layer.drawing_color_locked
-		undo_redo.add_do_method(_set_layer_locked_color.bind(
-			editing_layer, color_button.color, true
-		))
-		undo_redo.add_undo_method(_set_layer_locked_color.bind(
-			editing_layer, old_color, was_locked
-		))
+		undo_redo.add_do_method(
+			_set_layer_locked_color.bind(editing_layer, color_button.color, true)
+		)
+		undo_redo.add_undo_method(
+			_set_layer_locked_color.bind(editing_layer, old_color, was_locked)
+		)
 	undo_redo.add_do_method(Global.undo_or_redo.bind(false, -1, -1, _project))
 	undo_redo.add_undo_method(Global.undo_or_redo.bind(true, -1, -1, _project))
 	undo_redo.add_undo_method(_set_recolored_contents.bind(entries, false))
