@@ -188,13 +188,13 @@ func _draw_clipping_mode_icon() -> void:
 	elif mode == 1:
 		var ink := Color(0.28, 0.74, 0.84)
 		clipping_mode_button.draw_line(
-			center + Vector2(-2, -5), center + Vector2(-5, -5), ink, 2.0
+			center + Vector2(-4, -5), center + Vector2(4, -5), ink, 2.0
 		)
 		clipping_mode_button.draw_line(
-			center + Vector2(-5, -5), center + Vector2(-5, 5), ink, 2.0
+			center + Vector2(-5, -4), center + Vector2(-5, 4), ink, 2.0
 		)
 		clipping_mode_button.draw_line(
-			center + Vector2(-5, 5), center + Vector2(-2, 5), ink, 2.0
+			center + Vector2(-4, 5), center + Vector2(4, 5), ink, 2.0
 		)
 	else:
 		var ink := Color(0.90, 0.68, 0.29)
