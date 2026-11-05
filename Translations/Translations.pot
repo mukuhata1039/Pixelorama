@@ -4205,3 +4205,6 @@ msgstr ""
 
 msgid "Clear Anywhere Clipping References"
 msgstr ""
+
+msgid "Anywhere clipping (toggle)"
+msgstr ""
