@@ -4333,3 +4333,6 @@ msgstr "非表示の参照を一括解除"
 
 msgid "Clear Anywhere Clipping References"
 msgstr "クリッピングの参照を一括解除"
+
+msgid "Anywhere clipping (toggle)"
+msgstr "どこからでもクリッピング（切り替え）"
