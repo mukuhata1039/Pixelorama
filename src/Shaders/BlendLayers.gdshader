@@ -7,7 +7,7 @@ const float HSL_EPSILON = 1e-10;
 uniform sampler2DArray layers : filter_nearest;
 // Nx4 metadata texture: blend mode, opacity, clipping flag, group scope.
 // row 2: 0 = off, 1 = C (chain), .75 = I (inherit),
-//        .2 = a child already composited into a non-pass-through group.
+//        .4 = non-pixel layer, .2 = child already composited into a group.
 // row 3: .rg holds the direct parent's 16-bit id (root id = 0).
 uniform sampler2D metadata : filter_nearest;
 
@@ -199,6 +199,11 @@ void fragment() {
 
 	float previous_effective_alpha = result_color.a;
 	float original_base_alpha = result_color.a;
+	float first_state = texelFetch(metadata, ivec2(0, 2), 0).r;
+	bool previous_mask_eligible = first_state < 0.1;
+	if (!previous_mask_eligible) {
+		original_base_alpha = 0.0;
+	}
 	vec2 previous_scope = texelFetch(metadata, ivec2(0, 3), 0).rg;
 
 	for (int i = 1; i < metadata_size.x; i++) {
@@ -215,17 +220,24 @@ void fragment() {
 		layer_color.a = border_trim(layer_color, UV);
 		vec2 scope = texelFetch(metadata, ivec2(i, 3), 0).rg;
 		bool same_group = all(lessThan(abs(scope - previous_scope), vec2(0.001)));
+		if (!same_group) {
+			previous_effective_alpha = 0.0;
+			original_base_alpha = 0.0;
+			previous_mask_eligible = false;
+		}
 		if (clipping_state > 0.5) {
 			// C = chained intersection, I = inherited alpha of the root base.
 			float mask_alpha = (clipping_state > 0.9)
 				? previous_effective_alpha : original_base_alpha;
-			// A moved/malformed clip cannot reach across group boundaries.
-			layer_color.a *= same_group ? mask_alpha : 0.0;
+			// No clipping across group boundaries or non-pixel siblings.
+			layer_color.a *= previous_mask_eligible ? mask_alpha : 0.0;
 		}
 		else {
-			original_base_alpha = layer_color.a * current_opacity;
+			original_base_alpha = (clipping_state < 0.1)
+				? layer_color.a * current_opacity : 0.0;
 		}
 		previous_effective_alpha = layer_color.a * current_opacity;
+		previous_mask_eligible = clipping_state < 0.1 || clipping_state > 0.5;
 		previous_scope = scope;
 		result_color = blend(current_blend_mode, layer_color, result_color, current_opacity);
 	}
