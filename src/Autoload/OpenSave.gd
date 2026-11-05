@@ -629,6 +629,8 @@ func save_pxo_file(path: String, autosave: bool, project := Global.current_proje
 	# Manual saves keep the existing synchronous, full-preview path. Autosaves
 	# collect detached bytes here and compress them on a worker afterwards.
 	var background_backup := autosave and not OS.has_feature("web")
+	if background_backup and _autosave_thread != null:
+		return false
 	var zip_packer = BackupArchive.new() if background_backup else ZIPPacker.new()
 	var err = zip_packer.open(temp_path)
 	if err != OK:
@@ -1526,9 +1528,15 @@ func _write_autosave_job(job: Dictionary) -> Dictionary:
 	if err != OK:
 		DirAccess.remove_absolute(staging_path)
 		return {"ok": false, "error": "Generated backup ZIP cannot be opened"}
-	var is_complete := reader.file_exists("data.json")
-	is_complete = is_complete and reader.file_exists("mimetype")
-	is_complete = is_complete and reader.get_files().size() == job["entries"].size()
+	var saved_names := {}
+	for name in reader.get_files():
+		saved_names[name] = true
+	var is_complete := saved_names.has("data.json") and saved_names.has("mimetype")
+	if is_complete:
+		for entry: Dictionary in job["entries"]:
+			if not saved_names.has(entry["name"]):
+				is_complete = false
+				break
 	reader.close()
 	if not is_complete:
 		DirAccess.remove_absolute(staging_path)
