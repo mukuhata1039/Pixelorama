@@ -10,8 +10,9 @@ var _targets: Array = []
 var requested_layer: PixelLayer
 var _target_layer: PixelLayer
 
-@onready var help_label := $VBox/Help as Label
-@onready var scope_label := $VBox/ScopeLabel as Label
+@onready var content_scroll := $ContentScroll as ScrollContainer
+@onready var help_label := $ContentScroll/VBox/Help as Label
+@onready var scope_label := $ContentScroll/VBox/ScopeLabel as Label
 @onready var color_picker := %ColorPicker as ColorPicker
 @onready var alpha_slider := %AlphaSlider as HSlider
 @onready var alpha_label := %AlphaLabel as Label
@@ -24,6 +25,7 @@ var _target_layer: PixelLayer
 func _ready() -> void:
 	get_ok_button().text = tr("Apply")
 	about_to_popup.connect(_prepare)
+	size_changed.connect(_sync_scroll_area)
 	confirmed.connect(_apply)
 	visibility_changed.connect(_on_visibility_changed)
 	color_picker.color_changed.connect(_on_color_changed)
@@ -34,7 +36,30 @@ func _ready() -> void:
 	Global.project_about_to_switch.connect(_stop_preview)
 
 
+## The first popup can be relaid out after about_to_popup. Fit it once
+## before opening and once on the next idle frame to correct that first-open
+## stretch without requiring the user to close and reopen the window.
+func _fit_dialog_to_editor() -> void:
+	var editor_height := Global.control.get_window().size.y
+	var dialog_height := clampi(editor_height - 70, 220, 640)
+	var requested_size := Vector2i(530, dialog_height)
+	if size != requested_size:
+		size = requested_size
+	_sync_scroll_area()
+
+
+func _sync_scroll_area() -> void:
+	if not is_instance_valid(content_scroll):
+		return
+	# ConfirmationDialog owns the bottom Apply/Cancel row, outside the scroll.
+	content_scroll.offset_right = float(size.x - 16)
+	content_scroll.offset_bottom = float(size.y - 60)
+
+
 func _prepare() -> void:
+	_fit_dialog_to_editor()
+	call_deferred("_fit_dialog_to_editor")
+	content_scroll.scroll_vertical = 0
 	_project = Global.current_project
 	if _project == null:
 		return
@@ -43,7 +68,8 @@ func _prepare() -> void:
 	var editing_layer := is_instance_valid(_target_layer)
 	title = "Change layer color" if editing_layer else "Recolor drawn pixels"
 	help_label.text = (
-		"Replace this layer's drawn pixels in every frame, preserving each pixel's transparency."
+		"Replace all painted pixels on this layer in every frame. "
+		+ "Original pixel opacity is ignored."
 		if editing_layer else "Replace every nontransparent pixel with the chosen color."
 	)
 	scope_label.visible = not editing_layer
@@ -52,8 +78,9 @@ func _prepare() -> void:
 		_target_layer.drawing_color
 		if editing_layer else Tools.get_assigned_color(MOUSE_BUTTON_LEFT)
 	)
-	if not editing_layer:
-		base_color.a = 1.0
+	# The layer icon changes *all* painted pixels to the chosen new opacity,
+	# not their old opacity. Start at fully opaque even if the lock was translucent.
+	base_color.a = 1.0
 	color_picker.color = base_color
 	alpha_slider.set_value_no_signal(roundi(base_color.a * 100.0))
 	alpha_label.text = "%d%%" % roundi(base_color.a * 100.0)
@@ -123,7 +150,7 @@ func _refresh_preview() -> void:
 		Global.canvas.clear_live_recolor_preview()
 	else:
 		Global.canvas.set_live_recolor_preview(
-			_project, _targets, selected_color, is_instance_valid(_target_layer)
+			_project, _targets, selected_color, false
 		)
 
 
@@ -196,7 +223,7 @@ func _apply() -> void:
 				RECOLOR_SHADER,
 				{
 					"target_color": selected_color,
-					"preserve_alpha": is_instance_valid(_target_layer),
+					"preserve_alpha": false,
 				},
 				replacement.get_size()
 			)
