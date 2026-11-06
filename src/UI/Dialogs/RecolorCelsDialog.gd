@@ -25,6 +25,7 @@ var _target_layer: PixelLayer
 func _ready() -> void:
 	get_ok_button().text = tr("Apply")
 	about_to_popup.connect(_prepare)
+	size_changed.connect(_sync_scroll_area)
 	confirmed.connect(_apply)
 	visibility_changed.connect(_on_visibility_changed)
 	color_picker.color_changed.connect(_on_color_changed)
@@ -35,13 +36,29 @@ func _ready() -> void:
 	Global.project_about_to_switch.connect(_stop_preview)
 
 
-func _prepare() -> void:
-	# Keep the Apply/Cancel buttons visible even when the editor window is short.
-	# Only the contents scroll; the dialog buttons remain outside the scroll area.
+## The first popup can be relaid out after about_to_popup. Fit it once
+## before opening and once on the next idle frame to correct that first-open
+## stretch without requiring the user to close and reopen the window.
+func _fit_dialog_to_editor() -> void:
 	var editor_height := Global.control.get_window().size.y
-	var dialog_height := maxi(320, mini(640, editor_height - 70))
-	size = Vector2i(530, dialog_height)
-	content_scroll.offset_bottom = float(dialog_height - 60)
+	var dialog_height := clampi(editor_height - 70, 220, 640)
+	var requested_size := Vector2i(530, dialog_height)
+	if size != requested_size:
+		size = requested_size
+	_sync_scroll_area()
+
+
+func _sync_scroll_area() -> void:
+	if not is_instance_valid(content_scroll):
+		return
+	# ConfirmationDialog owns the bottom Apply/Cancel row, outside the scroll.
+	content_scroll.offset_right = float(size.x - 16)
+	content_scroll.offset_bottom = float(size.y - 60)
+
+
+func _prepare() -> void:
+	_fit_dialog_to_editor()
+	call_deferred("_fit_dialog_to_editor")
 	content_scroll.scroll_vertical = 0
 	_project = Global.current_project
 	if _project == null:
