@@ -1,6 +1,8 @@
 extends ConfirmationDialog
 
 const RECOLOR_SHADER := preload("res://src/Shaders/LiveRecolor.gdshader")
+const POSITION_CONFIG_SECTION := "recolor_dialog"
+const POSITION_CONFIG_KEY := "last_position"
 ## Replace all nontransparent pixels in the chosen cels with a single RGBA color.
 ## Preview is rendered through Canvas/BaseLayer, so Cancel never modifies image data.
 
@@ -36,13 +38,49 @@ func _ready() -> void:
 	Global.project_about_to_switch.connect(_stop_preview)
 
 
+## The popup has a bounded height, with its Apply/Cancel footer kept visible.
+## Use identical sizing before popup and during about_to_popup.
+func _desired_dialog_size() -> Vector2i:
+	var editor_height := Global.control.get_window().size.y
+	return Vector2i(530, clampi(editor_height - 70, 220, 640))
+
+
+## Open at the last closed position, including after restarting Pixelorama.
+## If monitors change or the saved location is no longer visible, center it.
+func popup_at_last_position() -> void:
+	var desired_size := _desired_dialog_size()
+	var remembered: Variant = Global.config_cache.get_value(
+		POSITION_CONFIG_SECTION, POSITION_CONFIG_KEY, null
+	)
+	if remembered is Vector2i:
+		var remembered_position: Vector2i = remembered
+		var embedded := Global.control.get_viewport().gui_embed_subwindows
+		if embedded:
+			var editor_rect := Rect2i(Vector2i.ZERO, Global.control.get_window().size)
+			if editor_rect.has_point(remembered_position):
+				popup(Rect2i(_clamp_position(remembered_position, desired_size, editor_rect), desired_size))
+				return
+		else:
+			for i in DisplayServer.get_screen_count():
+				var screen_rect := DisplayServer.screen_get_usable_rect(i)
+				if screen_rect.has_point(remembered_position):
+					popup(Rect2i(_clamp_position(remembered_position, desired_size, screen_rect), desired_size))
+					return
+	popup_centered_clamped(desired_size)
+
+
+func _clamp_position(pos: Vector2i, dialog_size: Vector2i, area: Rect2i) -> Vector2i:
+	return Vector2i(
+		clampi(pos.x, area.position.x, maxi(area.position.x, area.end.x - dialog_size.x)),
+		clampi(pos.y, area.position.y, maxi(area.position.y, area.end.y - dialog_size.y))
+	)
+
+
 ## The first popup can be relaid out after about_to_popup. Fit it once
 ## before opening and once on the next idle frame to correct that first-open
 ## stretch without requiring the user to close and reopen the window.
 func _fit_dialog_to_editor() -> void:
-	var editor_height := Global.control.get_window().size.y
-	var dialog_height := clampi(editor_height - 70, 220, 640)
-	var requested_size := Vector2i(530, dialog_height)
+	var requested_size := _desired_dialog_size()
 	if size != requested_size:
 		size = requested_size
 	_sync_scroll_area()
@@ -287,6 +325,10 @@ func _stop_preview() -> void:
 func _on_visibility_changed() -> void:
 	if visible:
 		return
+	# Keep only the window position, not its size. The height continues
+	# to adapt to the editor on the next opening.
+	Global.config_cache.set_value(POSITION_CONFIG_SECTION, POSITION_CONFIG_KEY, position)
+	Global.config_cache.save(Global.CONFIG_PATH)
 	_stop_preview()
 	# The recolor dialog does not dim the background when opened, so it must
 	# not reset the shared dialog dimming state when it closes.

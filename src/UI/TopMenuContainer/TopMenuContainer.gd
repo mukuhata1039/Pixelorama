@@ -845,9 +845,19 @@ func edit_menu_id_pressed(id: int) -> void:
 		Global.EditMenu.PREFERENCES:
 			preferences_dialog.popup()
 		RECOLOR_MENU_ID:
-			recolor_cels_dialog.popup()
+			_popup_recolor_dialog()
 		_:
 			_handle_metadata(id, edit_menu)
+
+
+## Unlike the generic popup helper, this dialog remembers its last position.
+## Used both from the Edit menu and the layer's right-click color-lock icon.
+func _popup_recolor_dialog() -> void:
+	if not is_instance_valid(recolor_cels_dialog.node):
+		recolor_cels_dialog.instantiate_scene()
+	if not is_instance_valid(recolor_cels_dialog.node):
+		return
+	recolor_cels_dialog.node.call("popup_at_last_position")
 
 
 ## Reuse the undimmed Edit > Recolor dialog for right-clicking a color-lock icon.
@@ -860,7 +870,7 @@ func open_layer_recolor(layer: PixelLayer) -> void:
 	if not is_instance_valid(recolor_cels_dialog.node):
 		return
 	recolor_cels_dialog.node.set("requested_layer", layer)
-	recolor_cels_dialog.popup()
+	_popup_recolor_dialog()
 
 
 func view_menu_id_pressed(id: int) -> void:
