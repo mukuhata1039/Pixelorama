@@ -10,8 +10,9 @@ var _targets: Array = []
 var requested_layer: PixelLayer
 var _target_layer: PixelLayer
 
-@onready var help_label := $VBox/Help as Label
-@onready var scope_label := $VBox/ScopeLabel as Label
+@onready var content_scroll := $ContentScroll as ScrollContainer
+@onready var help_label := $ContentScroll/VBox/Help as Label
+@onready var scope_label := $ContentScroll/VBox/ScopeLabel as Label
 @onready var color_picker := %ColorPicker as ColorPicker
 @onready var alpha_slider := %AlphaSlider as HSlider
 @onready var alpha_label := %AlphaLabel as Label
@@ -35,6 +36,13 @@ func _ready() -> void:
 
 
 func _prepare() -> void:
+	# Keep the Apply/Cancel buttons visible even when the editor window is short.
+	# Only the contents scroll; the dialog buttons remain outside the scroll area.
+	var editor_height := Global.control.get_window().size.y
+	var dialog_height := maxi(320, mini(640, editor_height - 70))
+	size = Vector2i(530, dialog_height)
+	content_scroll.offset_bottom = float(dialog_height - 60)
+	content_scroll.scroll_vertical = 0
 	_project = Global.current_project
 	if _project == null:
 		return
@@ -43,7 +51,8 @@ func _prepare() -> void:
 	var editing_layer := is_instance_valid(_target_layer)
 	title = "Change layer color" if editing_layer else "Recolor drawn pixels"
 	help_label.text = (
-		"Replace this layer's drawn pixels in every frame, preserving each pixel's transparency."
+		"Replace all painted pixels on this layer in every frame. "
+		+ "Original pixel opacity is ignored."
 		if editing_layer else "Replace every nontransparent pixel with the chosen color."
 	)
 	scope_label.visible = not editing_layer
@@ -52,8 +61,9 @@ func _prepare() -> void:
 		_target_layer.drawing_color
 		if editing_layer else Tools.get_assigned_color(MOUSE_BUTTON_LEFT)
 	)
-	if not editing_layer:
-		base_color.a = 1.0
+	# The layer icon changes *all* painted pixels to the chosen new opacity,
+	# not their old opacity. Start at fully opaque even if the lock was translucent.
+	base_color.a = 1.0
 	color_picker.color = base_color
 	alpha_slider.set_value_no_signal(roundi(base_color.a * 100.0))
 	alpha_label.text = "%d%%" % roundi(base_color.a * 100.0)
@@ -123,7 +133,7 @@ func _refresh_preview() -> void:
 		Global.canvas.clear_live_recolor_preview()
 	else:
 		Global.canvas.set_live_recolor_preview(
-			_project, _targets, selected_color, is_instance_valid(_target_layer)
+			_project, _targets, selected_color, false
 		)
 
 
@@ -196,7 +206,7 @@ func _apply() -> void:
 				RECOLOR_SHADER,
 				{
 					"target_color": selected_color,
-					"preserve_alpha": is_instance_valid(_target_layer),
+					"preserve_alpha": false,
 				},
 				replacement.get_size()
 			)
