@@ -54,6 +54,11 @@ var splash_dialog: AcceptDialog:
 			add_child(splash_dialog)
 		return splash_dialog
 var _last_session_last_project := ""
+var _instance_bridge: PixeloramaSingleInstance
+var _forwarding_launch := false
+var _forwarded_launch := false
+var _pending_forwarded_files := PackedStringArray()
+var _last_non_minimized_window_mode := Window.MODE_WINDOWED
 
 @onready var top_menu_container := $MenuAndUI/TopMenuContainer as Panel
 @onready var main_ui := $MenuAndUI/UI/DockableContainer as DockableContainer
@@ -257,6 +262,24 @@ func _ready() -> void:
 
 	quit_and_save_dialog.add_button("Exit without saving", false, "ExitWithoutSaving")
 	_last_session_last_project = get_last_project_path()
+
+	# On Windows, file-association launches can forward a path to the existing
+	# editor instead of creating a second window. A failed transfer always
+	# falls back to this instance's normal file-opening path.
+	if OS.get_name() == "Windows" and DisplayServer.get_name() != "headless":
+		_instance_bridge = PixeloramaSingleInstance.new()
+		add_child(_instance_bridge)
+		_instance_bridge.files_received.connect(_on_external_files_received)
+		if Global.open_files_in_existing_window and not _instance_bridge.start_listening():
+			var launch_files := _get_forwardable_launch_files()
+			if not launch_files.is_empty():
+				_forwarding_launch = true
+				var delivered := await _instance_bridge.forward_files(launch_files)
+				_forwarding_launch = false
+				if delivered:
+					_forwarded_launch = true
+					get_tree().quit()
+					return
 	_handle_cmdline_arguments()
 	get_tree().root.files_dropped.connect(_on_files_dropped)
 	if OS.get_name() == "Android":
@@ -279,10 +302,71 @@ func _ready() -> void:
 	print("Time Pixelorama took to open: %sms" % Time.get_ticks_msec())
 
 
+## Only plain file-open launches are forwarded. Scripts using CLI flags and
+## custom export options always keep their existing independent process.
+func _get_forwardable_launch_files() -> PackedStringArray:
+	var result := PackedStringArray()
+	var args := OS.get_cmdline_args()
+	args.append_array(OS.get_cmdline_user_args())
+	if args.is_empty():
+		return result
+	for argument in args:
+		if argument.begins_with("-") or argument.begins_with("rel-dir="):
+			return PackedStringArray()
+		var path := argument.replace("\\", "/")
+		if path.is_relative_path():
+			var executable_path := OS.get_executable_path().get_base_dir().path_join(path)
+			if FileAccess.file_exists(executable_path):
+				path = executable_path
+			else:
+				var working_directory := OS.get_environment("PWD")
+				path = working_directory.path_join(path)
+		if not PixeloramaSingleInstance.can_forward_file(path):
+			return PackedStringArray()
+		result.append(path)
+	return result
+
+
+## The Preferences toggle applies to the current process immediately.
+func refresh_file_reuse_listener() -> void:
+	if not is_instance_valid(_instance_bridge):
+		return
+	if Global.open_files_in_existing_window:
+		_instance_bridge.start_listening()
+	else:
+		_instance_bridge.stop_listening()
+
+
+func _on_external_files_received(paths: PackedStringArray) -> void:
+	_pending_forwarded_files.append_array(paths)
+
+
+func _open_pending_forwarded_files() -> void:
+	if _pending_forwarded_files.is_empty() or not Global.pixelorama_has_loaded:
+		return
+	var files := _pending_forwarded_files.duplicate()
+	_pending_forwarded_files.clear()
+	for file in files:
+		if PixeloramaSingleInstance.can_forward_file(file):
+			OpenSave.handle_loading_file(file)
+	if splash_dialog.visible:
+		splash_dialog.hide()
+	var main_window := get_window()
+	if main_window.mode == Window.MODE_MINIMIZED:
+		main_window.mode = _last_non_minimized_window_mode
+	DisplayServer.window_move_to_foreground()
+	DisplayServer.window_request_attention()
+
+
 ## The normal brush cursor is configured here too. Switching the actual OS
 ## cursor is more reliable than drawing a Sprite2D from inside the canvas
 ## SubViewport, and works with remapped keyboard/mouse rotation shortcuts.
 func _process(_delta: float) -> void:
+	if _forwarding_launch or _forwarded_launch:
+		return
+	if get_window().mode != Window.MODE_MINIMIZED:
+		_last_non_minimized_window_mode = get_window().mode
+	_open_pending_forwarded_files()
 	# Recover even if a modifier is released first or the shortcut's release
 	# event was consumed by another GUI control.
 	if not _target_visibility_hold_state.is_empty():
@@ -1090,6 +1174,10 @@ func _quit() -> void:
 
 
 func _exit_tree() -> void:
+	# A transient file-forwarding process must not write window preferences
+	# or overwrite the active editor's persisted state when it exits.
+	if _forwarded_launch:
+		return
 	stop_anywhere_clipping()
 	Global.pixelorama_about_to_close.emit()
 	for project in Global.projects:
