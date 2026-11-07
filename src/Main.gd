@@ -55,9 +55,8 @@ var splash_dialog: AcceptDialog:
 		return splash_dialog
 var _last_session_last_project := ""
 var _instance_bridge: PixeloramaSingleInstance
-var _forwarding_launch := false
 var _forwarded_launch := false
-var _pending_forwarded_files := PackedStringArray()
+var _pending_forwarded_requests: Array[Dictionary] = []
 var _last_non_minimized_window_mode := Window.MODE_WINDOWED
 
 @onready var top_menu_container := $MenuAndUI/TopMenuContainer as Panel
@@ -260,22 +259,12 @@ func _ready() -> void:
 		_instance_bridge.files_received.connect(_on_external_files_received)
 		if Global.open_files_in_existing_window and not _instance_bridge.start_listening():
 			var launch_files := _get_forwardable_launch_files()
-			if not launch_files.is_empty():
-				# Do not flash a second editor window while a short handoff
-				# is in progress. Also keep the frame-loop socket handshake
-				# responsive even if the OS put this inactive window to sleep.
-				_forwarding_launch = true
-				var original_low_usage := OS.low_processor_usage_mode
-				OS.low_processor_usage_mode = false
-				get_window().visible = false
-				var delivered := await _instance_bridge.forward_files(launch_files)
-				_forwarding_launch = false
-				OS.low_processor_usage_mode = original_low_usage
-				if delivered:
-					_forwarded_launch = true
-					get_tree().quit()
-					return
-				get_window().visible = true
+			if not launch_files.is_empty() and _instance_bridge.forward_files(launch_files):
+				# The request is already durable in the first editor's inbox.
+				# This process never opens the file or overwrites preferences.
+				_forwarded_launch = true
+				get_tree().quit()
+				return
 
 	_install_aseprite_cursors()
 	get_window().title = tr("untitled") + " - Pixelorama " + Global.current_version
@@ -344,18 +333,39 @@ func refresh_file_reuse_listener() -> void:
 		_instance_bridge.stop_listening()
 
 
-func _on_external_files_received(paths: PackedStringArray) -> void:
-	_pending_forwarded_files.append_array(paths)
+func _on_external_files_received(paths: PackedStringArray, request_path: String) -> void:
+	_pending_forwarded_requests.append({"files": paths, "request_path": request_path})
 
 
 func _open_pending_forwarded_files() -> void:
-	if _pending_forwarded_files.is_empty() or not Global.pixelorama_has_loaded:
+	if _pending_forwarded_requests.is_empty() or not Global.pixelorama_has_loaded:
 		return
-	var files := _pending_forwarded_files.duplicate()
-	_pending_forwarded_files.clear()
-	for file in files:
-		if PixeloramaSingleInstance.can_forward_file(file):
-			OpenSave.handle_loading_file(file)
+	var jobs := _pending_forwarded_requests.duplicate(true)
+	_pending_forwarded_requests.clear()
+	for job in jobs:
+		var files: PackedStringArray = job["files"]
+		for file in files:
+			if not PixeloramaSingleInstance.can_forward_file(file):
+				continue
+			# Explorer can send the same document again while it is already
+			# open. Focus the existing tab instead of creating a duplicate.
+			var found_existing := false
+			if file.get_extension().to_lower() == "pxo":
+				var normalized_path := file.replace("\\", "/").simplify_path().to_lower()
+				for index in Global.projects.size():
+					var existing_path: String = Global.projects[index].save_path
+					if existing_path.is_empty():
+						continue
+					if existing_path.replace("\\", "/").simplify_path().to_lower() == normalized_path:
+						Global.tabs.current_tab = index
+						found_existing = true
+						break
+			if not found_existing:
+				OpenSave.handle_loading_file(file)
+		# Remove the request only after it has been dispatched, so a crash
+		# during startup will not silently discard an unopened project.
+		if is_instance_valid(_instance_bridge):
+			_instance_bridge.finish_request(job["request_path"])
 	if splash_dialog.visible:
 		splash_dialog.hide()
 	var main_window := get_window()
@@ -369,7 +379,7 @@ func _open_pending_forwarded_files() -> void:
 ## cursor is more reliable than drawing a Sprite2D from inside the canvas
 ## SubViewport, and works with remapped keyboard/mouse rotation shortcuts.
 func _process(_delta: float) -> void:
-	if _forwarding_launch or _forwarded_launch:
+	if _forwarded_launch:
 		return
 	if get_window().mode != Window.MODE_MINIMIZED:
 		_last_non_minimized_window_mode = get_window().mode
