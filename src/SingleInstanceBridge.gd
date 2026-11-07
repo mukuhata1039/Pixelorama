@@ -14,8 +14,9 @@ extends Node
 signal files_received(paths: PackedStringArray, request_path: String)
 
 const HOST := "127.0.0.1"
-const PORT_BASE := 42000
-const PORT_SPAN := 20000
+# Keep the per-user port below Windows' usual ephemeral-client port range.
+const PORT_BASE := 25500
+const PORT_SPAN := 16000
 const HEARTBEAT_A := "user://single_instance_state_a.json"
 const HEARTBEAT_B := "user://single_instance_state_b.json"
 const INBOX := "user://single_instance_requests"
