@@ -7,13 +7,17 @@ extends Node
 signal files_received(paths: PackedStringArray)
 
 const HOST := "127.0.0.1"
-const PORT := 48573
+## Isolate different Windows accounts instead of sharing a system-wide port.
+## Hashing the user-data directory also reduces collisions with other apps.
+const PORT_BASE := 42000
+const PORT_SPAN := 20000
 const PROTOCOL := "pixelorama-open-files-v1"
 const ACK := "pixelorama-open-accepted-v1\n"
 const MAX_MESSAGE_BYTES := 32768
 const MAX_CLIENTS := 8
 const FORWARD_TIMEOUT_MS := 1300
 const CLIENT_TIMEOUT_MS := 3000
+const ACK_GRACE_MS := 350
 const RETRY_LISTEN_MS := 2000
 const FORWARDABLE_EXTENSIONS := [
 	"pxo", "ase", "aseprite", "ora", "kra", "psd", "piskel",
@@ -23,6 +27,11 @@ const FORWARDABLE_EXTENSIONS := [
 var _server := TCPServer.new()
 var _clients: Array[Dictionary] = []
 var _next_listen_attempt_ms := 0
+
+
+static func _port() -> int:
+	var hash_prefix := OS.get_user_data_dir().md5_text().substr(0, 4)
+	return PORT_BASE + hash_prefix.hex_to_int() % PORT_SPAN
 
 
 static func can_forward_file(path: String) -> bool:
@@ -35,7 +44,7 @@ func start_listening() -> bool:
 	if _server.is_listening():
 		return true
 	_next_listen_attempt_ms = Time.get_ticks_msec() + RETRY_LISTEN_MS
-	var error := _server.listen(PORT, HOST)
+	var error := _server.listen(_port(), HOST)
 	if error == OK:
 		return true
 	# A bound port usually means a previous instance is running. The caller
@@ -80,7 +89,8 @@ func _process(_delta: float) -> void:
 		_clients.append({
 			"peer": peer,
 			"bytes": PackedByteArray(),
-			"deadline": Time.get_ticks_msec() + CLIENT_TIMEOUT_MS
+			"deadline": Time.get_ticks_msec() + CLIENT_TIMEOUT_MS,
+			"responded": false
 		})
 
 	for i in range(_clients.size() - 1, -1, -1):
@@ -94,10 +104,15 @@ func _process(_delta: float) -> void:
 			peer.disconnect_from_host()
 			_clients.remove_at(i)
 			continue
+		# Keep a successfully answered socket alive briefly so the client can
+		# read the acknowledgement before the connection is closed.
+		if client["responded"]:
+			continue
+		var data: PackedByteArray = client["bytes"]
 		var byte_count := peer.get_available_bytes()
 		if byte_count == 0:
 			continue
-		if byte_count > MAX_MESSAGE_BYTES - (client["bytes"] as PackedByteArray).size():
+		if byte_count > MAX_MESSAGE_BYTES - data.size():
 			peer.disconnect_from_host()
 			_clients.remove_at(i)
 			continue
@@ -106,7 +121,6 @@ func _process(_delta: float) -> void:
 			peer.disconnect_from_host()
 			_clients.remove_at(i)
 			continue
-		var data: PackedByteArray = client["bytes"]
 		data.append_array(received[1])
 		client["bytes"] = data
 		if data.find(10) == -1:
@@ -119,6 +133,9 @@ func _process(_delta: float) -> void:
 			# Rejecting invalid paths leaves the original launch intact.
 			if peer.put_data(ACK.to_utf8_buffer()) == OK:
 				files_received.emit(paths)
+				client["responded"] = true
+				client["deadline"] = Time.get_ticks_msec() + ACK_GRACE_MS
+				continue
 		peer.disconnect_from_host()
 		_clients.remove_at(i)
 
@@ -151,7 +168,7 @@ func forward_files(files: PackedStringArray) -> bool:
 	if payload.size() > MAX_MESSAGE_BYTES:
 		return false
 	var peer := StreamPeerTCP.new()
-	if peer.connect_to_host(HOST, PORT) != OK:
+	if peer.connect_to_host(HOST, _port()) != OK:
 		return false
 	peer.set_no_delay(true)
 	var sent := false
