@@ -92,201 +92,19 @@ if ($running.Count -gt 0) {
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 Write-Host "Exporting the latest checked-out source as a RELEASE EXE..."
 
-# Windows Godot GUI executables are not console applications. Invoking one
-# directly with & can return before its export finishes, with LASTEXITCODE
-# still $null. Prefer the companion console binary when available.
-$consoleGodot = $GodotPath
-if ($GodotPath -notmatch '(?i)_console\.exe
-
-# Only change an existing association if it clearly belongs to Pixelorama.
-# Do not tamper with another editor, AppX handler or a protected UserChoice.
-$after = Get-PxoAssociation
-$owned = ($after.ProgId -match '(?i)pixelorama') -or
-    ($after.Exe -match '(?i)[\\/]Pixelorama[^\\/]*\.exe$')
-if ($owned -and $after.Exe -and (Test-Path -LiteralPath $after.Exe -PathType Leaf)) {
-    # Preserve Explorer and the taskbar icon: update the EXE they already use.
-    # Keep dated copies of both binaries for rollback.
-    $targetExe = (Resolve-Path -LiteralPath $after.Exe).Path
-    $targetPck = [IO.Path]::ChangeExtension($targetExe, ".pck")
-    if (-not [string]::Equals($targetExe, $outputExe, [StringComparison]::OrdinalIgnoreCase)) {
-        $runningTarget = @(Get-CimInstance Win32_Process -Filter "Name='Pixelorama.exe'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.ExecutablePath -and [string]::Equals($_.ExecutablePath, $targetExe, [StringComparison]::OrdinalIgnoreCase) })
-        if ($runningTarget.Count -gt 0) {
-            throw ("Close the Pixelorama window using: " + $targetExe)
-        }
-        $backupDir = Join-Path $buildDir ("before-exe-update-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
-        New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-        Copy-Item -LiteralPath $targetExe -Destination (Join-Path $backupDir (Split-Path $targetExe -Leaf)) -ErrorAction Stop
-        if (Test-Path -LiteralPath $targetPck) {
-            Copy-Item -LiteralPath $targetPck -Destination (Join-Path $backupDir (Split-Path $targetPck -Leaf)) -ErrorAction Stop
-        }
-        Copy-Item -LiteralPath $outputExe -Destination $targetExe -Force -ErrorAction Stop
-        Copy-Item -LiteralPath $pck -Destination $targetPck -Force -ErrorAction Stop
-        Write-Host ("Updated existing Explorer EXE and PCK: " + $targetExe)
-        Write-Host ("Old versions backed up at: " + $backupDir)
-    } else {
-        Write-Host ".pxo already points to the rebuilt EXE."
-    }
-} elseif ($owned -and $after.ProgId) {
-    $newCommand = '"' + $outputExe + '" "%1"'
-    if ($after.Command -ne $newCommand) {
-        $backup = Join-Path $buildDir ("pxo-association-before-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".txt")
-        @("ProgID=" + $after.ProgId, "Command=" + $after.Command) |
-            Set-Content -LiteralPath $backup -Encoding UTF8
-        $registryPath = "Registry::HKEY_CURRENT_USER\Software\Classes\" +
-            $after.ProgId + "\shell\open\command"
-        New-Item -Path $registryPath -Force | Out-Null
-        (Get-Item -LiteralPath $registryPath).SetValue("", $newCommand,
-            [Microsoft.Win32.RegistryValueKind]::String)
-        Write-Host ("Updated .pxo open command to: " + $newCommand)
-        Write-Host ("Previous association backed up at: " + $backup)
-    } else {
-        Write-Host ".pxo already points to the rebuilt EXE."
-    }
-} else {
-    Write-Warning "The current .pxo association is not identifiable as Pixelorama. It was not modified."
-    Write-Host "Choose the newly exported build\Pixelorama.exe as the default .pxo app in Windows."
-}
-
-$final = Get-PxoAssociation
-Write-Host ("Final .pxo association: " + $final.Command)
-Write-Host "Source and EXE are now in sync. Test double-clicking a .pxo file."
-) {
-    $consoleCandidate = $GodotPath -replace '(?i)\.exe
-
-# Only change an existing association if it clearly belongs to Pixelorama.
-# Do not tamper with another editor, AppX handler or a protected UserChoice.
-$after = Get-PxoAssociation
-$owned = ($after.ProgId -match '(?i)pixelorama') -or
-    ($after.Exe -match '(?i)[\\/]Pixelorama[^\\/]*\.exe$')
-if ($owned -and $after.Exe -and (Test-Path -LiteralPath $after.Exe -PathType Leaf)) {
-    # Preserve Explorer and the taskbar icon: update the EXE they already use.
-    # Keep dated copies of both binaries for rollback.
-    $targetExe = (Resolve-Path -LiteralPath $after.Exe).Path
-    $targetPck = [IO.Path]::ChangeExtension($targetExe, ".pck")
-    if (-not [string]::Equals($targetExe, $outputExe, [StringComparison]::OrdinalIgnoreCase)) {
-        $runningTarget = @(Get-CimInstance Win32_Process -Filter "Name='Pixelorama.exe'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.ExecutablePath -and [string]::Equals($_.ExecutablePath, $targetExe, [StringComparison]::OrdinalIgnoreCase) })
-        if ($runningTarget.Count -gt 0) {
-            throw ("Close the Pixelorama window using: " + $targetExe)
-        }
-        $backupDir = Join-Path $buildDir ("before-exe-update-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
-        New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-        Copy-Item -LiteralPath $targetExe -Destination (Join-Path $backupDir (Split-Path $targetExe -Leaf)) -ErrorAction Stop
-        if (Test-Path -LiteralPath $targetPck) {
-            Copy-Item -LiteralPath $targetPck -Destination (Join-Path $backupDir (Split-Path $targetPck -Leaf)) -ErrorAction Stop
-        }
-        Copy-Item -LiteralPath $outputExe -Destination $targetExe -Force -ErrorAction Stop
-        Copy-Item -LiteralPath $pck -Destination $targetPck -Force -ErrorAction Stop
-        Write-Host ("Updated existing Explorer EXE and PCK: " + $targetExe)
-        Write-Host ("Old versions backed up at: " + $backupDir)
-    } else {
-        Write-Host ".pxo already points to the rebuilt EXE."
-    }
-} elseif ($owned -and $after.ProgId) {
-    $newCommand = '"' + $outputExe + '" "%1"'
-    if ($after.Command -ne $newCommand) {
-        $backup = Join-Path $buildDir ("pxo-association-before-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".txt")
-        @("ProgID=" + $after.ProgId, "Command=" + $after.Command) |
-            Set-Content -LiteralPath $backup -Encoding UTF8
-        $registryPath = "Registry::HKEY_CURRENT_USER\Software\Classes\" +
-            $after.ProgId + "\shell\open\command"
-        New-Item -Path $registryPath -Force | Out-Null
-        (Get-Item -LiteralPath $registryPath).SetValue("", $newCommand,
-            [Microsoft.Win32.RegistryValueKind]::String)
-        Write-Host ("Updated .pxo open command to: " + $newCommand)
-        Write-Host ("Previous association backed up at: " + $backup)
-    } else {
-        Write-Host ".pxo already points to the rebuilt EXE."
-    }
-} else {
-    Write-Warning "The current .pxo association is not identifiable as Pixelorama. It was not modified."
-    Write-Host "Choose the newly exported build\Pixelorama.exe as the default .pxo app in Windows."
-}
-
-$final = Get-PxoAssociation
-Write-Host ("Final .pxo association: " + $final.Command)
-Write-Host "Source and EXE are now in sync. Test double-clicking a .pxo file."
-, '_console.exe'
-    if (Test-Path -LiteralPath $consoleCandidate -PathType Leaf) {
-        $consoleGodot = $consoleCandidate
-    }
-}
-$exitCode = $null
-if ($consoleGodot -match '(?i)_console\.exe
-
-# Only change an existing association if it clearly belongs to Pixelorama.
-# Do not tamper with another editor, AppX handler or a protected UserChoice.
-$after = Get-PxoAssociation
-$owned = ($after.ProgId -match '(?i)pixelorama') -or
-    ($after.Exe -match '(?i)[\\/]Pixelorama[^\\/]*\.exe$')
-if ($owned -and $after.Exe -and (Test-Path -LiteralPath $after.Exe -PathType Leaf)) {
-    # Preserve Explorer and the taskbar icon: update the EXE they already use.
-    # Keep dated copies of both binaries for rollback.
-    $targetExe = (Resolve-Path -LiteralPath $after.Exe).Path
-    $targetPck = [IO.Path]::ChangeExtension($targetExe, ".pck")
-    if (-not [string]::Equals($targetExe, $outputExe, [StringComparison]::OrdinalIgnoreCase)) {
-        $runningTarget = @(Get-CimInstance Win32_Process -Filter "Name='Pixelorama.exe'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.ExecutablePath -and [string]::Equals($_.ExecutablePath, $targetExe, [StringComparison]::OrdinalIgnoreCase) })
-        if ($runningTarget.Count -gt 0) {
-            throw ("Close the Pixelorama window using: " + $targetExe)
-        }
-        $backupDir = Join-Path $buildDir ("before-exe-update-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
-        New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-        Copy-Item -LiteralPath $targetExe -Destination (Join-Path $backupDir (Split-Path $targetExe -Leaf)) -ErrorAction Stop
-        if (Test-Path -LiteralPath $targetPck) {
-            Copy-Item -LiteralPath $targetPck -Destination (Join-Path $backupDir (Split-Path $targetPck -Leaf)) -ErrorAction Stop
-        }
-        Copy-Item -LiteralPath $outputExe -Destination $targetExe -Force -ErrorAction Stop
-        Copy-Item -LiteralPath $pck -Destination $targetPck -Force -ErrorAction Stop
-        Write-Host ("Updated existing Explorer EXE and PCK: " + $targetExe)
-        Write-Host ("Old versions backed up at: " + $backupDir)
-    } else {
-        Write-Host ".pxo already points to the rebuilt EXE."
-    }
-} elseif ($owned -and $after.ProgId) {
-    $newCommand = '"' + $outputExe + '" "%1"'
-    if ($after.Command -ne $newCommand) {
-        $backup = Join-Path $buildDir ("pxo-association-before-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".txt")
-        @("ProgID=" + $after.ProgId, "Command=" + $after.Command) |
-            Set-Content -LiteralPath $backup -Encoding UTF8
-        $registryPath = "Registry::HKEY_CURRENT_USER\Software\Classes\" +
-            $after.ProgId + "\shell\open\command"
-        New-Item -Path $registryPath -Force | Out-Null
-        (Get-Item -LiteralPath $registryPath).SetValue("", $newCommand,
-            [Microsoft.Win32.RegistryValueKind]::String)
-        Write-Host ("Updated .pxo open command to: " + $newCommand)
-        Write-Host ("Previous association backed up at: " + $backup)
-    } else {
-        Write-Host ".pxo already points to the rebuilt EXE."
-    }
-} else {
-    Write-Warning "The current .pxo association is not identifiable as Pixelorama. It was not modified."
-    Write-Host "Choose the newly exported build\Pixelorama.exe as the default .pxo app in Windows."
-}
-
-$final = Get-PxoAssociation
-Write-Host ("Final .pxo association: " + $final.Command)
-Write-Host "Source and EXE are now in sync. Test double-clicking a .pxo file."
-) {
-    Write-Host ("Godot console executable: " + $consoleGodot)
-    & $consoleGodot --headless --path $project --export-release $preset $outputExe
-    $exitCode = $LASTEXITCODE
-} else {
-    # The GUI binary also works without its console companion. -Wait ensures
-    # the editor/export process fully exits before inspecting the artifacts.
-    Write-Host ("Waiting for Godot export to complete: " + $GodotPath)
-    $exportArguments = @(
-        "--headless",
-        "--path", ('"' + $project + '"'),
-        "--export-release", ('"' + $preset + '"'),
-        ('"' + $outputExe + '"')
-    )
-    $process = Start-Process -FilePath $GodotPath -ArgumentList $exportArguments -WorkingDirectory $project -Wait -PassThru -ErrorAction Stop
-    $exitCode = $process.ExitCode
-}
-if ($null -eq $exitCode -or $exitCode -ne 0) {
-    throw ("Godot export failed (exit code: " + $exitCode + "). Check the export templates and errors.")
+# A Godot Windows GUI executable can return control to PowerShell before
+# export is finished. Use Start-Process -Wait to await it explicitly, and
+# -PassThru to obtain a reliable exit code on Windows PowerShell 5.1.
+$exportArguments = @(
+    "--headless",
+    "--path", ('"' + $project + '"'),
+    "--export-release", ('"' + $preset + '"'),
+    ('"' + $outputExe + '"')
+)
+$godotProcess = Start-Process -FilePath $GodotPath -ArgumentList $exportArguments -WorkingDirectory $project -Wait -PassThru -ErrorAction Stop
+$exportExitCode = $godotProcess.ExitCode
+if ($null -eq $exportExitCode -or $exportExitCode -ne 0) {
+    throw ("Godot export failed (exit code: " + $exportExitCode + "). Check the export templates and errors above.")
 }
 if (-not (Test-Path -LiteralPath $outputExe -PathType Leaf)) {
     throw "Godot returned success, but Pixelorama.exe was not produced."
@@ -294,9 +112,6 @@ if (-not (Test-Path -LiteralPath $outputExe -PathType Leaf)) {
 $pck = [IO.Path]::ChangeExtension($outputExe, ".pck")
 if (-not (Test-Path -LiteralPath $pck -PathType Leaf)) {
     throw "Pixelorama.pck missing. Do not run the outdated EXE."
-}
-if ((Get-Item -LiteralPath $outputExe).Length -eq 0 -or (Get-Item -LiteralPath $pck).Length -eq 0) {
-    throw "Godot created an empty EXE or PCK. Export is not valid."
 }
 Write-Host ("Export complete: " + $outputExe)
 
