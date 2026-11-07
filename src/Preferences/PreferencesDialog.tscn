@@ -96,19 +96,6 @@ tooltip_text = "Opens last opened project on startup"
 mouse_default_cursor_shape = 2
 text = "On"
 
-[node name="OpenFilesInExistingWindowLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Startup/StartupContainer" groups=["WindowsOnly"]]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "既存のウィンドウでファイルを開く"
-
-[node name="OpenFilesInExistingWindow" type="CheckBox" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Startup/StartupContainer" groups=["WindowsOnly"]]
-layout_mode = 2
-size_flags_horizontal = 3
-mouse_default_cursor_shape = 2
-tooltip_text = "エクスプローラーでダブルクリックしたファイルを起動中のPixeloramaのタブで開きます"
-button_pressed = true
-text = "On"
-
 [node name="QuitConfirmationLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Startup/StartupContainer" unique_id=222526746]
 layout_mode = 2
 size_flags_horizontal = 3
