@@ -345,7 +345,22 @@ func _open_pending_forwarded_files() -> void:
 	for job in jobs:
 		var files: PackedStringArray = job["files"]
 		for file in files:
-			if PixeloramaSingleInstance.can_forward_file(file):
+			if not PixeloramaSingleInstance.can_forward_file(file):
+				continue
+			# Explorer can send the same document again while it is already
+			# open. Focus the existing tab instead of creating a duplicate.
+			var found_existing := false
+			if file.get_extension().to_lower() == "pxo":
+				var normalized_path := file.replace("\\", "/").simplify_path().to_lower()
+				for index in Global.projects.size():
+					var existing_path: String = Global.projects[index].save_path
+					if existing_path.is_empty():
+						continue
+					if existing_path.replace("\\", "/").simplify_path().to_lower() == normalized_path:
+						Global.tabs.current_tab = index
+						found_existing = true
+						break
+			if not found_existing:
 				OpenSave.handle_loading_file(file)
 		# Remove the request only after it has been dispatched, so a crash
 		# during startup will not silently discard an unopened project.
