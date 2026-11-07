@@ -108,7 +108,31 @@ Write-Host ("Export complete: " + $outputExe)
 $after = Get-PxoAssociation
 $owned = ($after.ProgId -match '(?i)pixelorama') -or
     ($after.Exe -match '(?i)[\\/]Pixelorama[^\\/]*\.exe$')
-if ($owned -and $after.ProgId) {
+if ($owned -and $after.Exe -and (Test-Path -LiteralPath $after.Exe -PathType Leaf)) {
+    # Preserve Explorer and the taskbar icon: update the EXE they already use.
+    # Keep dated copies of both binaries for rollback.
+    $targetExe = (Resolve-Path -LiteralPath $after.Exe).Path
+    $targetPck = [IO.Path]::ChangeExtension($targetExe, ".pck")
+    if (-not [string]::Equals($targetExe, $outputExe, [StringComparison]::OrdinalIgnoreCase)) {
+        $runningTarget = @(Get-CimInstance Win32_Process -Filter "Name='Pixelorama.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.ExecutablePath -and [string]::Equals($_.ExecutablePath, $targetExe, [StringComparison]::OrdinalIgnoreCase) })
+        if ($runningTarget.Count -gt 0) {
+            throw ("Close the Pixelorama window using: " + $targetExe)
+        }
+        $backupDir = Join-Path $buildDir ("before-exe-update-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
+        New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+        Copy-Item -LiteralPath $targetExe -Destination (Join-Path $backupDir (Split-Path $targetExe -Leaf)) -ErrorAction Stop
+        if (Test-Path -LiteralPath $targetPck) {
+            Copy-Item -LiteralPath $targetPck -Destination (Join-Path $backupDir (Split-Path $targetPck -Leaf)) -ErrorAction Stop
+        }
+        Copy-Item -LiteralPath $outputExe -Destination $targetExe -Force -ErrorAction Stop
+        Copy-Item -LiteralPath $pck -Destination $targetPck -Force -ErrorAction Stop
+        Write-Host ("Updated existing Explorer EXE and PCK: " + $targetExe)
+        Write-Host ("Old versions backed up at: " + $backupDir)
+    } else {
+        Write-Host ".pxo already points to the rebuilt EXE."
+    }
+} elseif ($owned -and $after.ProgId) {
     $newCommand = '"' + $outputExe + '" "%1"'
     if ($after.Command -ne $newCommand) {
         $backup = Join-Path $buildDir ("pxo-association-before-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".txt")
