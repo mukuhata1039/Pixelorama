@@ -250,22 +250,10 @@ func _init() -> void:
 
 func _ready() -> void:
 	get_tree().set_auto_accept_quit(false)
-	_install_aseprite_cursors()
 
-	get_window().title = tr("untitled") + " - Pixelorama " + Global.current_version
-
-	Global.current_project.layers.append(PixelLayer.new(Global.current_project))
-	Global.current_project.frames.append(Global.current_project.new_empty_frame())
-
-	Import.import_brushes(Global.path_join_array(Global.data_directories, "Brushes"))
-	Import.import_patterns(Global.path_join_array(Global.data_directories, "Patterns"))
-
-	quit_and_save_dialog.add_button("Exit without saving", false, "ExitWithoutSaving")
-	_last_session_last_project = get_last_project_path()
-
-	# On Windows, file-association launches can forward a path to the existing
-	# editor instead of creating a second window. A failed transfer always
-	# falls back to this instance's normal file-opening path.
+	# Resolve file-association launches BEFORE loading cursors, project
+	# resources or brushes. Those were delaying every secondary launch
+	# although it only needed to hand off a filename.
 	if OS.get_name() == "Windows" and DisplayServer.get_name() != "headless":
 		_instance_bridge = PixeloramaSingleInstance.new()
 		add_child(_instance_bridge)
@@ -280,6 +268,17 @@ func _ready() -> void:
 					_forwarded_launch = true
 					get_tree().quit()
 					return
+
+	_install_aseprite_cursors()
+	get_window().title = tr("untitled") + " - Pixelorama " + Global.current_version
+	Global.current_project.layers.append(PixelLayer.new(Global.current_project))
+	Global.current_project.frames.append(Global.current_project.new_empty_frame())
+
+	Import.import_brushes(Global.path_join_array(Global.data_directories, "Brushes"))
+	Import.import_patterns(Global.path_join_array(Global.data_directories, "Patterns"))
+
+	quit_and_save_dialog.add_button("Exit without saving", false, "ExitWithoutSaving")
+	_last_session_last_project = get_last_project_path()
 	_handle_cmdline_arguments()
 	get_tree().root.files_dropped.connect(_on_files_dropped)
 	if OS.get_name() == "Android":
