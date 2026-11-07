@@ -250,10 +250,35 @@ func _init() -> void:
 
 func _ready() -> void:
 	get_tree().set_auto_accept_quit(false)
+
+	# Resolve file-association launches BEFORE loading cursors, project
+	# resources or brushes. Those were delaying every secondary launch
+	# although it only needed to hand off a filename.
+	if OS.get_name() == "Windows" and DisplayServer.get_name() != "headless":
+		_instance_bridge = PixeloramaSingleInstance.new()
+		add_child(_instance_bridge)
+		_instance_bridge.files_received.connect(_on_external_files_received)
+		if Global.open_files_in_existing_window and not _instance_bridge.start_listening():
+			var launch_files := _get_forwardable_launch_files()
+			if not launch_files.is_empty():
+				# Do not flash a second editor window while a short handoff
+				# is in progress. Also keep the frame-loop socket handshake
+				# responsive even if the OS put this inactive window to sleep.
+				_forwarding_launch = true
+				var original_low_usage := OS.low_processor_usage_mode
+				OS.low_processor_usage_mode = false
+				get_window().visible = false
+				var delivered := await _instance_bridge.forward_files(launch_files)
+				_forwarding_launch = false
+				OS.low_processor_usage_mode = original_low_usage
+				if delivered:
+					_forwarded_launch = true
+					get_tree().quit()
+					return
+				get_window().visible = true
+
 	_install_aseprite_cursors()
-
 	get_window().title = tr("untitled") + " - Pixelorama " + Global.current_version
-
 	Global.current_project.layers.append(PixelLayer.new(Global.current_project))
 	Global.current_project.frames.append(Global.current_project.new_empty_frame())
 
@@ -262,24 +287,6 @@ func _ready() -> void:
 
 	quit_and_save_dialog.add_button("Exit without saving", false, "ExitWithoutSaving")
 	_last_session_last_project = get_last_project_path()
-
-	# On Windows, file-association launches can forward a path to the existing
-	# editor instead of creating a second window. A failed transfer always
-	# falls back to this instance's normal file-opening path.
-	if OS.get_name() == "Windows" and DisplayServer.get_name() != "headless":
-		_instance_bridge = PixeloramaSingleInstance.new()
-		add_child(_instance_bridge)
-		_instance_bridge.files_received.connect(_on_external_files_received)
-		if Global.open_files_in_existing_window and not _instance_bridge.start_listening():
-			var launch_files := _get_forwardable_launch_files()
-			if not launch_files.is_empty():
-				_forwarding_launch = true
-				var delivered := await _instance_bridge.forward_files(launch_files)
-				_forwarding_launch = false
-				if delivered:
-					_forwarded_launch = true
-					get_tree().quit()
-					return
 	_handle_cmdline_arguments()
 	get_tree().root.files_dropped.connect(_on_files_dropped)
 	if OS.get_name() == "Android":
