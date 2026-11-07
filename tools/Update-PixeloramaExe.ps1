@@ -91,9 +91,20 @@ if ($running.Count -gt 0) {
 
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 Write-Host "Exporting the latest checked-out source as a RELEASE EXE..."
-& $GodotPath --headless --path $project --export-release $preset $outputExe
-if ($LASTEXITCODE -ne 0) {
-    throw "Godot export failed ($LASTEXITCODE). Check Godot's export templates and errors above."
+
+# A Godot Windows GUI executable can return control to PowerShell before
+# export is finished. Use Start-Process -Wait to await it explicitly, and
+# -PassThru to obtain a reliable exit code on Windows PowerShell 5.1.
+$exportArguments = @(
+    "--headless",
+    "--path", ('"' + $project + '"'),
+    "--export-release", ('"' + $preset + '"'),
+    ('"' + $outputExe + '"')
+)
+$godotProcess = Start-Process -FilePath $GodotPath -ArgumentList $exportArguments -WorkingDirectory $project -Wait -PassThru -ErrorAction Stop
+$exportExitCode = $godotProcess.ExitCode
+if ($null -eq $exportExitCode -or $exportExitCode -ne 0) {
+    throw ("Godot export failed (exit code: " + $exportExitCode + "). Check the export templates and errors above.")
 }
 if (-not (Test-Path -LiteralPath $outputExe -PathType Leaf)) {
     throw "Godot returned success, but Pixelorama.exe was not produced."
