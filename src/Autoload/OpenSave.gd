@@ -63,13 +63,6 @@ func _ready() -> void:
 			string_dict.second
 		)
 	)
-	# A Windows file-association launch may hand its path to an already
-	# running editor and quit in Main._ready(). Only a fully started editor
-	# should create a backup session or prune old sessions.
-	Global.pixelorama_opened.connect(_start_backup_session, CONNECT_ONE_SHOT)
-
-
-func _start_backup_session() -> void:
 	DirAccess.make_dir_recursive_absolute(current_session_backup)
 	enforce_backed_sessions_limit()
 

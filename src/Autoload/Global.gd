@@ -217,17 +217,6 @@ var show_x_minus_y_symmetry_axis := false
 #region Preferences
 ## Found in Preferences. If [code]true[/code], the last saved project will open on startup.
 var open_last_project := false
-## Windows file-association launches reuse the already running editor when possible.
-## Separate from single_window_mode, which only embeds dialogs.
-var open_files_in_existing_window := true:
-	set(value):
-		if open_files_in_existing_window == value:
-			return
-		open_files_in_existing_window = value
-		if is_inside_tree():
-			var editor := get_tree().current_scene
-			if is_instance_valid(editor) and editor.has_method("refresh_file_reuse_listener"):
-				editor.call_deferred("refresh_file_reuse_listener")
 ## Found in Preferences. If [code]true[/code], asks for permission to quit on exit.
 var quit_confirmation := false
 ## Found in Preferences. Refers to the ffmpeg location path.

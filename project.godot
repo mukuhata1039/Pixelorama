@@ -22,10 +22,6 @@ config/quit_on_go_back=false
 config/features=PackedStringArray("4.7")
 run/low_processor_mode=true
 boot_splash/bg_color=Color(0.145098, 0.145098, 0.164706, 1)
-; On Windows only, avoid the native splash/window flash during file handoff.
-; The real editor restores its decorated visible window in Main._ready().
-boot_splash/bg_color.windows=Color(0, 0, 0, 0)
-boot_splash/show_image.windows=false
 boot_splash/use_filter=false
 boot_splash/image="res://assets/graphics/splash.png"
 config/icon="res://assets/graphics/icons/icon.png"
@@ -59,14 +55,6 @@ gdscript/warnings/narrowing_conversion=false
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/energy_saving/keep_screen_on=false
-; Start as a transparent, 1x1, unfocusable window on Windows.
-; This prevents secondary file-association launches from flashing.
-window/size/borderless.windows=true
-window/size/no_focus.windows=true
-window/size/window_width_override.windows=1
-window/size/window_height_override.windows=1
-window/size/transparent.windows=true
-window/per_pixel_transparency/allowed.windows=true
 window/per_pixel_transparency/allowed.android=false
 window/per_pixel_transparency/allowed.web=false
 
@@ -1284,8 +1272,6 @@ locale/translations=PackedStringArray("res://Translations/en_US.po")
 textures/canvas_textures/default_texture_filter=0
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
-; Required for the invisible Windows startup window. Main._ready() restores it.
-viewport/transparent_background.windows=true
 textures/vram_compression/import_etc2_astc=true
 
 [steam]
