@@ -11,11 +11,14 @@ const HOST := "127.0.0.1"
 ## Hashing the user-data directory also reduces collisions with other apps.
 const PORT_BASE := 42000
 const PORT_SPAN := 20000
-const PROTOCOL := "pixelorama-open-files-v1"
-const ACK := "pixelorama-open-accepted-v1\n"
+const PROTOCOL := "pixelorama-open-files-v2"
+const READY := "pixelorama-open-ready-v2\n"
+const COMMIT := "pixelorama-open-commit-v2\n"
+const COMMITTED := "pixelorama-open-committed-v2\n"
 const MAX_MESSAGE_BYTES := 32768
 const MAX_CLIENTS := 8
-const FORWARD_TIMEOUT_MS := 1300
+const READY_TIMEOUT_MS := 850
+const COMMIT_TIMEOUT_MS := 450
 const CLIENT_TIMEOUT_MS := 3000
 const ACK_GRACE_MS := 350
 const RETRY_LISTEN_MS := 2000
@@ -90,7 +93,8 @@ func _process(_delta: float) -> void:
 			"peer": peer,
 			"bytes": PackedByteArray(),
 			"deadline": Time.get_ticks_msec() + CLIENT_TIMEOUT_MS,
-			"responded": false
+			"phase": 0,
+			"pending_files": PackedStringArray()
 		})
 
 	for i in range(_clients.size() - 1, -1, -1):
@@ -104,9 +108,8 @@ func _process(_delta: float) -> void:
 			peer.disconnect_from_host()
 			_clients.remove_at(i)
 			continue
-		# Keep a successfully answered socket alive briefly so the client can
-		# read the acknowledgement before the connection is closed.
-		if client["responded"]:
+		# A completed response is held long enough for the sender to read it.
+		if client["phase"] == 2:
 			continue
 		var data: PackedByteArray = client["bytes"]
 		var byte_count := peer.get_available_bytes()
@@ -126,16 +129,25 @@ func _process(_delta: float) -> void:
 		if data.find(10) == -1:
 			continue
 		var line := data.get_string_from_utf8().get_slice("\n", 0)
-		var decoded: Variant = JSON.parse_string(line)
-		var paths := _validate_request(decoded)
-		if not paths.is_empty():
-			# The secondary quits only when it receives this positive ACK.
-			# Rejecting invalid paths leaves the original launch intact.
-			if peer.put_data(ACK.to_utf8_buffer()) == OK:
-				files_received.emit(paths)
-				client["responded"] = true
-				client["deadline"] = Time.get_ticks_msec() + ACK_GRACE_MS
+		if client["phase"] == 0:
+			var decoded: Variant = JSON.parse_string(line)
+			var paths := _validate_request(decoded)
+			# A PREPARE does not open anything. A sender that times out
+			# before READY may safely fall back to an independent window.
+			if not paths.is_empty() and peer.put_data(READY.to_utf8_buffer()) == OK:
+				client["pending_files"] = paths
+				client["phase"] = 1
+				client["bytes"] = PackedByteArray()
 				continue
+		elif client["phase"] == 1 and line + "\n" == COMMIT:
+			# Only a sender that received READY can commit the transfer.
+			# The new process must not load these files again.
+			var committed_files: PackedStringArray = client["pending_files"]
+			client["phase"] = 2
+			client["deadline"] = Time.get_ticks_msec() + ACK_GRACE_MS
+			peer.put_data(COMMITTED.to_utf8_buffer())
+			files_received.emit(committed_files)
+			continue
 		peer.disconnect_from_host()
 		_clients.remove_at(i)
 
@@ -154,8 +166,12 @@ func _validate_request(decoded: Variant) -> PackedStringArray:
 	return paths
 
 
-## Connect, send, and wait for an ACK using the normal frame loop. Timeout and
-## socket failures return false so the second editor can open its files itself.
+## A two-step transfer avoids the duplicated-file failure:
+## PREPARE -> READY -> COMMIT -> COMMITTED.
+## The existing editor never opens a file before COMMIT arrives. Therefore,
+## timeout before READY cannot lead to both processes opening the file.
+## After sending COMMIT, do not fall back to opening the same files locally;
+## doing so could duplicate them if the final acknowledgement is lost.
 func forward_files(files: PackedStringArray) -> bool:
 	if files.is_empty() or files.size() > 32:
 		return false
@@ -171,30 +187,41 @@ func forward_files(files: PackedStringArray) -> bool:
 	if peer.connect_to_host(HOST, _port()) != OK:
 		return false
 	peer.set_no_delay(true)
-	var sent := false
+	var sent_prepare := false
+	var committed := false
 	var reply := PackedByteArray()
-	var deadline := Time.get_ticks_msec() + FORWARD_TIMEOUT_MS
+	var deadline := Time.get_ticks_msec() + READY_TIMEOUT_MS
 	while Time.get_ticks_msec() < deadline:
 		peer.poll()
 		var status := peer.get_status()
 		if status == StreamPeerTCP.STATUS_CONNECTED:
-			if not sent:
+			if not sent_prepare:
 				if peer.put_data(payload) != OK:
 					break
-				sent = true
+				sent_prepare = true
 			var count := peer.get_available_bytes()
 			if count > 0:
 				var chunk := peer.get_data(mini(count, 128))
 				if chunk[0] != OK:
 					break
 				reply.append_array(chunk[1])
-				if reply.get_string_from_utf8().contains(ACK):
+				if not committed and reply.get_string_from_utf8().contains(READY):
+					# This positive confirmation proves the existing app is
+					# listening and has validated the requested paths.
+					if peer.put_data(COMMIT.to_utf8_buffer()) != OK:
+						break
+					committed = true
+					deadline = Time.get_ticks_msec() + COMMIT_TIMEOUT_MS
+					reply.clear()
+				elif committed and reply.get_string_from_utf8().contains(COMMITTED):
 					peer.disconnect_from_host()
 					return true
-				if reply.size() >= 128:
+				elif reply.size() >= 128:
 					break
 		elif status != StreamPeerTCP.STATUS_CONNECTING:
 			break
 		await get_tree().process_frame
 	peer.disconnect_from_host()
-	return false
+	# Once a COMMIT was sent, independent fallback is unsafe: the other
+	# editor may already have opened it despite a lost final reply.
+	return committed
