@@ -30,12 +30,6 @@ var preferences: Array[Preference] = [
 		"open_last_project", "Startup/StartupContainer/OpenLastProject", "button_pressed", false
 	),
 	Preference.new(
-		"open_files_in_existing_window",
-		"Startup/StartupContainer/OpenFilesInExistingWindow",
-		"button_pressed",
-		true
-	),
-	Preference.new(
 		"quit_confirmation", "Startup/StartupContainer/QuitConfirmation", "button_pressed", false
 	),
 	Preference.new("ffmpeg_path", "Startup/StartupContainer/FFMPEGPath", "text", ""),
@@ -365,7 +359,6 @@ func _ready() -> void:
 			var driver_name := DisplayServer.tablet_get_driver_name(driver)
 			tablet_driver.add_item(driver_name, driver)
 	else:
-		get_tree().call_group(&"WindowsOnly", &"free")
 		var drivers := right_side.get_node(^"Drivers")
 		right_side.remove_child(drivers)
 		drivers.queue_free()
