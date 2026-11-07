@@ -266,6 +266,13 @@ func _ready() -> void:
 				get_tree().quit()
 				return
 
+	# Godot shows the native boot splash BEFORE this scene exists. On
+	# Windows we start with a one-pixel transparent window instead, and
+	# only make it a normal visible editor if no file handoff occurred.
+	if OS.get_name() == "Windows" and DisplayServer.get_name() != "headless":
+		await get_tree().process_frame
+		_restore_editor_window_after_boot()
+
 	_install_aseprite_cursors()
 	get_window().title = tr("untitled") + " - Pixelorama " + Global.current_version
 	Global.current_project.layers.append(PixelLayer.new(Global.current_project))
@@ -296,6 +303,22 @@ func _ready() -> void:
 	Global.pixelorama_has_loaded = true
 	Global.pixelorama_opened.emit()
 	print("Time Pixelorama took to open: %sms" % Time.get_ticks_msec())
+
+
+## Restore the decorated, focusable editor after the invisible Windows boot.
+## Do not run this for a secondary process that handed off its file and quit.
+func _restore_editor_window_after_boot() -> void:
+	var window := get_window()
+	var original_viewport_size := Vector2i(
+		int(ProjectSettings.get_setting("display/window/size/viewport_width")),
+		int(ProjectSettings.get_setting("display/window/size/viewport_height"))
+	)
+	get_viewport().transparent_bg = false
+	window.transparent = false
+	window.borderless = false
+	window.size = original_viewport_size
+	window.unfocusable = false
+	window.grab_focus()
 
 
 ## Only plain file-open launches are forwarded. Scripts using CLI flags and
