@@ -102,9 +102,10 @@ func start_listening() -> bool:
 	if not _write_heartbeat() or not _write_heartbeat():
 		stop_listening()
 		return false
-	if DirAccess.make_dir_recursive_absolute(_absolute(INBOX)) != OK:
-		stop_listening()
-		return false
+	if not DirAccess.dir_exists_absolute(_absolute(INBOX)):
+		if DirAccess.make_dir_recursive_absolute(_absolute(INBOX)) != OK:
+			stop_listening()
+			return false
 	_next_scan_ms = 0
 	return true
 
@@ -145,8 +146,9 @@ func forward_files(files: PackedStringArray) -> bool:
 	var age := Time.get_unix_time_from_system() - float(state.get("time", 0.0))
 	if age < 0.0 or age > ALIVE_SECONDS:
 		return false
-	if DirAccess.make_dir_recursive_absolute(_absolute(INBOX)) != OK:
-		return false
+	if not DirAccess.dir_exists_absolute(_absolute(INBOX)):
+		if DirAccess.make_dir_recursive_absolute(_absolute(INBOX)) != OK:
+			return false
 
 	var payload := JSON.stringify({"files": Array(files)})
 	if payload.to_utf8_buffer().size() > MAX_REQUEST_BYTES:
