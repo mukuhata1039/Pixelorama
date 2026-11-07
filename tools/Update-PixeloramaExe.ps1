@@ -1,4 +1,5 @@
 # Rebuild the EXE actually used by Windows Explorer to open .pxo files.
+# Keep this script ASCII-only for compatibility with Windows PowerShell 5.1.
 # This script does not edit, reset or stash any Pixelorama source files.
 # Run while Pixelorama is closed.
 param([string]$GodotPath = "")
@@ -61,7 +62,7 @@ function Find-Godot {
     }
     Add-Type -AssemblyName System.Windows.Forms
     $dialog = New-Object System.Windows.Forms.OpenFileDialog
-    $dialog.Title = "Godot 4.7.1 editor EXE を選択"
+    $dialog.Title = "Select the Godot 4.7.1 editor executable"
     $dialog.Filter = "Executable (*.exe)|*.exe"
     $dialog.CheckFileExists = $true
     if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
