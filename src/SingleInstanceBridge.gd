@@ -120,7 +120,6 @@ func stop_listening() -> void:
 		if parsed is Dictionary and parsed.get("owner", "") == _owner:
 			DirAccess.remove_absolute(_absolute(path))
 	_owner = ""
-	_in_flight.clear()
 
 
 func _exit_tree() -> void:
@@ -228,7 +227,9 @@ func finish_request(request_path: String) -> void:
 	if not _in_flight.has(request_path):
 		return
 	var error := DirAccess.remove_absolute(_absolute(request_path))
-	if error != OK:
+	if error == OK:
+		_in_flight.erase(request_path)
+	else:
+		# Do not reopen a failed-to-delete request during this process.
+		# It remains recoverable on disk after a future restart.
 		push_warning("Pixelorama file-open bridge: could not remove processed request")
-	# Do not reopen a failed-to-delete request during this process.
-	# It remains recoverable on disk after a future restart.
