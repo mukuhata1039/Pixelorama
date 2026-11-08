@@ -65,7 +65,9 @@ func blend_layers(
 	# Row 2 encodes Off/C/I, or a skipped inner-group child. Row 3 stores
 	# the parent group id as two bytes to enforce sibling-only clipping.
 	var metadata_rows := 5 if selection_preview else 4
-	var metadata_image := Image.create(project.layers.size(), metadata_rows, false, Image.FORMAT_RG8)
+	var metadata_image := Image.create(
+		project.layers.size(), metadata_rows, false, Image.FORMAT_RG8
+	)
 	for i in project.layers.size():
 		var ordered_index := project.ordered_layers[i]
 		var layer := project.layers[ordered_index]
