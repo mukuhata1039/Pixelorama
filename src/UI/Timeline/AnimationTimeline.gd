@@ -2138,7 +2138,7 @@ func reveal_canvas_picked_layer(layer_index: int) -> void:
 	await get_tree().process_frame
 	if project != Global.current_project or project.current_layer != layer_index:
 		return
-	if project.layers[layer_index] != picked_layer:
+	if layer_index >= project.layers.size() or project.layers[layer_index] != picked_layer:
 		return
 	var button_index := project.layers.size() - layer_index - 1
 	if button_index < 0 or button_index >= layer_vbox.get_child_count():
