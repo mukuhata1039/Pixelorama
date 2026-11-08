@@ -2118,6 +2118,36 @@ func update_layer_expanded_status() -> void:
 		cel_vbox.get_child(layer_button.get_index()).visible = expanded
 
 
+## Reveal a layer picked from the canvas without expanding unrelated groups.
+func reveal_canvas_picked_layer(layer_index: int) -> void:
+	var project := Global.current_project
+	if layer_index < 0 or layer_index >= project.layers.size():
+		return
+	var picked_layer := project.layers[layer_index]
+	var expanded_parent := false
+	for ancestor in picked_layer.get_ancestors():
+		if ancestor is GroupLayer and not ancestor.expanded:
+			ancestor.expanded = true
+			expanded_parent = true
+	if not expanded_parent:
+		return
+	project.has_changed = true
+	update_layer_expanded_status()
+
+	# Wait for the newly visible layer rows to finish their layout before scrolling.
+	await get_tree().process_frame
+	if project != Global.current_project or project.current_layer != layer_index:
+		return
+	if project.layers[layer_index] != picked_layer:
+		return
+	var button_index := project.layers.size() - layer_index - 1
+	if button_index < 0 or button_index >= layer_vbox.get_child_count():
+		return
+	var layer_button := layer_vbox.get_child(button_index)
+	if layer_button.visible:
+		timeline_scroll.ensure_control_visible(layer_button)
+
+
 func _on_opacity_slider_value_changed(value: float) -> void:
 	var new_opacity := value / 100.0
 	var project := Global.current_project
