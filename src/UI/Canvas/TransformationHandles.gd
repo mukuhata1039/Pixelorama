@@ -646,7 +646,13 @@ func begin_transform(
 	# Keep non-selected layer alpha available for C/I clipping, but only draw
 	# selected cels in the floating preview.
 	DrawingAlgos.blend_layers(
-		blended_image, project.frames[project.current_frame], Vector2i.ZERO, project, true, false, true
+		blended_image,
+		project.frames[project.current_frame],
+		Vector2i.ZERO,
+		project,
+		true,
+		false,
+		true
 	)
 	pre_transformed_image = Image.create(
 		selection_rect.size.x, selection_rect.size.y, false, project.get_image_format()
