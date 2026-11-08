@@ -9,6 +9,8 @@ uniform sampler2DArray layers : filter_nearest;
 // row 2: 0 = off, 1 = C (chain), .75 = I (inherit),
 //        .4 = non-pixel layer, .2 = child already composited into a group.
 // row 3: .rg holds the direct parent's 16-bit id (root id = 0).
+// Optional row 4: selected layers to draw in a movement preview, while every
+// visible layer still contributes to the alpha history used by clipping.
 uniform sampler2D metadata : filter_nearest;
 
 // Conversion functions from
@@ -192,13 +194,18 @@ float border_trim(vec4 color, vec2 uv) {
 // not a backwards scan of the entire stack for every clipped layer.
 void fragment() {
 	ivec2 metadata_size = textureSize(metadata, 0);
+	bool selection_preview = metadata_size.y > 4;
 	float first_opacity = texelFetch(metadata, ivec2(0, 1), 0).r;
-	vec4 result_color = texture(layers, vec3(UV, 0.0));
-	result_color.a = border_trim(result_color, UV);
-	result_color.a *= first_opacity;
+	vec4 first_layer_color = texture(layers, vec3(UV, 0.0));
+	first_layer_color.a = border_trim(first_layer_color, UV);
+	first_layer_color.a *= first_opacity;
 
-	float previous_effective_alpha = result_color.a;
-	float original_base_alpha = result_color.a;
+	float previous_effective_alpha = first_layer_color.a;
+	float original_base_alpha = first_layer_color.a;
+	vec4 result_color = first_layer_color;
+	if (selection_preview && texelFetch(metadata, ivec2(0, 4), 0).r < 0.5) {
+		result_color = vec4(0.0);
+	}
 	float first_state = texelFetch(metadata, ivec2(0, 2), 0).r;
 	bool previous_mask_eligible = first_state < 0.1;
 	if (!previous_mask_eligible) {
@@ -239,7 +246,9 @@ void fragment() {
 		previous_effective_alpha = layer_color.a * current_opacity;
 		previous_mask_eligible = clipping_state < 0.1 || clipping_state > 0.5;
 		previous_scope = scope;
-		result_color = blend(current_blend_mode, layer_color, result_color, current_opacity);
+		if (!selection_preview || texelFetch(metadata, ivec2(i, 4), 0).r > 0.5) {
+			result_color = blend(current_blend_mode, layer_color, result_color, current_opacity);
+		}
 	}
 	COLOR = result_color;
 }
