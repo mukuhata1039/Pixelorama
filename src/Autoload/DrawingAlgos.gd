@@ -55,6 +55,7 @@ func blend_layers(
 	project := Global.current_project,
 	only_selected_cels := false,
 	only_selected_layers := false,
+	selection_preview := false,
 ) -> void:
 	var frame_index := project.frames.find(frame)
 	var previous_ordered_layers: Array[int] = project.ordered_layers
@@ -63,14 +64,17 @@ func blend_layers(
 	# One column per displayed layer: row 0 = blend mode, row 1 = opacity,
 	# Row 2 encodes Off/C/I, or a skipped inner-group child. Row 3 stores
 	# the parent group id as two bytes to enforce sibling-only clipping.
-	var metadata_image := Image.create(project.layers.size(), 4, false, Image.FORMAT_RG8)
+	var metadata_rows := 5 if selection_preview else 4
+	var metadata_image := Image.create(project.layers.size(), metadata_rows, false, Image.FORMAT_RG8)
 	for i in project.layers.size():
 		var ordered_index := project.ordered_layers[i]
 		var layer := project.layers[ordered_index]
-		var include := true if layer.is_visible_in_hierarchy() else false
+		var include := layer.is_visible_in_hierarchy()
+		var selected_for_preview := true
 		if only_selected_cels and include:
 			var test_array := [frame_index, ordered_index]
-			if not test_array in project.selected_cels:
+			selected_for_preview = test_array in project.selected_cels
+			if not selected_for_preview and not selection_preview:
 				include = false
 		if only_selected_layers and include:
 			var layer_is_selected := false
@@ -78,11 +82,12 @@ func blend_layers(
 				if ordered_index == selected_cel[1]:
 					layer_is_selected = true
 					break
-			if not layer_is_selected:
+			selected_for_preview = selected_for_preview and layer_is_selected
+			if not layer_is_selected and not selection_preview:
 				include = false
 		var cel := frame.cels[ordered_index]
 		if DisplayServer.get_name() == "headless":
-			if include:
+			if include and (not selection_preview or selected_for_preview):
 				blend_layers_headless(image, project, layer, cel, origin)
 		else:
 			if layer.is_blender():
@@ -99,8 +104,16 @@ func blend_layers(
 				and not only_selected_layers
 			):
 				include = false
-			# Textures are appended in z-sorted order; metadata must use the same index.
-			set_layer_metadata_image(layer, cel, metadata_image, i, include)
+			# A selection preview still needs the other layers' alpha for clipping,
+			# but must not composite their colors into the moved pixels.
+			# Group children must be sampled individually, not skipped as pre-blended.
+			set_layer_metadata_image(
+				layer, cel, metadata_image, i, include, true, not selection_preview
+			)
+			if selection_preview:
+				metadata_image.set_pixel(
+					i, 4, Color(1, 0, 0, 0) if include and selected_for_preview else Color()
+				)
 	if DisplayServer.get_name() != "headless":
 		var texture_array := Texture2DArray.new()
 		texture_array.create_from_images(textures)
