@@ -1220,5 +1220,6 @@ func change_layer_automatically(pos: Vector2i) -> void:
 				if !project.selected_cels.has(frame_layer):
 					project.selected_cels.append(frame_layer)
 
+				Global.animation_timeline.reveal_canvas_picked_layer(layer_index)
 				project.change_cel(-1, layer_index)
 				break
