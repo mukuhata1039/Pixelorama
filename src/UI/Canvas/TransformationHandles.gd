@@ -120,9 +120,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey:
 		_move_with_arrow_keys(event)
+	# Viewport mirroring is part of the canvas transform; local mouse
+	# coordinates are already in the original, unmirrored document space.
 	var mouse_pos := get_local_mouse_position()
-	if Global.mirror_view:
-		mouse_pos.x = Global.current_project.size.x - mouse_pos.x
 	var hovered_handle := _get_hovered_handle(mouse_pos)
 	if is_instance_valid(hovered_handle):
 		if hovered_handle.type == TransformHandle.Type.PIVOT:
@@ -154,18 +154,14 @@ func _draw() -> void:
 	if not is_instance_valid(transformed_selection_map):
 		return
 	var zoom_value := Vector2.ONE / Global.camera.zoom * 10
-	var position_tmp := position
+	# Both the floating content and handles are drawn in document space.
+	# CanvasCamera mirrors them together with the selection outline.
 	var position_top_left := position + get_transform_top_left()
-	var scale_tmp := scale
-	if Global.mirror_view:
-		position_tmp.x = Global.current_project.size.x - position_tmp.x
-		position_top_left.x = Global.current_project.size.x - position_top_left.x
-		scale_tmp.x = -1
 	if is_instance_valid(transformed_image) and not transformed_image.is_empty():
-		draw_set_transform(position_top_left, rotation, scale_tmp)
+		draw_set_transform(position_top_left, rotation, scale)
 		var preview_color := Color(1, 1, 1, Global.transformation_preview_alpha)
 		draw_texture(image_texture, Vector2.ZERO, preview_color)
-	draw_set_transform(position_tmp, rotation, scale_tmp)
+	draw_set_transform(position, rotation, scale)
 	if not Tools.selection_tool_has_selection():
 		return
 	# Draw handles
@@ -209,6 +205,10 @@ func _move_with_arrow_keys(event: InputEvent) -> void:
 		if Input.is_key_pressed(KEY_CTRL):
 			step = Global.grids[0].grid_size
 		var input := Input.get_vector(&"ui_left", &"ui_right", &"ui_up", &"ui_down")
+		# Arrow keys follow screen directions even after the view is mirrored.
+		# Reverse screen X before compensating for camera rotation.
+		if Global.mirror_view:
+			input.x = -input.x
 		var final_input := input.rotated(snappedf(Global.camera.camera_angle, PI / 2))
 		# These checks are needed to fix a bug where the selection got stuck
 		# to the canvas boundaries when they were 1px away from them
