@@ -6,6 +6,8 @@ signal save_file_dialog_opened(opened: bool)
 const SPLASH_DIALOG_SCENE_PATH := "res://src/UI/Dialogs/SplashDialog.tscn"
 const ROTATE_VIEW_CURSOR := preload("res://assets/graphics/misc/canvas_rotate_cursor.svg")
 const ROTATE_VIEW_CURSOR_HOTSPOT := Vector2(14, 14)
+const PAN_VIEW_CURSOR := preload("res://assets/graphics/tools/cursors/pan.png")
+const PAN_VIEW_CURSOR_HOTSPOT := Vector2(11, 11)
 const ASEPRITE_CURSOR_ATLAS := preload("res://src/UI/Timeline/AsepriteCopyCursor.gd")
 ## Matching Godot OS cursor shapes to Aseprite Default Theme sprite names.
 ## I-beam, busy, and help cursors stay native because Aseprite has no equivalents.
@@ -32,6 +34,7 @@ var is_writing_text := false
 var changed_projects_on_quit: Array[Project]
 var cursor_image := preload("res://assets/graphics/cursor.png")
 var _rotate_view_cursor_active := false
+var _pan_view_cursor_active := false
 var _layer_pick_cursor_active := false
 ## The hold shortcut only changes display state transiently, never the saved project.
 var _target_visibility_hold_project: Project
@@ -324,28 +327,59 @@ func _process(_delta: float) -> void:
 		and Input.is_action_pressed(&"change_layer_automatically", true)
 		and Tools.get_tool(MOUSE_BUTTON_LEFT).tool_node is not BaseSelectionTool
 	)
-	if (
-		is_rotating_view == _rotate_view_cursor_active
-		and is_layer_picking == _layer_pick_cursor_active
-	):
-		return
-	_rotate_view_cursor_active = is_rotating_view
-	_layer_pick_cursor_active = is_layer_picking
-
-	# Preserve the saved tool-icon preferences. Rotation hides both icons,
-	# while layer picking hides just the left brush tool icon.
 	var over_main_canvas := (
 		is_instance_valid(Global.main_viewport)
 		and Global.main_viewport.get_global_rect().has_point(get_global_mouse_position())
 	)
+	# Pan uses the hand itself as the OS cursor, rather than showing a
+	# normal pointer with the tool icon offset to its lower-left.
+	# Space+Alt is Quick Zoom, and rotation/layer picking take priority.
+	var quick_zoom_active := (
+		Tools.has_space_alt_quick_navigation()
+		and Input.is_key_pressed(KEY_SPACE)
+		and Input.is_key_pressed(KEY_ALT)
+	)
+	var is_panning_view := (
+		Global.can_draw
+		and not is_writing_text
+		and over_main_canvas
+		and not is_rotating_view
+		and not is_layer_picking
+		and not quick_zoom_active
+		and (
+			Tools.get_tool(MOUSE_BUTTON_LEFT).tool_node.name == "Pan"
+			or (
+				Tools.active_button == MOUSE_BUTTON_RIGHT
+				and Tools.get_tool(MOUSE_BUTTON_RIGHT).tool_node.name == "Pan"
+			)
+			or (
+				Tools.has_space_alt_quick_navigation()
+				and Input.is_key_pressed(KEY_SPACE)
+			)
+		)
+	)
+	if (
+		is_rotating_view == _rotate_view_cursor_active
+		and is_layer_picking == _layer_pick_cursor_active
+		and is_panning_view == _pan_view_cursor_active
+	):
+		return
+	_rotate_view_cursor_active = is_rotating_view
+	_pan_view_cursor_active = is_panning_view
+	_layer_pick_cursor_active = is_layer_picking
+
+	# Preserve tool-icon preferences except for rotation and pan, where
+	# the dedicated cursor replaces both floating tool icons.
 	left_cursor.visible = (
 		not is_rotating_view
+		and not is_panning_view
 		and not is_layer_picking
 		and over_main_canvas
 		and Global.show_left_tool_icon
 	)
 	right_cursor.visible = (
 		not is_rotating_view
+		and not is_panning_view
 		and over_main_canvas
 		and Global.show_right_tool_icon
 		and not Global.single_tool_mode
@@ -362,6 +396,9 @@ func _process(_delta: float) -> void:
 		Input.set_custom_mouse_cursor(
 			ROTATE_VIEW_CURSOR, Input.CURSOR_ARROW, ROTATE_VIEW_CURSOR_HOTSPOT
 		)
+	elif _pan_view_cursor_active:
+		Input.set_custom_mouse_cursor(PAN_VIEW_CURSOR, Input.CURSOR_CROSS, PAN_VIEW_CURSOR_HOTSPOT)
+		Input.set_custom_mouse_cursor(PAN_VIEW_CURSOR, Input.CURSOR_ARROW, PAN_VIEW_CURSOR_HOTSPOT)
 	else:
 		_apply_aseprite_cursor_shape(Input.CURSOR_ARROW)
 		set_custom_cursor()
@@ -748,6 +785,8 @@ func set_timeline_cel_drag_cursor(mode: int) -> void:
 		Input.set_custom_mouse_cursor(
 			ROTATE_VIEW_CURSOR, Input.CURSOR_ARROW, ROTATE_VIEW_CURSOR_HOTSPOT
 		)
+	elif _pan_view_cursor_active:
+		Input.set_custom_mouse_cursor(PAN_VIEW_CURSOR, Input.CURSOR_ARROW, PAN_VIEW_CURSOR_HOTSPOT)
 	get_viewport().update_mouse_cursor_state()
 
 
@@ -755,6 +794,9 @@ func set_timeline_cel_drag_cursor(mode: int) -> void:
 ## bespoke canvas rotation icon above the Aseprite style when rotation is active.
 func set_custom_cursor() -> void:
 	if _rotate_view_cursor_active:
+		return
+	if _pan_view_cursor_active:
+		Input.set_custom_mouse_cursor(PAN_VIEW_CURSOR, Input.CURSOR_CROSS, PAN_VIEW_CURSOR_HOTSPOT)
 		return
 	_apply_aseprite_cursor_shape(Input.CURSOR_CROSS)
 
