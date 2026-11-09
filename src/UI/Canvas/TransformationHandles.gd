@@ -16,6 +16,7 @@ var transformed_selection_map: SelectionMap:
 		if is_instance_valid(transformed_selection_map):
 			pivot = transformed_selection_map.get_size() / 2
 		else:
+			Global.control.set_selection_rotate_cursor(false)
 			_set_default_cursor()
 		set_process_input(is_instance_valid(transformed_selection_map))
 		queue_redraw()
@@ -114,9 +115,11 @@ func _ready() -> void:
 
 func _input(event: InputEvent) -> void:
 	if not Tools.selection_tool_has_selection():
+		Global.control.set_selection_rotate_cursor(false)
 		return
 	var project := Global.current_project
 	if not project.layers[project.current_layer].can_layer_get_drawn():
+		Global.control.set_selection_rotate_cursor(false)
 		return
 	if event is InputEventKey:
 		_move_with_arrow_keys(event)
@@ -124,6 +127,9 @@ func _input(event: InputEvent) -> void:
 	# coordinates are already in the original, unmirrored document space.
 	var mouse_pos := get_local_mouse_position()
 	var hovered_handle := _get_hovered_handle(mouse_pos)
+	Global.control.set_selection_rotate_cursor(
+		is_instance_valid(hovered_handle) and hovered_handle.type == TransformHandle.Type.ROTATE
+	)
 	if is_instance_valid(hovered_handle):
 		if hovered_handle.type == TransformHandle.Type.PIVOT:
 			Input.set_default_cursor_shape(Input.CURSOR_MOVE)
