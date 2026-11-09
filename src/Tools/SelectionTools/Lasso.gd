@@ -50,19 +50,13 @@ func draw_preview() -> void:
 			Global.current_project.size.x, Global.current_project.size.y, false, Image.FORMAT_LA8
 		)
 		for point in _draw_points:
-			var draw_point := point
-			if Global.mirror_view:  # This fixes previewing in mirror mode
-				draw_point.x = image.get_width() - draw_point.x - 1
-			if Rect2i(Vector2i.ZERO, image.get_size()).has_point(draw_point):
-				image.set_pixelv(draw_point, Color.WHITE)
+			if Rect2i(Vector2i.ZERO, image.get_size()).has_point(point):
+				image.set_pixelv(point, Color.WHITE)
 
 		# Handle mirroring
 		for point in mirror_array(_draw_points):
-			var draw_point := point
-			if Global.mirror_view:  # This fixes previewing in mirror mode
-				draw_point.x = image.get_width() - draw_point.x - 1
-			if Rect2i(Vector2i.ZERO, image.get_size()).has_point(draw_point):
-				image.set_pixelv(draw_point, Color.WHITE)
+			if Rect2i(Vector2i.ZERO, image.get_size()).has_point(point):
+				image.set_pixelv(point, Color.WHITE)
 		var texture := ImageTexture.create_from_image(image)
 		canvas.texture = texture
 

@@ -74,8 +74,6 @@ func draw_preview() -> void:
 		)
 		for i in points.size():
 			points[i] += temp_rect.position
-			if Global.mirror_view:  # This fixes previewing in mirror mode
-				points[i].x = image.get_width() - points[i].x - 1
 			if Rect2i(Vector2i.ZERO, image.get_size()).has_point(points[i]):
 				image.set_pixelv(points[i], Color.WHITE)
 		# Handle mirroring

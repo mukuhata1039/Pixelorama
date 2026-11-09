@@ -67,12 +67,9 @@ func draw_preview() -> void:
 		return
 	var project := Global.current_project
 	var canvas: Node2D = Global.canvas.previews
-	var pos := canvas.position
-	var canvas_scale := canvas.scale
-	if Global.mirror_view:
-		pos.x = pos.x + project.size.x
-		canvas_scale.x = -1
-	canvas.draw_set_transform(pos, canvas.rotation, canvas_scale)
+	# Mirror View is applied by CanvasCamera to the entire viewport.
+	# Draw in document coordinates here, just like the final selection.
+	canvas.draw_set_transform(canvas.position, canvas.rotation, canvas.scale)
 	canvas.draw_rect(_rect, Color.BLACK, false)
 	# Handle mirroring
 	var mirror_positions := Tools.get_mirrored_positions(_rect.position, project, 1)
