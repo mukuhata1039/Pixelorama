@@ -14,9 +14,8 @@ func _input(event: InputEvent) -> void:
 	if _move:
 		return
 	if event is InputEventMouseMotion:
+		# CanvasCamera already converts the mirrored cursor to document coordinates.
 		_last_position = Global.canvas.current_pixel.floor()
-		if Global.mirror_view:
-			_last_position.x = (Global.current_project.size.x - 1) - _last_position.x
 	elif event is InputEventMouseButton:
 		if event.double_click and event.button_index == tool_slot.button and _draw_points:
 			$DoubleClickTimer.start()
@@ -77,11 +76,8 @@ func draw_preview() -> void:
 			Global.current_project.size.x, Global.current_project.size.y, false, Image.FORMAT_LA8
 		)
 		for point in preview_draw_points:
-			var draw_point := point
-			if Global.mirror_view:  # This fixes previewing in mirror mode
-				draw_point.x = image.get_width() - draw_point.x - 1
-			if Rect2i(Vector2i.ZERO, image.get_size()).has_point(draw_point):
-				image.set_pixelv(draw_point, Color.WHITE)
+			if Rect2i(Vector2i.ZERO, image.get_size()).has_point(point):
+				image.set_pixelv(point, Color.WHITE)
 
 		var circle_radius := Vector2.ONE * (10.0 / Global.camera.zoom.x)
 		if _last_position == _draw_points[0] and _draw_points.size() > 1:
@@ -92,11 +88,8 @@ func draw_preview() -> void:
 
 		# Handle mirroring
 		for point in mirror_array(preview_draw_points):
-			var draw_point := point
-			if Global.mirror_view:  # This fixes previewing in mirror mode
-				draw_point.x = image.get_width() - draw_point.x - 1
-			if Rect2i(Vector2i.ZERO, image.get_size()).has_point(draw_point):
-				image.set_pixelv(draw_point, Color.WHITE)
+			if Rect2i(Vector2i.ZERO, image.get_size()).has_point(point):
+				image.set_pixelv(point, Color.WHITE)
 		var texture := ImageTexture.create_from_image(image)
 		previews.texture = texture
 
