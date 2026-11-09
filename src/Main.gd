@@ -35,6 +35,7 @@ var changed_projects_on_quit: Array[Project]
 var cursor_image := preload("res://assets/graphics/cursor.png")
 var _rotate_view_cursor_active := false
 var _pan_view_cursor_active := false
+var _selection_rotate_cursor_active := false
 var _layer_pick_cursor_active := false
 ## The hold shortcut only changes display state transiently, never the saved project.
 var _target_visibility_hold_project: Project
@@ -746,6 +747,20 @@ func _install_aseprite_cursors() -> void:
 		return
 	for cursor_shape: int in ASEPRITE_CURSOR_MAP:
 		_apply_aseprite_cursor_shape(cursor_shape)
+
+
+## Reuse the view-rotation cursor while hovering a selection's rotation handle.
+## Restore the Aseprite pointing-hand cursor as soon as the handle is left.
+func set_selection_rotate_cursor(active: bool) -> void:
+	if active == _selection_rotate_cursor_active:
+		return
+	_selection_rotate_cursor_active = active
+	if active:
+		Input.set_custom_mouse_cursor(
+			ROTATE_VIEW_CURSOR, Input.CURSOR_POINTING_HAND, ROTATE_VIEW_CURSOR_HOTSPOT
+		)
+	else:
+		_apply_aseprite_cursor_shape(Input.CURSOR_POINTING_HAND)
 
 
 func _apply_aseprite_cursor_shape(
