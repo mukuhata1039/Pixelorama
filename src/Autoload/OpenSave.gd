@@ -212,13 +212,13 @@ func handle_loading_image(file: String, image: Image, force_import_dialog := fal
 	Global.dialog_open(true)
 
 
-## Import a batch of PNGs as consecutive frames in one existing PixelLayer.
+## Import one or more PNGs as consecutive frames in one existing PixelLayer.
 ## Validate the entire destination range and decode every file before any
 ## project mutation: a failed drop must never partially overwrite artwork.
 func import_png_sequence_into_cels(
 	files: PackedStringArray, first_frame: int, layer_index: int
 ) -> void:
-	if files.size() < 2:
+	if files.is_empty():
 		return
 	var project := Global.current_project
 	if (

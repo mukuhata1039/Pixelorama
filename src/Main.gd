@@ -951,9 +951,9 @@ func _notification(what: int) -> void:
 
 
 func _on_files_dropped(files: PackedStringArray) -> void:
-	# Multi-PNG drops directly onto a timeline cel fill consecutive empty
-	# frames. Everywhere else, preserve the existing import-dialog workflow.
-	var all_png_files := files.size() > 1
+	# Any number of PNGs dropped onto a timeline cel fill consecutive empty
+	# frames. Drops elsewhere keep the existing import-dialog workflow.
+	var all_png_files := not files.is_empty()
 	for file in files:
 		if file.get_extension().to_lower() != "png" or not FileAccess.file_exists(file):
 			all_png_files = false
