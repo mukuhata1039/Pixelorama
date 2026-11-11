@@ -1,26 +1,46 @@
-# Pixelorama Ctrl+Alt+Tab modifier-state diagnostics (Windows PowerShell 5.1+).
-# Run after rebuilding Pixelorama.exe:
-# powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Pixelorama\tools\debug\trace_modifiers.ps1"
-# Close the launched Pixelorama instance to end the trace.
+# Ctrl+Alt+Tab diagnostic launcher for Windows PowerShell 5.1+.
+# Always exports a fresh, isolated diagnostics EXE; never runs or overwrites
+# the user's normal build\Pixelorama.exe or changes .pxo file associations.
 param(
-    [string]$Executable = "",
+    [string]$GodotPath = "E:\app\Godot\Godot_v4.7.1-stable_win64.exe",
     [ValidateRange(20, 1000)][int]$PollMilliseconds = 60
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-if ([string]::IsNullOrWhiteSpace($Executable)) {
-    $Executable = Join-Path $projectRoot "build\Pixelorama.exe"
+$projectFile = Join-Path $projectRoot "project.godot"
+$diagnosticSource = Join-Path $projectRoot "src\Debug\ModifierDiagnostics.gd"
+if (-not (Test-Path -LiteralPath $projectFile -PathType Leaf)) {
+    throw "Pixelorama project.godot not found: $projectFile"
 }
-if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
-    throw "Pixelorama.exe not found: $Executable. Rebuild the EXE first."
+if (-not (Test-Path -LiteralPath $diagnosticSource -PathType Leaf)) {
+    throw "Modifier diagnostics source is missing. Run git pull --ff-only in D:\Pixelorama first."
 }
+if (-not (Test-Path -LiteralPath $GodotPath -PathType Leaf)) {
+    $godotCommand = Get-Command -Name "godot", "godot4" -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($null -ne $godotCommand) {
+        $GodotPath = $godotCommand.Source
+    }
+}
+if (-not (Test-Path -LiteralPath $GodotPath -PathType Leaf)) {
+    throw "Godot 4.7.1 not found: $GodotPath. Supply -GodotPath with your Godot editor EXE path."
+}
+
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $logDirectory = Join-Path $projectRoot "build\modifier_diagnostics\$stamp"
 New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+$diagnosticExe = Join-Path $logDirectory "PixeloramaModifierDiagnostics.exe"
 
-# This variable is inherited only by the child Pixelorama process.
-$env:PXO_MODIFIER_DIAG_DIR = $logDirectory
+# The EXE is exported from the CURRENT source on every run. This prevents a
+# stale installed EXE from silently quitting due to an old CLI parser.
+Write-Host "Exporting a fresh diagnostics-only Pixelorama EXE..."
+Write-Host "Godot: $GodotPath"
+$buildArgs = '--headless --path "{0}" --export-release "Windows Desktop 64-bit" "{1}"' -f $projectRoot, $diagnosticExe
+$build = Start-Process -FilePath $GodotPath -ArgumentList $buildArgs -WorkingDirectory $projectRoot -NoNewWindow -Wait -PassThru
+if ($build.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $diagnosticExe -PathType Leaf)) {
+    throw "Godot export failed (exit code $($build.ExitCode)). Review the output above; no old EXE was launched."
+}
 
 if (-not ("PixeloramaModifierWin32" -as [type])) {
     Add-Type -TypeDefinition @"
@@ -42,20 +62,40 @@ function Test-WindowsKeyDown([int]$virtualKey) {
     return (($result -band 0x8000) -ne 0)
 }
 
+$env:PXO_MODIFIER_DIAG_DIR = $logDirectory
 $windowsLog = Join-Path $logDirectory "windows_modifiers.log"
-$writer = [System.IO.StreamWriter]::new(
-    $windowsLog, $false, [System.Text.UTF8Encoding]::new($false)
-)
-$writer.AutoFlush = $true
+$writer = $null
 $launchedProcess = $null
 $lastSample = ""
 $lastHeartbeat = [DateTime]::MinValue
 try {
+    $writer = [System.IO.StreamWriter]::new(
+        $windowsLog, $false, [System.Text.UTF8Encoding]::new($false)
+    )
+    $writer.AutoFlush = $true
     $writer.WriteLine("# UTC time, Windows GetAsyncKeyState, foreground process ID")
-    $launchedProcess = Start-Process -FilePath $Executable -ArgumentList @("--", "--modifier-diagnostics") -PassThru
-    Write-Host "Pixelorama modifier diagnostics started."
-    Write-Host "Perform Ctrl+Alt+Tab and return to Pixelorama."
-    Write-Host "When finished, close the launched Pixelorama window."
+    $launchedProcess = Start-Process -FilePath $diagnosticExe -ArgumentList @("--", "--modifier-diagnostics") -PassThru
+
+    # Fail instead of claiming the diagnostics started if the Godot log is missing.
+    $godotLog = $null
+    for ($i = 0; $i -lt 120; $i++) {
+        $godotLog = Get-ChildItem -LiteralPath $logDirectory -Filter "godot_modifiers_*.log" -File |
+            Select-Object -First 1
+        if ($null -ne $godotLog) { break }
+        $launchedProcess.Refresh()
+        if ($launchedProcess.HasExited) {
+            throw "Pixelorama exited before starting diagnostics. Check the Godot output above."
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    if ($null -eq $godotLog) {
+        throw "Godot diagnostics log did not appear. The launcher will not silently record Windows-only data."
+    }
+
+    Write-Host ""
+    Write-Host "Both Godot and Windows diagnostics are active."
+    Write-Host "Perform Ctrl+Alt+Tab, release all keys, then return to Pixelorama."
+    Write-Host "When finished, close the diagnostic Pixelorama window."
     Write-Host "Logs: $logDirectory"
 
     while ($true) {
@@ -86,9 +126,9 @@ try {
     }
 }
 finally {
-    $writer.Dispose()
+    if ($null -ne $writer) { $writer.Dispose() }
     Remove-Item Env:\PXO_MODIFIER_DIAG_DIR -ErrorAction SilentlyContinue
     Write-Host ""
-    Write-Host "Trace finished. Please share the files in:"
+    Write-Host "Trace finished. Share the two log files in:"
     Write-Host $logDirectory
 }
