@@ -4,6 +4,7 @@ extends Control
 signal save_file_dialog_opened(opened: bool)
 
 const SPLASH_DIALOG_SCENE_PATH := "res://src/UI/Dialogs/SplashDialog.tscn"
+const MODIFIER_DIAGNOSTICS_SCRIPT := preload("res://src/Debug/ModifierDiagnostics.gd")
 const ROTATE_VIEW_CURSOR := preload("res://assets/graphics/misc/canvas_rotate_cursor.svg")
 const ROTATE_VIEW_CURSOR_HOTSPOT := Vector2(14, 14)
 const PAN_VIEW_CURSOR := preload("res://assets/graphics/tools/cursors/pan.png")
@@ -101,7 +102,8 @@ class CLI:
 			"Spritesheets in split layer mode will export multiple files for each layer."
 		],
 		["--help", "-h", "-?"]: [CLI.generate_help, "Displays this help page"],
-		["--scene"]: [CLI.dummy, "Used internally by Godot."]
+		["--scene"]: [CLI.dummy, "Used internally by Godot."],
+		["--modifier-diagnostics"]: [CLI.dummy, "Log modifier events and focus changes (debug)."]
 	}
 
 	static func generate_help(_project: Project, _next_arg: String):
@@ -249,6 +251,11 @@ func _init() -> void:
 
 func _ready() -> void:
 	get_tree().set_auto_accept_quit(false)
+	if (
+		OS.get_cmdline_user_args().has("--modifier-diagnostics")
+		or OS.get_cmdline_args().has("--modifier-diagnostics")
+	):
+		add_child(MODIFIER_DIAGNOSTICS_SCRIPT.new())
 	_install_aseprite_cursors()
 
 	get_window().title = tr("untitled") + " - Pixelorama " + Global.current_version
