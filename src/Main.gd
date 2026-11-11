@@ -890,6 +890,10 @@ func _handle_cmdline_arguments() -> void:
 		var next_argument := ""
 		if i + 1 < args.size():
 			next_argument = args[i + 1]
+		# The input trace was already started in _ready(); it is not an export
+		# command and must never enter the CLI path that quits on void results.
+		if arg == "--modifier-diagnostics":
+			continue
 		if arg.begins_with("-") or arg.begins_with("--"):
 			if arg in parse_dic.keys():
 				var callable: Callable = parse_dic[arg]
