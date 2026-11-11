@@ -5,6 +5,7 @@ signal save_file_dialog_opened(opened: bool)
 
 const SPLASH_DIALOG_SCENE_PATH := "res://src/UI/Dialogs/SplashDialog.tscn"
 const MODIFIER_DIAGNOSTICS_SCRIPT := preload("res://src/Debug/ModifierDiagnostics.gd")
+const MODIFIER_FOCUS_RECOVERY_SCRIPT := preload("res://src/UI/ToolsPanel/ModifierFocusRecovery.gd")
 const ROTATE_VIEW_CURSOR := preload("res://assets/graphics/misc/canvas_rotate_cursor.svg")
 const ROTATE_VIEW_CURSOR_HOTSPOT := Vector2(14, 14)
 const PAN_VIEW_CURSOR := preload("res://assets/graphics/tools/cursors/pan.png")
@@ -251,6 +252,8 @@ func _init() -> void:
 
 func _ready() -> void:
 	get_tree().set_auto_accept_quit(false)
+	# Recover Ctrl/Alt key-ups lost to the Windows Ctrl+Alt+Tab task switcher.
+	add_child(MODIFIER_FOCUS_RECOVERY_SCRIPT.new())
 	if (
 		OS.get_cmdline_user_args().has("--modifier-diagnostics")
 		or OS.get_cmdline_args().has("--modifier-diagnostics")
