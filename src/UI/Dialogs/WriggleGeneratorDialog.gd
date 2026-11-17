@@ -62,10 +62,14 @@ func _generate() -> void:
 	var selected: PackedByteArray
 	if project.has_selection:
 		selected.resize(width * height)
+		# Cache the selection rectangle; otherwise this helper recalculates
+		# get_used_rect() for every pixel on large images.
+		project.selection_map.lock_selection_rect(project, true)
 		for y in range(height):
 			for x in range(width):
 				if project.selection_map.is_pixel_selected(Vector2i(x, y)):
 					selected[y * width + x] = 1
+		project.selection_map.lock_selection_rect(project, false)
 	var total_frames := int(frame_count_input.value)
 	var radius := int(radius_input.value)
 	var inserted_count := total_frames - 1
