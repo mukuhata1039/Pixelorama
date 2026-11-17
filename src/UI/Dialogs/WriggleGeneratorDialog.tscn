@@ -4,50 +4,73 @@
 
 [node name="WriggleGeneratorDialog" type="ConfirmationDialog"]
 title = "触手うごめき生成"
-size = Vector2i(390, 200)
+size = Vector2i(400, 260)
 script = ExtResource("1")
 
-[node name="Options" type="VBoxContainer" parent="."]
+[node name="ContentScroll" type="ScrollContainer" parent="."]
 offset_left = 12.0
-offset_top = 12.0
-offset_right = 378.0
-offset_bottom = 144.0
-theme_override_constants/separation = 8
+offset_top = 10.0
+offset_right = 388.0
+offset_bottom = 200.0
+horizontal_scroll_mode = 0
 
-[node name="Help" type="Label" parent="Options"]
+[node name="Options" type="VBoxContainer" parent="ContentScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 7
+
+[node name="Help" type="Label" parent="ContentScroll/Options"]
 layout_mode = 2
 text = "選択中のピクセルレイヤーだけを変形します。\n元のコマと他レイヤーは変更しません。"
 autowrap_mode = 3
 
-[node name="Frames" type="HBoxContainer" parent="Options"]
+[node name="Destination" type="HBoxContainer" parent="ContentScroll/Options"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Options/Frames"]
+[node name="Label" type="Label" parent="ContentScroll/Options/Destination"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "生成先"
+
+[node name="Mode" type="OptionButton" parent="ContentScroll/Options/Destination"]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 2
+popup/item_0/text = "新規フレームを挿入"
+popup/item_0/id = 0
+popup/item_1/text = "既存フレームに上書き"
+popup/item_1/id = 1
+
+[node name="Frames" type="HBoxContainer" parent="ContentScroll/Options"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ContentScroll/Options/Frames"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "総フレーム数（元絵を含む）"
 
-[node name="Count" type="SpinBox" parent="Options/Frames"]
+[node name="Count" type="SpinBox" parent="ContentScroll/Options/Frames"]
 layout_mode = 2
 min_value = 4.0
 max_value = 12.0
 value = 8.0
 
-[node name="Radius" type="HBoxContainer" parent="Options"]
+[node name="Radius" type="HBoxContainer" parent="ContentScroll/Options"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Options/Radius"]
+[node name="Label" type="Label" parent="ContentScroll/Options/Radius"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "最大変形量（px）"
 
-[node name="Radius" type="SpinBox" parent="Options/Radius"]
+[node name="Radius" type="SpinBox" parent="ContentScroll/Options/Radius"]
 layout_mode = 2
 min_value = 1.0
 max_value = 3.0
 value = 2.0
 
-[node name="Hint" type="Label" parent="Options"]
+[node name="Hint" type="Label" parent="ContentScroll/Options"]
 layout_mode = 2
-text = "局所的に膨張・収縮してループするコマを追加します。"
+text = "上書き時は元のコマを残し、その次のコマから選択レイヤーだけを書き換えます。足りない場合は中止します。"
 autowrap_mode = 3

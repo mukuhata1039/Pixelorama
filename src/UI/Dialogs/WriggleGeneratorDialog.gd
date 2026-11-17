@@ -1,15 +1,33 @@
 extends ConfirmationDialog
 ## Generate seamless, local 1-3 pixel silhouette changes from the active pixel cel.
-## The source cel is never changed. All newly inserted frames are fully independent.
+## Keep the source cel intact. Insert new frames or overwrite only the active layer
+## in existing frames. Preserve linked source cels and support Undo/Redo.
 
-@onready var frame_count_input := $Options/Frames/Count as SpinBox
-@onready var radius_input := $Options/Radius/Radius as SpinBox
+@onready var frame_count_input := $ContentScroll/Options/Frames/Count as SpinBox
+@onready var radius_input := $ContentScroll/Options/Radius/Radius as SpinBox
+@onready var destination_input := $ContentScroll/Options/Destination/Mode as OptionButton
+@onready var content_scroll := $ContentScroll as ScrollContainer
 
 
 func _ready() -> void:
 	get_ok_button().text = "生成"
+	about_to_popup.connect(_fit_dialog)
+	size_changed.connect(_sync_scroll_area)
 	confirmed.connect(_generate)
 	visibility_changed.connect(_on_visibility_changed)
+
+
+## Keep the Confirm/Cancel buttons at the bottom, outside the scroll area.
+func _fit_dialog() -> void:
+	var editor_height := Global.control.get_window().size.y
+	size = Vector2i(400, clampi(editor_height - 80, 150, 260))
+	_sync_scroll_area()
+
+
+func _sync_scroll_area() -> void:
+	if is_instance_valid(content_scroll):
+		content_scroll.offset_right = float(size.x - 12)
+		content_scroll.offset_bottom = float(maxi(80, size.y - 60))
 
 
 func _on_visibility_changed() -> void:
@@ -72,6 +90,111 @@ func _generate() -> void:
 		project.selection_map.lock_selection_rect(project, false)
 	var total_frames := int(frame_count_input.value)
 	var radius := int(radius_input.value)
+	# 0: insert copied frames. 1: overwrite next existing frames on this layer.
+	if destination_input.selected == 1:
+		_overwrite_existing(
+			project, layer as PixelLayer, source, solid, selected,
+			distance_to_solid, distance_to_empty, first_frame_index, total_frames, radius
+		)
+	else:
+		_insert_new(
+			project, source, solid, selected, distance_to_solid, distance_to_empty,
+			first_frame_index, layer_index, total_frames, radius
+		)
+
+
+func _overwrite_existing(
+	project: Project,
+	layer: PixelLayer,
+	source: Image,
+	solid: PackedByteArray,
+	selected: PackedByteArray,
+	distance_to_solid: PackedInt32Array,
+	distance_to_empty: PackedInt32Array,
+	first_frame_index: int,
+	total_frames: int,
+	radius: int
+) -> void:
+	var layer_index := layer.index
+	# Never silently append frames in overwrite mode or partially overwrite.
+	if project.frames.size() - first_frame_index < total_frames:
+		Global.popup_error(
+			"既存フレームが不足しています。元のコマを含めて%dコマ必要です。" % total_frames
+		)
+		return
+	var entries: Array[Dictionary] = []
+	for step in range(1, total_frames):
+		var target := project.frames[first_frame_index + step].cels[layer_index] as PixelCel
+		if target == null or target is CelTileMap:
+			Global.popup_error("上書き先に通常のピクセルセルが必要です。")
+			return
+		var rendered := _render_frame(
+			source, solid, selected, distance_to_solid, distance_to_empty,
+			step, total_frames, radius
+		)
+		if not selected.is_empty():
+			# In overwrite mode, pixels outside the selection must remain intact
+			# in EACH destination frame, not revert to the source image.
+			var existing := project.new_empty_image()
+			existing.fill(Color.TRANSPARENT)
+			existing.blit_rect(
+				target.get_image(),
+				Rect2i(Vector2i.ZERO, target.get_image().get_size()),
+				target.offset
+			)
+			for y in range(project.size.y):
+				for x in range(project.size.x):
+					if selected[y * project.size.x + x] != 0:
+						existing.set_pixel(x, y, rendered.get_pixel(x, y))
+			rendered = existing
+		entries.append({
+			"cel": target,
+			"layer": layer,
+			"before": target.get_content(),
+			"after": ImageExtended.create_from_image(rendered),
+			"link_set": target.link_set
+		})
+	var undo_redo := project.undo_redo
+	undo_redo.create_action("Overwrite Wriggle Animation")
+	undo_redo.add_do_method(_apply_overwrites.bind(entries, true))
+	undo_redo.add_do_method(Global.undo_or_redo.bind(false, -1, -1, project))
+	undo_redo.add_undo_method(Global.undo_or_redo.bind(true, -1, -1, project))
+	undo_redo.add_undo_method(_apply_overwrites.bind(entries, false))
+	undo_redo.commit_action()
+
+
+func _apply_overwrites(entries: Array[Dictionary], apply_new: bool) -> void:
+	for entry in entries:
+		var cel := entry["cel"] as PixelCel
+		var layer := entry["layer"] as PixelLayer
+		# Break each existing link before writing so neither the source frame
+		# nor linked cels elsewhere can change indirectly.
+		if apply_new:
+			if cel.link_set != null:
+				layer.link_cel(cel, null)
+			cel.set_content([entry["after"], Vector2i.ZERO])
+		else:
+			cel.set_content(entry["before"])
+			if entry["link_set"] != null:
+				layer.link_cel(cel, entry["link_set"])
+		cel.update_texture()
+	Global.canvas.update_all_layers = true
+	Global.canvas.queue_redraw()
+
+
+func _insert_new(
+	project: Project,
+	source: Image,
+	solid: PackedByteArray,
+	selected: PackedByteArray,
+	distance_to_solid: PackedInt32Array,
+	distance_to_empty: PackedInt32Array,
+	first_frame_index: int,
+	layer_index: int,
+	total_frames: int,
+	radius: int
+) -> void:
+	var first_frame := project.frames[first_frame_index]
 	var inserted_count := total_frames - 1
 	var indices := PackedInt32Array()
 	var frames: Array[Frame] = []
@@ -82,7 +205,6 @@ func _generate() -> void:
 		for index in range(project.layers.size()):
 			var original_cel := first_frame.cels[index]
 			var copied_cel := original_cel.duplicate_cel()
-			# Avoid accidental edits to linked original cels, including on Undo/Redo.
 			copied_cel.set_content(original_cel.copy_content())
 			copy.cels.append(copied_cel)
 		var rendered := _render_frame(
@@ -94,7 +216,7 @@ func _generate() -> void:
 		frames.append(copy)
 		indices.append(first_frame_index + frame_step)
 
-	# Keep existing animation tag boundaries correct when inserting in the middle.
+	# Preserve existing animation tags when inserting between frames.
 	var adjusted_tags := project.animation_tags.duplicate()
 	var first_inserted_number := first_frame_index + 2
 	for i in range(adjusted_tags.size()):
@@ -105,7 +227,6 @@ func _generate() -> void:
 			tag.to += inserted_count
 		elif first_inserted_number <= tag.to:
 			tag.to += inserted_count
-
 	var old_selection := project.selected_cels.duplicate(true)
 	var old_tags := project.animation_tags
 	var new_selection := [[first_frame_index + 1, layer_index]]
