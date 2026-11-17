@@ -52,6 +52,7 @@ var isometric_image_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/flat
 var invert_colors_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/InvertColorsDialog.tscn")
 var desaturate_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/DesaturateDialog.tscn")
 var outline_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/OutlineDialog.tscn")
+var wriggle_generator_dialog := Dialog.new("res://src/UI/Dialogs/WriggleGeneratorDialog.tscn")
 var drop_shadow_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/DropShadowDialog.tscn")
 var hsv_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/HSVDialog.tscn")
 var adjust_brightness_saturation_dialog := Dialog.new(
@@ -601,6 +602,7 @@ func _setup_effects_menu() -> void:
 	_set_menu_shortcut(&"outline", effects_procedural_submenu, 0, "Outline")
 	_set_menu_shortcut(&"drop_shadow", effects_procedural_submenu, 1, "Drop Shadow")
 	_set_menu_shortcut(&"gradient", effects_procedural_submenu, 2, "Gradient")
+	effects_procedural_submenu.add_item("触手うごめき生成")
 	effects_procedural_submenu.id_pressed.connect(_on_effects_procedural_submenu_id_pressed)
 	effects_menu.add_child(effects_procedural_submenu)
 	effects_menu.add_submenu_node_item("Procedural", effects_procedural_submenu)
@@ -1313,6 +1315,8 @@ func _on_effects_procedural_submenu_id_pressed(id: int) -> void:
 			drop_shadow_dialog.popup()
 		2:
 			gradient_dialog.popup()
+		3:
+			wriggle_generator_dialog.popup()
 
 
 func _on_effects_blur_submenu_id_pressed(id: int) -> void:
