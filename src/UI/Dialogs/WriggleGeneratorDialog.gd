@@ -313,5 +313,34 @@ func _render_frame(
 				if shift < 0.0 and float(distance_to_empty[i]) <= -shift:
 					result.set_pixel(x, y, Color.TRANSPARENT)
 			elif shift > 0.0 and float(distance_to_solid[i]) <= shift:
-				result.set_pixel(x, y, Color.BLACK)
+				# Grow using the nearest painted pixel's actual RGBA, never a
+				# hard-coded black. Different-colored areas retain their colors.
+				var sampled_color := _nearest_painted_color(source, x, y, radius)
+				if sampled_color.a > 0.0:
+					result.set_pixel(x, y, sampled_color)
 	return result
+
+
+## Pick the closest nontransparent source pixel inside the morphology radius.
+## Sampling the original image, not the evolving result, avoids directional
+## bleeding and prevents earlier expanded pixels from becoming color sources.
+func _nearest_painted_color(source: Image, x: int, y: int, radius: int) -> Color:
+	var best_distance := 999999
+	var nearest_color := Color.TRANSPARENT
+	for dy in range(-radius, radius + 1):
+		var source_y := y + dy
+		if source_y < 0 or source_y >= source.get_height():
+			continue
+		for dx in range(-radius, radius + 1):
+			var source_x := x + dx
+			if source_x < 0 or source_x >= source.get_width():
+				continue
+			var squared_distance := dx * dx + dy * dy
+			if squared_distance >= best_distance:
+				continue
+			var color := source.get_pixel(source_x, source_y)
+			if color.a <= 0.0:
+				continue
+			best_distance = squared_distance
+			nearest_color = color
+	return nearest_color
