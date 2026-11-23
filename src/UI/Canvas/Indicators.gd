@@ -29,4 +29,10 @@ func _draw() -> void:
 			)
 		):
 			return
+		# The camera may have moved/zoomed without a mouse-motion event.
+		# Recalculate the hovered canvas pixel at draw time so the outline
+		# cannot lag behind the coordinate used by the next paint event.
+		var current_pixel := Vector2i(Global.canvas.get_local_mouse_position().floor())
+		Tools.get_tool(MOUSE_BUTTON_LEFT).tool_node.cursor_move(current_pixel)
+		Tools.get_tool(MOUSE_BUTTON_RIGHT).tool_node.cursor_move(current_pixel)
 		Tools.draw_indicator()

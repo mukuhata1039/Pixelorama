@@ -1323,6 +1323,11 @@ func draw_indicator(left: bool) -> void:
 
 func draw_indicator_at(pos: Vector2i, offset: Vector2i, color: Color) -> void:
 	var canvas := Global.canvas.indicators
+	# draw_tool() and draw_fill_gap() shift even-width brush stamps by
+	# one canvas pixel in Mirror View. The footprint preview must use the
+	# same paint anchor, otherwise the hovered outline is 1px displaced.
+	if Global.mirror_view and int(_stroke_dimensions.x) % 2 == 0:
+		pos.x += 1
 	# Match the actual brush footprint without touching the image.
 	# Keep the existing outline so the preview is still visible over similar colors.
 	if Global.brush_color_preview_enabled and not _draw_line and not Tools.is_placing_tiles():

@@ -1049,6 +1049,15 @@ func handle_draw(position: Vector2i, event: InputEvent) -> void:
 	if not Global.can_draw:
 		return
 
+	# The pointer may have changed pixels between the last motion event and
+	# a button press, or a camera zoom may have changed its canvas coordinates.
+	# Use this event's position for both the cursor indicator and painting.
+	var position_changed := position != _last_position
+	if position_changed:
+		_last_position = position
+		_slots[MOUSE_BUTTON_LEFT].tool_node.cursor_move(position)
+		_slots[MOUSE_BUTTON_RIGHT].tool_node.cursor_move(position)
+
 	# CanvasCamera handles Mirror View in the viewport transform, so
 	# this coordinate is already in the original image's pixel space.
 	var draw_pos := position
@@ -1119,12 +1128,8 @@ func handle_draw(position: Vector2i, event: InputEvent) -> void:
 			mouse_velocity = 1.0
 		if active_button == -1:  # there is no meaning of velocity without an active tool
 			mouse_velocity = 0.0
-		if not position == _last_position:
-			_last_position = position
-			_slots[MOUSE_BUTTON_LEFT].tool_node.cursor_move(position)
-			_slots[MOUSE_BUTTON_RIGHT].tool_node.cursor_move(position)
-			if active_button != -1:
-				_slots[active_button].tool_node.draw_move(draw_pos)
+		if position_changed and active_button != -1:
+			_slots[active_button].tool_node.draw_move(draw_pos)
 
 	var project := Global.current_project
 	var text := "[%s×%s]" % [project.size.x, project.size.y]
