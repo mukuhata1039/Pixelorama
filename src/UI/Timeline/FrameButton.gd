@@ -70,72 +70,146 @@ func apply_compact_layout(enabled: bool) -> void:
 				(stylebox as StyleBoxFlat).bg_color = background
 				add_theme_stylebox_override(style_name, stylebox)
 		for font_color_name: StringName in MARKER_FONT_COLORS:
-			add_theme_color_override(font_color_name, MARKER_TEXT_COLOR)
+			add_theme_color_override(font_color_name, MARKER_TEXT_COLOR if marker.get_luminance() > 0.36 else Color.WHITE)
 
 
 func get_marker_color() -> Color:
 	var project := Global.current_project
 	if project == null or frame < 0 or frame >= project.frames.size():
 		return Color.TRANSPARENT
-	var marker_index: int = project.frames[frame].marker_color
-	if marker_index < 0 or marker_index >= MARKER_COLORS.size():
-		return Color.TRANSPARENT
-	return MARKER_COLORS[marker_index]
+	return project.frames[frame].get_marker_color()
 
 
-## Create the submenu only on first use; large timelines need not build hundreds of palettes.
-func _ensure_marker_color_menu() -> void:
-	if is_instance_valid(_marker_color_menu):
+const PALETTE_PATH := "user://frame_marker_palette.cfg"
+static var _palette: Array[Color] = []
+
+
+func _load_marker_palette() -> void:
+	if not _palette.is_empty():
 		return
-	_marker_color_menu = PopupMenu.new()
-	_marker_color_menu.name = "MarkerColors"
-	popup_menu.add_child(_marker_color_menu)
-	popup_menu.add_separator()
-	popup_menu.add_submenu_node_item(tr("Marker Color"), _marker_color_menu)
+	var config := ConfigFile.new()
+	config.load(PALETTE_PATH)
 	for i in MARKER_COLORS.size():
+		var value: Variant = config.get_value("colors", str(i), MARKER_COLORS[i])
+		_palette.append(value if value is Color else MARKER_COLORS[i])
+
+
+func _ensure_marker_color_menu() -> void:
+	_load_marker_palette()
+	if not is_instance_valid(_marker_color_menu):
+		_marker_color_menu = PopupMenu.new()
+		_marker_color_menu.name = "MarkerColors"
+		popup_menu.add_child(_marker_color_menu)
+		popup_menu.add_separator()
+		popup_menu.add_submenu_node_item(tr("Marker Color"), _marker_color_menu)
+		_marker_color_menu.id_pressed.connect(_on_marker_color_chosen)
+	_marker_color_menu.clear()
+	for i in _palette.size():
+		var image := Image.create(12, 12, false, Image.FORMAT_RGBA8)
+		image.fill(_palette[i])
 		_marker_color_menu.add_icon_radio_check_item(
-			_get_marker_icon(i), tr(MARKER_COLOR_NAMES[i]), i
+			ImageTexture.create_from_image(image), "%d: #%s" % [i + 1, _palette[i].to_html(false)], i
 		)
 	_marker_color_menu.add_separator()
-	_marker_color_menu.add_radio_check_item(tr("Clear Marker Color"), MARKER_COLORS.size())
-	_marker_color_menu.id_pressed.connect(_on_marker_color_chosen)
-
-
-func _get_marker_icon(index: int) -> Texture2D:
-	if _marker_icons.is_empty():
-		for color in MARKER_COLORS:
-			var image := Image.create(12, 12, false, Image.FORMAT_RGBA8)
-			image.fill(color)
-			_marker_icons.append(ImageTexture.create_from_image(image))
-	return _marker_icons[index]
+	_marker_color_menu.add_radio_check_item(tr("Clear Marker Color"), 8)
+	_marker_color_menu.add_item("任意の色…", 9)
+	_marker_color_menu.add_separator()
+	_marker_color_menu.add_item("登録8色を編集…", 10)
 
 
 func _update_marker_menu_checks() -> void:
 	var indices := _get_frame_indices()
 	var project := Global.current_project
-	var current_color: int = project.frames[indices[0]].marker_color
-	for frame_index in indices:
-		if project.frames[frame_index].marker_color != current_color:
-			current_color = -2  # Mixed colors: leave all options unchecked.
+	var current := project.frames[indices[0]].get_marker_color()
+	var mixed := false
+	for f in indices:
+		if project.frames[f].get_marker_color().to_html() != current.to_html():
+			mixed = true
 			break
-	for i in MARKER_COLORS.size():
-		_marker_color_menu.set_item_checked(i, current_color == i)
-	_marker_color_menu.set_item_checked(MARKER_COLORS.size() + 1, current_color == -1)
+	for i in _palette.size():
+		_marker_color_menu.set_item_checked(i, not mixed and current.a > 0 and current.to_html(false) == _palette[i].to_html(false))
+	_marker_color_menu.set_item_checked(_marker_color_menu.get_item_index(8), not mixed and current.a == 0)
 
 
 func _on_marker_color_chosen(id: int) -> void:
 	var project := Global.current_project
-	var color_index := id if id >= 0 and id < MARKER_COLORS.size() else -1
+	var indices := _get_frame_indices()
+	if id == 10:
+		_edit_marker_palette()
+	elif id == 9:
+		var dialog := ConfirmationDialog.new()
+		dialog.title = "フレーム番号の色"
+		var picker := ColorPicker.new()
+		picker.edit_alpha = false
+		var current := get_marker_color()
+		picker.color = current if current.a > 0 else Color.WHITE
+		dialog.add_child(picker)
+		Global.control.add_child(dialog)
+		dialog.confirmed.connect(func():
+			if Global.current_project == project:
+				_apply_marker_color(project, indices, picker.color.to_html(false))
+			dialog.queue_free()
+		)
+		dialog.canceled.connect(dialog.queue_free)
+		dialog.popup_centered()
+	elif id == 8:
+		_apply_marker_color(project, indices, "")
+	elif id >= 0 and id < _palette.size():
+		_apply_marker_color(project, indices, _palette[id].to_html(false))
+
+
+func _edit_marker_palette() -> void:
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "登録8色を編集"
+	var grid := GridContainer.new()
+	grid.columns = 2
+	var pickers: Array[ColorPickerButton] = []
+	for i in _palette.size():
+		var label := Label.new()
+		label.text = str(i + 1)
+		grid.add_child(label)
+		var picker := ColorPickerButton.new()
+		picker.edit_alpha = false
+		picker.color = _palette[i]
+		picker.custom_minimum_size.x = 180
+		grid.add_child(picker)
+		pickers.append(picker)
+	var reset := Button.new()
+	reset.text = "初期色に戻す"
+	grid.add_child(reset)
+	reset.pressed.connect(func():
+		for i in pickers.size():
+			pickers[i].color = MARKER_COLORS[i]
+	)
+	dialog.add_child(grid)
+	Global.control.add_child(dialog)
+	dialog.confirmed.connect(func():
+		var config := ConfigFile.new()
+		for i in pickers.size():
+			_palette[i] = Color.html(pickers[i].color.to_html(false))
+			config.set_value("colors", str(i), _palette[i])
+		config.save(PALETTE_PATH)
+		dialog.queue_free()
+	)
+	dialog.canceled.connect(dialog.queue_free)
+	dialog.popup_centered()
+
+
+func _apply_marker_color(project: Project, indices: PackedInt32Array, custom_color: String) -> void:
 	var changed_indices := PackedInt32Array()
-	for frame_index in _get_frame_indices():
-		if project.frames[frame_index].marker_color != color_index:
-			changed_indices.append(frame_index)
+	for f in indices:
+		if f < project.frames.size():
+			var old := project.frames[f].get_marker_color()
+			if (custom_color.is_empty() and old.a > 0) or (not custom_color.is_empty() and (old.a == 0 or old.to_html(false) != custom_color)):
+				changed_indices.append(f)
 	if changed_indices.is_empty():
 		return
 	project.undo_redo.create_action("Set Frame Marker Color")
-	for frame_index in changed_indices:
-		var frame_class: Frame = project.frames[frame_index]
-		project.undo_redo.add_do_property(frame_class, "marker_color", color_index)
+	for f in changed_indices:
+		var frame_class: Frame = project.frames[f]
+		project.undo_redo.add_do_property(frame_class, "custom_marker_color", custom_color)
+		project.undo_redo.add_undo_property(frame_class, "custom_marker_color", frame_class.custom_marker_color)
+		project.undo_redo.add_do_property(frame_class, "marker_color", -1)
 		project.undo_redo.add_undo_property(frame_class, "marker_color", frame_class.marker_color)
 	project.undo_redo.add_do_method(
 		Global.animation_timeline.refresh_frame_marker_buttons.bind(project, changed_indices)
@@ -156,7 +230,9 @@ func _update_tooltip() -> void:
 	if "." in duration_str:  # If its a decimal value
 		duration_str = "%.2f" % duration_sec  # Up to 2 decimal places
 	tooltip_text = "%s: %sx (%s sec)" % [tr("Duration"), str(duration), duration_str]
-	if frame_class.marker_color >= 0 and frame_class.marker_color < MARKER_COLORS.size():
+	if not frame_class.custom_marker_color.is_empty():
+		tooltip_text += "\n%s: #%s" % [tr("Marker Color"), frame_class.custom_marker_color]
+	elif frame_class.marker_color >= 0 and frame_class.marker_color < MARKER_COLORS.size():
 		tooltip_text += "\n%s: %s" % [
 			tr("Marker Color"), tr(MARKER_COLOR_NAMES[frame_class.marker_color])
 		]
