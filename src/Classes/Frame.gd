@@ -9,6 +9,20 @@ var user_data := ""  ## User defined data, set in the frame properties.
 ## Fixed frame-header marker palette. -1 means no marker.
 const MARKER_COLOR_COUNT := 8
 var marker_color := -1
+var custom_marker_color := ""
+
+const MARKER_COLORS := [
+	Color("e9a83b"), Color("4fa6d8"), Color("64b989"), Color("be83d8"),
+	Color("e07980"), Color("d5c153"), Color("d88f59"), Color("9296a5")
+]
+
+
+func get_marker_color() -> Color:
+	if not custom_marker_color.is_empty():
+		return Color.from_string(custom_marker_color, Color.TRANSPARENT)
+	if marker_color >= 0 and marker_color < MARKER_COLORS.size():
+		return MARKER_COLORS[marker_color]
+	return Color.TRANSPARENT
 
 
 func _init(_cels: Array[BaseCel] = [], _duration := 1.0) -> void:
