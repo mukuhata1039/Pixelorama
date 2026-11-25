@@ -321,6 +321,8 @@ func serialize() -> Dictionary:
 			current_frame_data["user_data"] = frame.user_data
 		if frame.marker_color >= 0:
 			current_frame_data["marker_color"] = frame.marker_color
+		if not frame.custom_marker_color.is_empty():
+			current_frame_data["custom_marker_color"] = frame.custom_marker_color
 		frame_data.append(current_frame_data)
 	var brush_data := []
 	for brush in brushes:
@@ -539,6 +541,9 @@ func deserialize(dict: Dictionary, zip_reader: ZIPReader = null, file: FileAcces
 			frame_class.marker_color = clampi(
 				int(frame.get("marker_color", -1)), -1, Frame.MARKER_COLOR_COUNT - 1
 			)
+			var custom_marker := str(frame.get("custom_marker_color", ""))
+			if not custom_marker.is_empty() and Color.html_is_valid(custom_marker):
+				frame_class.custom_marker_color = Color.html(custom_marker).to_html(false)
 			_deserialize_metadata(frame_class, frame)
 			frames.append(frame_class)
 			frame_i += 1
