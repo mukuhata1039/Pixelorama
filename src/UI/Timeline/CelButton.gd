@@ -359,7 +359,7 @@ func _on_CelButton_pressed() -> void:
 	elif Input.is_action_just_released("right_mouse"):
 		var marker_item := popup_menu.get_item_index(MenuOptions.COPY_SAME_MARKER)
 		if marker_item >= 0:
-			popup_menu.set_item_disabled(marker_item, _same_marker_targets().is_empty())
+			popup_menu.set_item_disabled(marker_item, _same_marker_plan()["copies"].is_empty())
 		popup_menu.popup_on_parent(Rect2(get_global_mouse_position(), Vector2.ONE))
 		button_pressed = !button_pressed
 	elif Input.is_action_just_released("middle_mouse"):
@@ -471,35 +471,82 @@ func _on_PopupMenu_id_pressed(id: int) -> void:
 			_copy_same_marker()
 
 
-func _same_marker_targets() -> PackedInt32Array:
+## One source per RGB marker and layer. The right-clicked cel wins its own group.
+## Other ambiguous groups are rejected before changing any cel.
+func _same_marker_plan() -> Dictionary:
 	var project := Global.current_project
-	var targets := PackedInt32Array()
-	var marker := project.frames[frame].get_marker_color()
-	if marker.a == 0 or cel is not PixelCel:
-		return targets
-	for f in project.frames.size():
-		var other := project.frames[f].get_marker_color()
-		if f != frame and other.a > 0 and other.to_html(false) == marker.to_html(false):
-			targets.append(f)
-	return targets
+	var sources := {}
+	var conflicts := {}
+	var clicked_key := ""
+	var clicked_marker := project.frames[frame].get_marker_color()
+	if clicked_marker.a > 0 and cel is PixelCel:
+		clicked_key = "%s:%d" % [clicked_marker.to_html(false), layer]
+	for coord in _get_cel_indices():
+		var f: int = coord[0]
+		var l: int = coord[1]
+		if project.frames[f].cels[l] is not PixelCel:
+			continue
+		var marker := project.frames[f].get_marker_color()
+		if marker.a == 0:
+			continue
+		var key := "%s:%d" % [marker.to_html(false), l]
+		if sources.has(key):
+			if key != clicked_key:
+				conflicts[key] = true
+		else:
+			sources[key] = Vector2i(f, l)
+	if sources.has(clicked_key):
+		sources[clicked_key] = Vector2i(frame, layer)
+	var copies := {}
+	for key in sources:
+		var source: Vector2i = sources[key]
+		var rgb := project.frames[source.x].get_marker_color().to_html(false)
+		for f in project.frames.size():
+			if f == source.x:
+				continue
+			var marker := project.frames[f].get_marker_color()
+			if marker.a > 0 and marker.to_html(false) == rgb:
+				if project.frames[f].cels[source.y] is PixelCel:
+					copies[Vector2i(f, source.y)] = source
+	return {"copies": copies, "conflict": not conflicts.is_empty()}
 
 
 func _copy_same_marker() -> void:
 	var project := Global.current_project
-	var targets := _same_marker_targets()
-	if targets.is_empty():
+	var plan := _same_marker_plan()
+	if plan["conflict"]:
+		var dialog := AcceptDialog.new()
+		dialog.title = "コピー元が重複しています"
+		dialog.dialog_text = "同じ色・同じレイヤーのコピー元は1セルだけ選択してください。右クリックしたセルの組み合わせは、そのセルが優先されます。"
+		Global.control.add_child(dialog)
+		dialog.confirmed.connect(dialog.queue_free)
+		dialog.canceled.connect(dialog.queue_free)
+		dialog.popup_centered()
 		return
-	var source := project.frames[frame].cels[layer] as PixelCel
+	var copies: Dictionary = plan["copies"]
+	if copies.is_empty():
+		return
+	Global.transform_content_confirmed.emit()
+	# Prepare independent copies before modifying any destination, including linked cels.
+	var snapshots := {}
+	for target: Vector2i in copies:
+		var source_coord: Vector2i = copies[target]
+		var source := project.frames[source_coord.x].cels[source_coord.y] as PixelCel
+		snapshots[target] = source.copy_content()
 	project.undo_redo.create_action("Draw")
-	for f in targets:
-		var dest := project.frames[f].cels[layer] as PixelCel
+	for target: Vector2i in copies:
+		var dest := project.frames[target.x].cels[target.y] as PixelCel
+		var old_content: Variant = dest.get_content()
+		var old_texture := dest.image_texture
+		var new_content: Variant = snapshots[target]
+		var new_texture := ImageTexture.create_from_image(new_content[0])
 		if dest.link_set != null:
-			project.undo_redo.add_do_method(project.layers[layer].link_cel.bind(dest, null))
-			project.undo_redo.add_undo_method(project.layers[layer].link_cel.bind(dest, dest.link_set))
-		project.undo_redo.add_do_method(dest.set_content.bind(source.copy_content()))
-		project.undo_redo.add_undo_method(dest.set_content.bind(dest.get_content(), dest.image_texture))
-		project.undo_redo.add_do_method(Global.undo_or_redo.bind(false, f, layer, project))
-		project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true, f, layer, project))
+			project.undo_redo.add_do_method(project.layers[target.y].link_cel.bind(dest, null))
+			project.undo_redo.add_undo_method(project.layers[target.y].link_cel.bind(dest, dest.link_set))
+		project.undo_redo.add_do_method(dest.set_content.bind(new_content, new_texture))
+		project.undo_redo.add_undo_method(dest.set_content.bind(old_content, old_texture))
+		project.undo_redo.add_do_method(Global.undo_or_redo.bind(false, target.x, target.y, project))
+		project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true, target.x, target.y, project))
 	project.undo_redo.commit_action()
 
 
