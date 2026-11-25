@@ -630,6 +630,18 @@ func _clear_drop_preview_draw_connections() -> void:
 
 ## Draws cel highlighting during drag and drop.
 func _draw_highlight_cels(cel_coords: Array, offset: Vector2i) -> void:
+	var columns := {}
+	for coord in cel_coords:
+		var column: int = coord[0] + offset.x
+		if column >= 0 and column < frame_hbox.get_child_count():
+			columns[column] = true
+	for column in columns:
+		var header := frame_hbox.get_child(column) as Control
+		var bounds := drag_highlight.get_global_rect()
+		var rect := Rect2(Vector2(header.global_position.x, bounds.position.y), Vector2(header.size.x, bounds.size.y))
+		rect = rect.intersection(bounds)
+		rect.position -= drag_highlight.global_position
+		drag_highlight.draw_rect(rect, Color(0.45, 0.75, 1.0, 0.13))
 	for cel in cel_coords:  # Press selected buttons
 		var frame: int = cel[0] + offset.x
 		var layer: int = cel[1] + offset.y
@@ -1273,6 +1285,7 @@ func copy_frames(
 
 		new_frame.duration = src_frame.duration
 		new_frame.marker_color = src_frame.marker_color
+		new_frame.custom_marker_color = src_frame.custom_marker_color
 		for l in range(project.layers.size()):
 			if [f, l] in project.selected_cels:
 				last_focus_cels.append([copied_indices[indices.find(f)], l])
