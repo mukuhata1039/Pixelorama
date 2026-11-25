@@ -1,6 +1,6 @@
 extends Button
 
-enum MenuOptions { PROPERTIES, PLAY_AUDIO, SELECT_PIXELS, CENTER, DELETE, LINK, UNLINK, CLONE_CEL }
+enum MenuOptions { PROPERTIES, PLAY_AUDIO, SELECT_PIXELS, CENTER, DELETE, LINK, UNLINK, CLONE_CEL, COPY_SAME_MARKER }
 
 ## A 5px hit target remains usable even in the 20px compact timeline.
 const CEL_DRAG_BORDER := 5.0
@@ -61,6 +61,7 @@ func _ready() -> void:
 		popup_menu.add_item("Link cels to", MenuOptions.LINK)
 		popup_menu.add_item("Unlink cels", MenuOptions.UNLINK)
 		_set_menu_shortcut(&"clone_cel", popup_menu, "Clone Cel", MenuOptions.CLONE_CEL, true)
+		popup_menu.add_item("同じ色のフレームに全コピー", MenuOptions.COPY_SAME_MARKER)
 	elif cel is GroupCel:
 		transparent_checker.visible = false
 
@@ -356,6 +357,9 @@ func _on_CelButton_pressed() -> void:
 			release_focus()
 
 	elif Input.is_action_just_released("right_mouse"):
+		var marker_item := popup_menu.get_item_index(MenuOptions.COPY_SAME_MARKER)
+		if marker_item >= 0:
+			popup_menu.set_item_disabled(marker_item, _same_marker_targets().is_empty())
 		popup_menu.popup_on_parent(Rect2(get_global_mouse_position(), Vector2.ONE))
 		button_pressed = !button_pressed
 	elif Input.is_action_just_released("middle_mouse"):
@@ -463,6 +467,40 @@ func _on_PopupMenu_id_pressed(id: int) -> void:
 
 		MenuOptions.CLONE_CEL:
 			_clone_cel_content(_get_cel_indices())
+		MenuOptions.COPY_SAME_MARKER:
+			_copy_same_marker()
+
+
+func _same_marker_targets() -> PackedInt32Array:
+	var project := Global.current_project
+	var targets := PackedInt32Array()
+	var marker := project.frames[frame].get_marker_color()
+	if marker.a == 0 or cel is not PixelCel:
+		return targets
+	for f in project.frames.size():
+		var other := project.frames[f].get_marker_color()
+		if f != frame and other.a > 0 and other.to_html(false) == marker.to_html(false):
+			targets.append(f)
+	return targets
+
+
+func _copy_same_marker() -> void:
+	var project := Global.current_project
+	var targets := _same_marker_targets()
+	if targets.is_empty():
+		return
+	var source := project.frames[frame].cels[layer] as PixelCel
+	project.undo_redo.create_action("Draw")
+	for f in targets:
+		var dest := project.frames[f].cels[layer] as PixelCel
+		if dest.link_set != null:
+			project.undo_redo.add_do_method(project.layers[layer].link_cel.bind(dest, null))
+			project.undo_redo.add_undo_method(project.layers[layer].link_cel.bind(dest, dest.link_set))
+		project.undo_redo.add_do_method(dest.set_content.bind(source.copy_content()))
+		project.undo_redo.add_undo_method(dest.set_content.bind(dest.get_content(), dest.image_texture))
+		project.undo_redo.add_do_method(Global.undo_or_redo.bind(false, f, layer, project))
+		project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true, f, layer, project))
+	project.undo_redo.commit_action()
 
 
 ## Aseprite moves/copies the contents of cels to the destination instead of
