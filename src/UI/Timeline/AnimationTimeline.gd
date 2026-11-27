@@ -1959,7 +1959,6 @@ func copy_layers_at(
 			cl_layer.parent = clones[p]
 		else:  # Root copy is placed at the drop's destination parent.
 			cl_layer.parent = destination_parent
-			cl_layer.name = str(cl_layer.name, " (", tr("copy"), ")")
 
 	var insertion := clampi(insertion_index, 0, project.layers.size())
 	var indices: PackedInt32Array = range(insertion, insertion + clones.size())
