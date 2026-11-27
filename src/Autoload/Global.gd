@@ -957,6 +957,13 @@ func update_grids(grids_data: Dictionary) -> void:
 
 
 func _initialize_keychain() -> void:
+	# A separate action keeps Shift+D available even with older saved shortcut profiles.
+	if not InputMap.has_action(&"duplicate_selected_frames"):
+		InputMap.add_action(&"duplicate_selected_frames")
+		var duplicate_key := InputEventKey.new()
+		duplicate_key.keycode = KEY_D
+		duplicate_key.shift_pressed = true
+		InputMap.action_add_event(&"duplicate_selected_frames", duplicate_key)
 	Keychain.config_file = config_cache
 	Keychain.actions = {
 		&"new_file": Keychain.InputAction.new("", "File menu", true),
@@ -1074,6 +1081,7 @@ func _initialize_keychain() -> void:
 		&"remove_frame": Keychain.InputAction.new("", "Timeline"),
 		&"clone_cel": Keychain.InputAction.new("", "Timeline"),
 		&"clone_frame": Keychain.InputAction.new("", "Timeline"),
+		&"duplicate_selected_frames": Keychain.InputAction.new("選択フレームを複製", "Timeline"),
 		&"move_frame_left": Keychain.InputAction.new("", "Timeline"),
 		&"move_frame_right": Keychain.InputAction.new("", "Timeline"),
 		&"go_to_first_frame": Keychain.InputAction.new("", "Timeline"),
