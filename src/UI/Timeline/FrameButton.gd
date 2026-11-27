@@ -1,6 +1,6 @@
 extends Button
 
-enum { PROPERTIES, REMOVE, CLONE, MOVE_LEFT, MOVE_RIGHT, NEW_TAG, IMPORT_TAG, REVERSE, CENTER }
+enum { PROPERTIES, REMOVE, CLONE, MOVE_LEFT, MOVE_RIGHT, NEW_TAG, IMPORT_TAG, REVERSE, CENTER, REVERSE_COPY }
 
 ## The compact timeline uses 20px frame buttons. Normal styleboxes reserve 12px
 ## of horizontal content margins, leaving too little space for 2-digit labels.
@@ -39,6 +39,8 @@ func _ready() -> void:
 	text = str(frame + 1)
 	apply_compact_layout(Global.animation_timeline.compact_timeline)
 	pressed.connect(_button_pressed)
+	popup_menu.add_item("反転コピー", REVERSE_COPY)
+	popup_menu.move_item(popup_menu.get_item_index(REVERSE_COPY), REVERSE + 1)
 	mouse_entered.connect(_update_tooltip)
 
 
@@ -311,6 +313,8 @@ func _on_PopupMenu_id_pressed(id: int) -> void:
 			append_tag_dialog.prepare_and_show(frame)
 		REVERSE:
 			Global.animation_timeline.reverse_frames(indices)
+		REVERSE_COPY:
+			Global.animation_timeline.reverse_copy_frames(indices)
 		CENTER:
 			DrawingAlgos.center_frames(indices)
 
