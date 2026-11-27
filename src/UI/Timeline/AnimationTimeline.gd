@@ -659,6 +659,10 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.is_action_pressed(&"duplicate_selected_frames", false, true):
 		var focus := get_viewport().gui_get_focus_owner()
 		if not (focus is LineEdit or focus is TextEdit or focus is SpinBox):
+			if range_selection_source == RangeSelectionSource.LAYERS and is_visible_in_tree():
+				get_viewport().set_input_as_handled()
+				duplicate_selected_layers_below()
+				return
 			if range_selection_source == RangeSelectionSource.FRAMES and is_visible_in_tree():
 				var indices := []
 				var selected_project := Global.current_project
@@ -1265,7 +1269,8 @@ func copy_frames(
 	destination := -1,
 	select_all_cels := true,
 	tag_name_from: AnimationTag = null,
-	destination_is_insertion_index := false
+	destination_is_insertion_index := false,
+	reverse_copy := false
 ) -> void:
 	Global.transform_content_confirmed.emit()
 	var project := Global.current_project
@@ -1296,7 +1301,10 @@ func copy_frames(
 		new_animation_tags[i] = new_animation_tags[i].duplicate()
 	project.undo_redo.create_action("Add Frame")
 	var last_focus_cels := []
-	for f in indices:
+	var source_order = indices.duplicate()
+	if reverse_copy:
+		source_order.reverse()
+	for f in source_order:
 		var src_frame := project.frames[f]
 		var new_frame := Frame.new()
 		copied_frames.append(new_frame)
@@ -1307,7 +1315,7 @@ func copy_frames(
 		new_frame.custom_marker_color = src_frame.custom_marker_color
 		for l in range(project.layers.size()):
 			if [f, l] in project.selected_cels:
-				last_focus_cels.append([copied_indices[indices.find(f)], l])
+				last_focus_cels.append([copied_indices[source_order.find(f)], l])
 			var src_cel := project.frames[f].cels[l]  # Cel we're copying from, the source
 			var new_cel := src_cel.duplicate_cel()
 			if project.layers[l].new_cels_linked:
@@ -1373,6 +1381,15 @@ func copy_frames(
 	project.undo_redo.add_do_property(project, "animation_tags", new_animation_tags)
 	project.undo_redo.add_undo_property(project, "animation_tags", project.animation_tags)
 	project.undo_redo.commit_action()
+
+
+func reverse_copy_frames(indices: PackedInt32Array) -> void:
+	if indices.is_empty():
+		return
+	var ordered := indices.duplicate()
+	ordered.sort()
+	select_frame_range_source()
+	copy_frames(ordered, -1, true, null, false, true)
 
 
 func _on_MoveLeft_pressed() -> void:
@@ -1820,6 +1837,47 @@ func add_layer(layer: BaseLayer, project: Project) -> void:
 	project.undo_redo.add_do_method(Global.undo_or_redo.bind(false))
 	project.undo_redo.add_undo_method(Global.undo_or_redo.bind(true))
 	project.undo_redo.commit_action()
+
+
+## Layer indices increase upwards in the timeline. Inserting at the lowest
+## selected index puts the entire copied block directly below the source block.
+func duplicate_selected_layers_below() -> void:
+	var project := Global.current_project
+	var selected := PackedInt32Array()
+	for coord in project.selected_cels:
+		var index: int = coord[1]
+		if index >= 0 and index < project.layers.size() and not selected.has(index):
+			if is_layer_header_range(index):
+				selected.append(index)
+	if selected.is_empty():
+		return
+	var roots: Array[BaseLayer] = []
+	for index in selected:
+		var source := project.layers[index]
+		var ancestor := source.parent
+		var covered := false
+		while is_instance_valid(ancestor):
+			if selected.has(ancestor.index):
+				covered = true
+				break
+			ancestor = ancestor.parent
+		if not covered:
+			roots.append(source)
+	if roots.is_empty():
+		return
+	var destination_parent: BaseLayer = roots[0].parent
+	var source_indices := PackedInt32Array()
+	for root in roots:
+		if root.parent != destination_parent:
+			Global.popup_error("異なるグループに属するレイヤーは同時に複製できません。")
+			return
+		for child in root.get_children(true):
+			if not source_indices.has(child.index):
+				source_indices.append(child.index)
+		if not source_indices.has(root.index):
+			source_indices.append(root.index)
+	source_indices.sort()
+	copy_layers_at(source_indices, source_indices[0], destination_parent, true)
 
 
 func _on_CloneLayer_pressed() -> void:
