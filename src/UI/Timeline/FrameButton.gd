@@ -39,8 +39,10 @@ func _ready() -> void:
 	text = str(frame + 1)
 	apply_compact_layout(Global.animation_timeline.compact_timeline)
 	pressed.connect(_button_pressed)
+	# Insert before Center Frames using supported PopupMenu APIs.
+	popup_menu.remove_item(popup_menu.get_item_index(CENTER))
 	popup_menu.add_item("反転コピー", REVERSE_COPY)
-	popup_menu.move_item(popup_menu.get_item_index(REVERSE_COPY), REVERSE + 1)
+	popup_menu.add_item("Center Frames", CENTER)
 	mouse_entered.connect(_update_tooltip)
 
 
