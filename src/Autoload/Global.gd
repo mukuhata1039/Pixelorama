@@ -1081,7 +1081,7 @@ func _initialize_keychain() -> void:
 		&"remove_frame": Keychain.InputAction.new("", "Timeline"),
 		&"clone_cel": Keychain.InputAction.new("", "Timeline"),
 		&"clone_frame": Keychain.InputAction.new("", "Timeline"),
-		&"duplicate_selected_frames": Keychain.InputAction.new("選択フレームを複製", "Timeline"),
+		&"duplicate_selected_frames": Keychain.InputAction.new("選択フレーム・レイヤーを複製", "Timeline"),
 		&"move_frame_left": Keychain.InputAction.new("", "Timeline"),
 		&"move_frame_right": Keychain.InputAction.new("", "Timeline"),
 		&"go_to_first_frame": Keychain.InputAction.new("", "Timeline"),
