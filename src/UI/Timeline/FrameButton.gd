@@ -272,14 +272,12 @@ func _button_pressed() -> void:
 			popup_menu.set_item_disabled(REVERSE, true)
 		else:
 			popup_menu.set_item_disabled(REMOVE, false)
-			if Global.current_project.selected_cels.size() > 1:
-				popup_menu.set_item_disabled(REVERSE, false)
-			else:
-				popup_menu.set_item_disabled(REVERSE, true)
+			popup_menu.set_item_disabled(REVERSE, _get_frame_indices().size() < 2)
 			if frame > 0:
 				popup_menu.set_item_disabled(MOVE_LEFT, false)
 			if frame < Global.current_project.frames.size() - 1:
 				popup_menu.set_item_disabled(MOVE_RIGHT, false)
+		popup_menu.set_item_text(REVERSE, "反転")
 		_ensure_marker_color_menu()
 		_update_marker_menu_checks()
 		popup_menu.popup_on_parent(Rect2(get_global_mouse_position(), Vector2.ONE))
