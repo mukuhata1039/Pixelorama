@@ -1234,7 +1234,7 @@ func delete_frames(indices: PackedInt32Array = []) -> void:
 
 
 func _on_CopyFrame_pressed() -> void:
-	copy_frames([], -1, false)
+	copy_frames([], -1, range_selection_source == RangeSelectionSource.FRAMES)
 
 
 ## Copies frames located at [param indices] and inserts them at [param destination].
@@ -1260,6 +1260,8 @@ func copy_frames(
 			if not f in indices:
 				indices.append(f)
 		indices.sort()
+	if indices.is_empty():
+		return
 
 	var copied_frames: Array[Frame] = []
 	var copied_indices := PackedInt32Array()  # the indices of newly copied frames
@@ -1284,6 +1286,7 @@ func copy_frames(
 		copied_frames.append(new_frame)
 
 		new_frame.duration = src_frame.duration
+		new_frame.user_data = src_frame.user_data
 		new_frame.marker_color = src_frame.marker_color
 		new_frame.custom_marker_color = src_frame.custom_marker_color
 		for l in range(project.layers.size()):
@@ -1450,6 +1453,10 @@ func move_frames(frame: int, rate: int) -> void:
 
 
 func reverse_frames(indices: PackedInt32Array = []) -> void:
+	if indices.size() < 2:
+		return
+	indices = indices.duplicate()
+	indices.sort()
 	var project := Global.current_project
 	project.undo_redo.create_action("Change Frame Order")
 	project.undo_redo.add_do_method(project.reverse_frames.bind(indices))
