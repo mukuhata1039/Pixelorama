@@ -656,6 +656,22 @@ func _draw_highlight_cels(cel_coords: Array, offset: Vector2i) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.is_action_pressed(&"duplicate_selected_frames", false, true):
+		var focus := get_viewport().gui_get_focus_owner()
+		if not (focus is LineEdit or focus is TextEdit or focus is SpinBox):
+			if range_selection_source == RangeSelectionSource.FRAMES and is_visible_in_tree():
+				var indices := []
+				var selected_project := Global.current_project
+				for coord in selected_project.selected_cels:
+					var f: int = coord[0]
+					if f >= 0 and f < selected_project.frames.size() and not indices.has(f):
+						if is_frame_header_range(f):
+							indices.append(f)
+				if not indices.is_empty():
+					indices.sort()
+					get_viewport().set_input_as_handled()
+					copy_frames(indices, -1, true)
+					return
 	if OS.is_debug_build() and event is InputEventKey:
 		var key_event := event as InputEventKey
 		if (
